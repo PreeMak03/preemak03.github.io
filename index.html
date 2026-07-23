@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#000000" />
+  <title>Tesla Active Sound</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/main.css" />
+  <link rel="stylesheet" href="css/animations.css" />
+</head>
+<body>
+  <div id="app" class="app">
+    <!-- Ambient background -->
+    <div class="bg-layer" aria-hidden="true">
+      <div class="bg-gradient"></div>
+    </div>
+
+    <!-- Top bar: brand left · GPS + theme right -->
+    <header class="top-bar-clean">
+      <div class="brand-mini">
+        <svg viewBox="0 0 40 40" class="brand-svg" aria-hidden="true">
+          <circle cx="20" cy="20" r="18" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.35"/>
+          <path d="M10 22c4-8 16-8 20 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <circle cx="20" cy="14" r="2.2" fill="currentColor"/>
+        </svg>
+        <span class="brand-name">Active Sound</span>
+      </div>
+
+      <div class="top-actions">
+        <button type="button" class="chip-btn" id="btn-gps" aria-pressed="false" title="GPS speed on/off">
+          <span class="pill-dot pill-dot--gps" id="gps-status-dot"></span>
+          <span id="gps-status-label">GPS Off</span>
+        </button>
+        <button type="button" class="chip-btn" id="btn-theme" aria-label="Toggle dark/bright mode">
+          <span class="theme-toggle-icon" id="theme-icon" aria-hidden="true">☾</span>
+          <span id="theme-label">Dark</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Drive stage: speed · accel -->
+    <main class="drive-stage">
+      <section class="speed-center">
+        <div class="speed-ring" id="speed-ring">
+          <svg class="speed-ring-svg" viewBox="0 0 240 240">
+            <defs>
+              <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#3ecfff"/>
+                <stop offset="50%" stop-color="#6ee7ff"/>
+                <stop offset="100%" stop-color="#a78bfa"/>
+              </linearGradient>
+            </defs>
+            <circle class="ring-track" cx="120" cy="120" r="104" />
+            <circle class="ring-progress" id="ring-progress" cx="120" cy="120" r="104"
+              stroke="url(#ringGrad)" />
+          </svg>
+          <div class="speed-core">
+            <div class="speed-value" id="speed-value">0</div>
+            <div class="speed-unit">km/h</div>
+            <div class="speed-rpm" id="speed-rpm">0 RPM · G1</div>
+            <div class="state-chip" id="drive-state" data-state="idle">Idle</div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="accel-side">
+        <div class="accel-tube" id="accel-tube" aria-label="Acceleration">
+          <div class="accel-tube-label">+40</div>
+          <div class="accel-tube-body">
+            <div class="accel-tube-track">
+              <div class="accel-zero-line" aria-hidden="true"></div>
+              <div class="accel-fill accel-fill--pos" id="accel-fill-pos"></div>
+              <div class="accel-fill accel-fill--neg" id="accel-fill-neg"></div>
+            </div>
+          </div>
+          <div class="accel-tube-label">−40</div>
+          <div class="accel-tube-readout" id="accel-readout">0</div>
+          <div class="accel-tube-unit">km/h·s</div>
+        </div>
+      </aside>
+    </main>
+
+    <!-- Bottom row: tune · profile carousel · push-to-start -->
+    <footer class="bottom-row">
+      <button type="button" class="tune-fab" id="btn-tune" aria-expanded="false" aria-controls="tune-sheet" aria-label="Sound tuning">
+        <svg viewBox="0 0 24 24" aria-hidden="true" class="tune-icon">
+          <path d="M4 7h10M18 7h2M4 12h4M12 12h8M4 17h13M20 17h0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+          <circle cx="16" cy="7" r="2.1" fill="none" stroke="currentColor" stroke-width="1.8"/>
+          <circle cx="10" cy="12" r="2.1" fill="none" stroke="currentColor" stroke-width="1.8"/>
+          <circle cx="19" cy="17" r="2.1" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        </svg>
+      </button>
+
+      <div class="profile-dock" aria-label="Sound profiles">
+        <div class="profile-carousel" id="profile-scroller" role="listbox" aria-label="Sound profiles">
+          <!-- filled by JS -->
+        </div>
+        <div class="carousel-focus-line" aria-hidden="true"></div>
+        <div class="lock-hint" aria-hidden="true">Locked while driving · stop 3s to unlock</div>
+      </div>
+
+      <div class="start-dock">
+        <button type="button" class="launch-btn" id="btn-launch" aria-label="Launch control rev test">
+          <span class="lb-ring" aria-hidden="true"></span>
+          <span class="lb-eyebrow">Launch</span>
+          <span class="lb-main">Rev</span>
+        </button>
+        <button type="button" class="push-start" id="btn-engine" aria-label="Start or stop engine">
+          <span class="ps-ring" aria-hidden="true"></span>
+          <span class="ps-eyebrow">Engine</span>
+          <span class="ps-main" id="btn-engine-label">Start</span>
+          <span class="ps-status" id="ps-status">Ready</span>
+        </button>
+      </div>
+    </footer>
+
+    <!-- Tune sheet -->
+    <div class="sheet-backdrop" id="sheet-backdrop"></div>
+    <div class="tune-sheet" id="tune-sheet" role="dialog" aria-label="Sound tuning" aria-hidden="true">
+      <div class="sheet-head">
+        <span class="sheet-title">Sound Tuning</span>
+        <span class="profile-chip" id="active-profile-name">NA V12</span>
+      </div>
+
+      <div class="slider-group">
+        <label class="slider-label" for="vol-master">
+          <span>Master Volume</span>
+          <span class="slider-readout" id="vol-master-val">70%</span>
+        </label>
+        <div class="h-slider" data-slider="master">
+          <input type="range" id="vol-master" min="0" max="100" value="70" />
+          <div class="h-slider-track"><div class="h-slider-fill" id="vol-master-fill"></div></div>
+        </div>
+      </div>
+
+      <div class="slider-group">
+        <label class="slider-label" for="vol-bass">
+          <span>Bass Presence</span>
+          <span class="slider-readout" id="vol-bass-val">50%</span>
+        </label>
+        <div class="h-slider" data-slider="bass">
+          <input type="range" id="vol-bass" min="0" max="100" value="50" />
+          <div class="h-slider-track"><div class="h-slider-fill" id="vol-bass-fill"></div></div>
+        </div>
+      </div>
+
+      <div class="slider-group">
+        <label class="slider-label" for="vol-edge">
+          <span>Edge / Brightness</span>
+          <span class="slider-readout" id="vol-edge-val">45%</span>
+        </label>
+        <div class="h-slider" data-slider="edge">
+          <input type="range" id="vol-edge" min="0" max="100" value="45" />
+          <div class="h-slider-track"><div class="h-slider-fill" id="vol-edge-fill"></div></div>
+        </div>
+      </div>
+
+      <div class="toggle-row">
+        <button type="button" class="toggle-btn is-on" id="btn-reactive" aria-pressed="true">
+          <span class="toggle-knob"></span>
+          <span>Speed Reactive</span>
+        </button>
+        <button type="button" class="toggle-btn is-on" id="btn-smooth" aria-pressed="true">
+          <span class="toggle-knob"></span>
+          <span>Smooth Filter</span>
+        </button>
+      </div>
+
+      <div class="slider-group sim-group" id="sim-group">
+        <label class="slider-label" for="sim-speed">
+          <span>Sim Speed · Demand</span>
+          <span class="slider-readout" id="sim-speed-val">0 km/h</span>
+        </label>
+        <div class="h-slider" data-slider="sim">
+          <input type="range" id="sim-speed" min="0" max="200" value="0" />
+          <div class="h-slider-track"><div class="h-slider-fill" id="sim-speed-fill"></div></div>
+        </div>
+      </div>
+
+      <div class="sheet-meta">
+        <span>GPS Accuracy</span>
+        <span id="tele-accuracy">—</span>
+      </div>
+    </div>
+
+    <!-- Toast / notices -->
+    <div class="toast-host" id="toast-host" aria-live="polite"></div>
+
+    <!-- Boot overlay -->
+    <div class="boot-overlay" id="boot-overlay">
+      <div class="boot-content">
+        <div class="boot-ring"></div>
+        <div class="boot-title">Tesla Active Sound</div>
+        <div class="boot-sub">Initializing acoustic systems…</div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

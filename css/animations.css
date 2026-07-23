@@ -1,0 +1,48 @@
+/* ==========================================================================
+   Tesla Active Sound — Animation layer (CSS companions to JS rAF / WAAPI)
+   ========================================================================== */
+
+/* Carousel card press */
+.pcard:active {
+  transform: scale(0.94) !important;
+}
+
+/* Push-to-start press ring flash */
+.push-start.anim-pressed .ps-ring {
+  animation: ps-flash 0.5s var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
+}
+
+@keyframes ps-flash {
+  0% { transform: scale(0.94); opacity: 0.4; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Toast enter/exit driven by classes */
+.toast.is-in {
+  animation: toast-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.toast.is-out {
+  animation: toast-out 0.32s ease forwards;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes toast-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(8px) scale(0.98); }
+}
+
+/* Focus ring for accessibility */
+.chip-btn:focus-visible,
+.pcard:focus-visible,
+.push-start:focus-visible,
+.launch-btn:focus-visible,
+.tune-fab:focus-visible,
+.toggle-btn:focus-visible {
+  outline: 2px solid rgba(62, 207, 255, 0.55);
+  outline-offset: 2px;
+}

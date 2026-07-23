@@ -1,0 +1,1209 @@
+/* ==========================================================================
+   Tesla Active Sound — Clean Drive UI
+   Tesla-inspired · minimal chrome · touch-first for the in-car browser
+   ========================================================================== */
+
+:root,
+[data-theme="dark"] {
+  /* Core palette — Dark (default) */
+  --bg-void: #000000;
+  --bg-deep: #07080a;
+  --bg-elevated: #0e1014;
+  --bg-panel: rgba(14, 16, 22, 0.88);
+  --bg-panel-strong: rgba(14, 16, 22, 0.94);
+
+  --text-primary: #f4f5f7;
+  --text-secondary: rgba(244, 245, 247, 0.62);
+  --text-muted: rgba(244, 245, 247, 0.38);
+
+  --accent: #3ecfff;
+  --accent-soft: rgba(62, 207, 255, 0.18);
+  --accent-glow: rgba(62, 207, 255, 0.45);
+  --accent-2: #a78bfa;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --accel-pos: #3ecfff;
+  --accel-neg: #f87171;
+
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-glass: rgba(255, 255, 255, 0.10);
+  --border-highlight: rgba(255, 255, 255, 0.16);
+  --border-accent: rgba(62, 207, 255, 0.35);
+
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-pill: 999px;
+
+  --blur-glass: 8px;
+  --shadow-panel: 0 12px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --bg-gradient: radial-gradient(120% 80% at 10% -10%, rgba(62, 207, 255, 0.10), transparent 50%),
+    radial-gradient(90% 70% at 95% 10%, rgba(167, 139, 250, 0.08), transparent 45%),
+    linear-gradient(180deg, #050608 0%, #000 100%);
+
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --safe-pad: max(18px, env(safe-area-inset-left));
+}
+
+/* Bright mode */
+[data-theme="bright"] {
+  --bg-void: #e8eaef;
+  --bg-deep: #f0f2f5;
+  --bg-elevated: #ffffff;
+  --bg-panel: rgba(255, 255, 255, 0.85);
+  --bg-panel-strong: rgba(255, 255, 255, 0.95);
+
+  --text-primary: #0c0e12;
+  --text-secondary: rgba(12, 14, 18, 0.62);
+  --text-muted: rgba(12, 14, 18, 0.42);
+
+  --accent: #0891b2;
+  --accent-soft: rgba(8, 145, 178, 0.12);
+  --accent-glow: rgba(8, 145, 178, 0.28);
+  --accent-2: #7c3aed;
+  --success: #059669;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --accel-pos: #0891b2;
+  --accel-neg: #dc2626;
+
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-glass: rgba(0, 0, 0, 0.08);
+  --border-highlight: rgba(0, 0, 0, 0.12);
+  --border-accent: rgba(8, 145, 178, 0.35);
+
+  --shadow-panel: 0 10px 32px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --bg-gradient: radial-gradient(120% 80% at 10% -10%, rgba(8, 145, 178, 0.08), transparent 50%),
+    radial-gradient(90% 70% at 95% 10%, rgba(124, 58, 237, 0.06), transparent 45%),
+    linear-gradient(180deg, #eef1f6 0%, #e4e7ed 100%);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg-void);
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  overscroll-behavior: none;
+}
+
+button, input {
+  font-family: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  outline: none;
+}
+
+button {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* --------------------------------------------------------------------------
+   App shell
+   -------------------------------------------------------------------------- */
+
+.app {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 12px var(--safe-pad) 14px;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.bg-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.bg-gradient {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-gradient);
+}
+
+/* --------------------------------------------------------------------------
+   Top bar — no chrome, floating chips
+   -------------------------------------------------------------------------- */
+
+.top-bar-clean {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 52px;
+  flex-shrink: 0;
+}
+
+.brand-mini {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+}
+
+.brand-svg {
+  width: 26px;
+  height: 26px;
+  color: var(--accent);
+  opacity: 0.85;
+}
+
+.brand-name {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.top-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.chip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 18px;
+  min-height: 46px;
+  border-radius: var(--radius-pill);
+  background: rgba(127, 127, 127, 0.10);
+  border: 1px solid var(--border-subtle);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+  white-space: nowrap;
+}
+
+.chip-btn:active {
+  transform: scale(0.97);
+}
+
+.chip-btn.is-on {
+  color: var(--text-primary);
+  border-color: var(--border-accent);
+  background: var(--accent-soft);
+}
+
+.theme-toggle-icon {
+  font-size: 14px;
+  line-height: 1;
+  color: var(--accent);
+}
+
+.pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: background 0.3s, box-shadow 0.3s;
+}
+
+.pill-dot.is-live {
+  background: var(--success);
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.7);
+}
+
+.pill-dot.is-warn {
+  background: var(--warning);
+  box-shadow: 0 0 10px rgba(251, 191, 36, 0.55);
+}
+
+.pill-dot.is-off {
+  background: var(--text-muted);
+}
+
+/* --------------------------------------------------------------------------
+   Drive stage — fader rail · speed · accel tube
+   -------------------------------------------------------------------------- */
+
+.drive-stage {
+  position: relative;
+  z-index: 5;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  /* balance the accel tube on the right so the ring sits optically centered */
+  padding-left: 82px;
+}
+
+/* Speed — the hero */
+.speed-center {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  place-items: center;
+}
+
+.speed-ring {
+  position: relative;
+  width: min(100%, 52vh, 420px);
+  aspect-ratio: 1;
+}
+
+.speed-ring-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.ring-track {
+  fill: none;
+  stroke: rgba(127, 127, 127, 0.12);
+  stroke-width: 7;
+}
+
+.ring-progress {
+  fill: none;
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-dasharray: 653.45;
+  stroke-dashoffset: 653.45;
+  transition: none;
+}
+
+.speed-core {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.speed-value {
+  font-size: clamp(64px, 13vh, 108px);
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 40px rgba(62, 207, 255, 0.25);
+}
+
+.speed-unit {
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.speed-rpm {
+  margin-top: 12px;
+  font-size: 16px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+/* Drive-state chip (THOR states) */
+.state-chip {
+  margin-top: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  background: rgba(127, 127, 127, 0.12);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  transition: color 0.25s, border-color 0.25s, background 0.25s;
+}
+
+.state-chip[data-state="pull"] {
+  color: var(--accel-pos);
+  border-color: color-mix(in srgb, var(--accel-pos) 40%, transparent);
+  background: color-mix(in srgb, var(--accel-pos) 12%, transparent);
+}
+
+.state-chip[data-state="overrun"] {
+  color: var(--accel-neg);
+  border-color: color-mix(in srgb, var(--accel-neg) 40%, transparent);
+  background: color-mix(in srgb, var(--accel-neg) 12%, transparent);
+}
+
+.state-chip[data-state="cruise"] {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 40%, transparent);
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+}
+
+.state-chip[data-state="shift"] {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+}
+
+/* Accel tube — right side, same as before */
+.accel-side {
+  flex: 0 0 72px;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: 12px 0 12px;
+}
+
+.accel-tube {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-height: 0;
+  width: 100%;
+}
+
+.accel-tube-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.accel-tube-body {
+  flex: 1;
+  width: 100%;
+  min-height: 130px;
+  display: flex;
+  justify-content: center;
+}
+
+.accel-tube-track {
+  position: relative;
+  width: 18px;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: rgba(127, 127, 127, 0.12);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.accel-zero-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  margin-top: -1px;
+  background: var(--text-muted);
+  opacity: 0.55;
+  z-index: 2;
+}
+
+.accel-fill {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  width: auto;
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.accel-fill--pos {
+  bottom: 50%;
+  height: 0%;
+  background: linear-gradient(0deg, var(--accel-pos), #7ee8ff);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accel-pos) 50%, transparent);
+}
+
+.accel-fill--neg {
+  top: 50%;
+  height: 0%;
+  background: linear-gradient(180deg, var(--accel-neg), #fca5a5);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accel-neg) 45%, transparent);
+}
+
+.accel-tube-readout {
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+  min-height: 1.2em;
+}
+
+.accel-tube-unit {
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+/* --------------------------------------------------------------------------
+   Bottom row — tune · carousel · push-to-start
+   -------------------------------------------------------------------------- */
+
+.bottom-row {
+  position: relative;
+  z-index: 10;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 148px;
+}
+
+/* Tune fab */
+.tune-fab {
+  flex: 0 0 auto;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(127, 127, 127, 0.10);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  transition: border-color 0.2s, color 0.2s, background 0.2s, transform 0.15s;
+  align-self: center;
+}
+
+.tune-fab:active {
+  transform: scale(0.94);
+}
+
+.tune-fab.is-open {
+  color: var(--accent);
+  border-color: var(--border-accent);
+  background: var(--accent-soft);
+}
+
+.tune-icon {
+  width: 26px;
+  height: 26px;
+}
+
+/* Profile carousel — swipe, center zoom pop */
+.profile-dock {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 12%, #000 88%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 12%, #000 88%, transparent 100%);
+}
+
+.profile-carousel {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 14px 0;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.profile-carousel::-webkit-scrollbar {
+  display: none;
+}
+
+.carousel-focus-line {
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  width: 44px;
+  height: 3px;
+  border-radius: 2px;
+  transform: translateX(-50%);
+  background: var(--accent);
+  opacity: 0.55;
+  box-shadow: 0 0 12px var(--accent-glow);
+  pointer-events: none;
+}
+
+.pcard {
+  position: relative;
+  flex: 0 0 auto;
+  width: 172px;
+  height: 104px;
+  scroll-snap-align: center;
+  border-radius: var(--radius-md);
+  padding: 12px 16px 36px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 2px;
+  background: rgba(127, 127, 127, 0.08);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+  opacity: 0.6;
+  transform: scale(0.92);
+  will-change: transform, opacity;
+  transition: border-color 0.25s var(--ease-soft), box-shadow 0.25s var(--ease-soft);
+}
+
+.pcard.is-center {
+  border-color: color-mix(in srgb, var(--profile-accent, var(--accent)) 55%, transparent);
+  box-shadow:
+    0 8px 30px color-mix(in srgb, var(--profile-accent, var(--accent)) 18%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--profile-accent, var(--accent)) 25%, transparent);
+}
+
+/* Signature silhouette — original SVG art, wheel-less body ~1/3 of the
+   card height, sitting flush on the bottom edge like a ground line. */
+.pcard-art {
+  position: absolute;
+  inset: auto -6px -2px -6px;
+  width: calc(100% + 12px);
+  height: 35px;
+  color: color-mix(in srgb, var(--profile-accent, var(--accent)) 60%, var(--text-primary) 40%);
+  opacity: 0.16;
+  filter: blur(0.4px);
+  pointer-events: none;
+}
+
+.pcard.is-center .pcard-art {
+  opacity: 0.3;
+}
+
+.pcard-name {
+  position: relative;
+  z-index: 1;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+}
+
+.pcard-car {
+  position: relative;
+  z-index: 1;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.25;
+  color: var(--text-secondary);
+}
+
+/* Push-to-start — Tesla-minimal round starter */
+.start-dock {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-right: 4px;
+}
+
+/* Launch-control rev test */
+.launch-btn {
+  position: relative;
+  width: 78px;
+  height: 78px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  background:
+    radial-gradient(circle at 32% 26%, rgba(255, 255, 255, 0.08), transparent 55%),
+    linear-gradient(160deg, #14161b 0%, #0a0b0e 70%);
+  border: 1px solid var(--border-subtle);
+  opacity: 0.45;
+  transition: opacity 0.25s, transform 0.12s var(--ease-soft);
+}
+
+[data-theme="bright"] .launch-btn {
+  background:
+    radial-gradient(circle at 32% 26%, rgba(255, 255, 255, 0.85), transparent 60%),
+    linear-gradient(160deg, #f2f4f8 0%, #d7dbe2 70%);
+}
+
+.launch-btn.is-armed {
+  opacity: 1;
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+}
+
+.launch-btn:active {
+  transform: scale(0.94);
+}
+
+.lb-ring {
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  transition: border-color 0.25s, box-shadow 0.25s;
+  pointer-events: none;
+}
+
+.launch-btn.is-armed .lb-ring {
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
+}
+
+.launch-btn.is-active .lb-ring {
+  border-color: var(--warning);
+  box-shadow:
+    0 0 18px color-mix(in srgb, var(--warning) 50%, transparent),
+    inset 0 0 12px color-mix(in srgb, var(--warning) 20%, transparent);
+  animation: launch-pulse 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes launch-pulse {
+  from { opacity: 0.65; }
+  to { opacity: 1; }
+}
+
+.lb-eyebrow {
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.lb-main {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--warning);
+}
+
+.push-start {
+  position: relative;
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  background:
+    radial-gradient(circle at 32% 26%, rgba(255, 255, 255, 0.10), transparent 55%),
+    linear-gradient(160deg, #16181d 0%, #0a0b0e 70%);
+  border: 1px solid var(--border-highlight);
+  box-shadow:
+    0 14px 38px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10);
+  transition: transform 0.12s var(--ease-soft), box-shadow 0.25s var(--ease-soft);
+}
+
+[data-theme="bright"] .push-start {
+  background:
+    radial-gradient(circle at 32% 26%, rgba(255, 255, 255, 0.85), transparent 60%),
+    linear-gradient(160deg, #f2f4f8 0%, #d7dbe2 70%);
+  box-shadow:
+    0 14px 32px rgba(15, 23, 42, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.push-start:active {
+  transform: scale(0.96);
+}
+
+/* Outer status ring */
+.ps-ring {
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow:
+    0 0 14px color-mix(in srgb, var(--accent) 25%, transparent),
+    inset 0 0 12px color-mix(in srgb, var(--accent) 12%, transparent);
+  transition: border-color 0.3s, box-shadow 0.3s;
+  pointer-events: none;
+}
+
+.push-start.is-running .ps-ring {
+  border-color: color-mix(in srgb, var(--danger) 70%, transparent);
+  box-shadow:
+    0 0 20px color-mix(in srgb, var(--danger) 40%, transparent),
+    inset 0 0 14px color-mix(in srgb, var(--danger) 18%, transparent);
+}
+
+.ps-eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.ps-main {
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  line-height: 1.15;
+}
+
+.push-start.is-running .ps-main {
+  color: var(--danger);
+}
+
+.ps-status {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  transition: color 0.3s;
+}
+
+.push-start.is-running .ps-status {
+  color: var(--success);
+  text-shadow: 0 0 10px rgba(52, 211, 153, 0.5);
+}
+
+/* --------------------------------------------------------------------------
+   Drive lock — GPS mode + moving: touch controls lock so eyes stay on the
+   road; standing still >3 s (red light) unlocks. Push-to-start never locks.
+   -------------------------------------------------------------------------- */
+
+.lock-hint {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s var(--ease-soft);
+}
+
+.drive-lock .lock-hint {
+  opacity: 1;
+}
+
+.drive-lock .profile-carousel,
+.drive-lock .carousel-focus-line {
+  opacity: 0.22;
+  pointer-events: none;
+}
+
+.drive-lock .tune-fab,
+.drive-lock .launch-btn,
+.drive-lock .top-actions {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+/* --------------------------------------------------------------------------
+   Tune sheet
+   -------------------------------------------------------------------------- */
+
+.sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.28s var(--ease-soft);
+}
+
+.sheet-backdrop.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.tune-sheet {
+  position: absolute;
+  left: var(--safe-pad);
+  bottom: 16px;
+  z-index: 45;
+  width: min(400px, calc(100% - 2 * var(--safe-pad)));
+  padding: 20px 22px 22px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-panel-strong);
+  backdrop-filter: blur(var(--blur-glass));
+  -webkit-backdrop-filter: blur(var(--blur-glass));
+  border: 1px solid var(--border-glass);
+  box-shadow: var(--shadow-panel);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transform: translateY(16px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: transform 0.3s var(--ease-out), opacity 0.28s var(--ease-soft), visibility 0.3s;
+}
+
+.tune-sheet.is-open {
+  transform: translateY(0);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sheet-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.profile-chip {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  border: 1px solid var(--border-accent);
+  color: var(--accent);
+}
+
+.sheet-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  padding-top: 2px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* Sim demand slider — inert while GPS drives the speed */
+.sim-group {
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+  transition: opacity 0.25s var(--ease-soft);
+}
+
+.sim-group.is-inert {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* Sliders */
+.slider-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.slider-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.slider-readout {
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.h-slider {
+  position: relative;
+  height: 38px;
+  display: flex;
+  align-items: center;
+}
+
+.h-slider input[type="range"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  z-index: 2;
+  cursor: pointer;
+  margin: 0;
+}
+
+.h-slider-track {
+  position: relative;
+  width: 100%;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(127, 127, 127, 0.14);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+
+.h-slider-fill {
+  height: 100%;
+  width: 70%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(62, 207, 255, 0.4), #3ecfff);
+  box-shadow: 0 0 12px rgba(62, 207, 255, 0.35);
+  will-change: width;
+}
+
+/* Toggles */
+.toggle-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  min-height: 48px;
+  border-radius: var(--radius-md);
+  background: rgba(127, 127, 127, 0.10);
+  border: 1px solid var(--border-subtle);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+
+.toggle-btn.is-on {
+  color: var(--text-primary);
+  border-color: var(--border-accent);
+  background: var(--accent-soft);
+}
+
+.toggle-knob {
+  width: 34px;
+  height: 20px;
+  border-radius: var(--radius-pill);
+  background: rgba(127, 127, 127, 0.25);
+  position: relative;
+  flex-shrink: 0;
+  transition: background 0.25s var(--ease-soft);
+}
+
+.toggle-knob::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  transition: transform 0.28s var(--ease-out);
+}
+
+.toggle-btn.is-on .toggle-knob {
+  background: var(--accent);
+  box-shadow: 0 0 10px rgba(62, 207, 255, 0.45);
+}
+
+.toggle-btn.is-on .toggle-knob::after {
+  transform: translateX(14px);
+}
+
+/* --------------------------------------------------------------------------
+   Toast + Boot
+   -------------------------------------------------------------------------- */
+
+.toast-host {
+  position: absolute;
+  left: 50%;
+  bottom: 160px;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  width: min(420px, calc(100% - 32px));
+}
+
+.toast {
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-glass);
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: center;
+  box-shadow: var(--shadow-panel);
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+.boot-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: var(--bg-void);
+  transition: opacity 0.6s var(--ease-soft), visibility 0.6s;
+}
+
+.boot-overlay.is-done {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.boot-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.boot-ring {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 2px solid rgba(62, 207, 255, 0.15);
+  border-top-color: var(--accent);
+  animation: boot-spin 0.9s linear infinite;
+}
+
+.boot-title {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.boot-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+}
+
+@keyframes boot-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* --------------------------------------------------------------------------
+   Performance-lite — auto-enabled when measured rAF < 45 fps (Tesla MCU2)
+   -------------------------------------------------------------------------- */
+
+.perf-lite .tune-sheet,
+.perf-lite .toast {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.perf-lite .speed-value {
+  text-shadow: none;
+}
+
+.perf-lite .push-start,
+.perf-lite .ps-ring,
+.perf-lite .lb-ring,
+.perf-lite .pcard.is-center,
+.perf-lite .h-slider-fill,
+.perf-lite .carousel-focus-line {
+  box-shadow: none !important;
+}
+
+.perf-lite .bg-gradient {
+  background: var(--bg-deep);
+}
+
+.perf-lite .pcard-art {
+  filter: none;
+}
+
+/* --------------------------------------------------------------------------
+   Short viewports (Tesla Browser with chrome bar)
+   -------------------------------------------------------------------------- */
+
+@media (max-height: 780px) {
+  .bottom-row {
+    min-height: 128px;
+  }
+
+  .push-start {
+    width: 112px;
+    height: 112px;
+  }
+
+  .launch-btn {
+    width: 68px;
+    height: 68px;
+  }
+
+  .drive-stage {
+    padding-left: 78px;
+  }
+
+  .pcard {
+    width: 158px;
+    height: 94px;
+    padding-bottom: 32px;
+  }
+
+  .pcard-art {
+    height: 31px;
+    bottom: -2px;
+  }
+
+  .speed-value {
+    font-size: clamp(56px, 12vh, 88px);
+  }
+
+  .toast-host {
+    bottom: 140px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
