@@ -1120,6 +1120,24 @@ button {
   letter-spacing: 0.06em;
 }
 
+.boot-credit {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.sheet-credit {
+  font-size: 11px;
+}
+
+.donate-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+
 @keyframes boot-spin {
   to { transform: rotate(360deg); }
 }

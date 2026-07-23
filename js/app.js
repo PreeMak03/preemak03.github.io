@@ -24,6 +24,9 @@ import {
 /** Accel tube scale: 0 center, ±40 km/h/s ends */
 const ACCEL_TUBE_MAX = 40;
 
+/** Coffee link (Ko-fi / Buy Me a Coffee / PromptPay page). Empty = hidden. */
+const DONATE_URL = '';
+
 const hud = {
   rpmEl: null,
   fillPos: null,
@@ -330,6 +333,12 @@ function init() {
   });
 
   audio.setProfile(getProfileById(state.profileId));
+
+  const donate = $('#donate-link');
+  if (donate && DONATE_URL) {
+    donate.href = DONATE_URL;
+    donate.hidden = false;
+  }
 
   ticker.add((dt) => tick(dt));
   setMode('sim', { silent: true }); // default sim so idle is easy to hear
