@@ -657,6 +657,51 @@ export const SOUND_PROFILES = [
       characterMid: 0.55,
     },
   },
+  {
+    id: 's85-v10',
+    name: 'S85 V10',
+    tag: 'Sweet V10',
+    car: 'BMW M5 E60',
+    accent: 'rgba(37, 99, 235, 0.55)',
+    engine: {
+      type: 'ice',
+      cylinders: 10,
+      idleRpm: 700,
+      redlineRpm: 8250,
+      gears: [3.7, 2.4, 1.75, 1.35, 1.05, 0.85],
+      rpmCurve: 1.0,
+      // Analyzed from a real S85 bank: clean harmonics, revs high & screams
+      revLo: 0.14,
+      revHi: 0.5,
+      revPull: 0.96,
+    },
+    tone: {
+      // Smooth, musical V10 — clean stacked harmonics that brighten with revs
+      harmonics: [0, 1, 0.7, 0.52, 0.42, 0.36, 0.3, 0.26, 0.22, 0.18, 0.15, 0.12],
+      body: 0.6,
+      mid: 0.62,
+      high: 0.92,
+      sub: 0.34,
+      noise: 0.08,
+      metallic: 0.4,
+      scream: 0.95,
+      turbo: 0,
+      turboLag: 0,
+      crackle: 0.08,
+      lope: 0.06,
+      boxer: 0,
+      rotary: 0,
+      electric: 0,
+      exhaustPulse: 0.35,
+      drive: 0.34,
+      filterIdle: 620,
+      filterRedline: 7600,
+      resonance: 0.6,
+      volume: 1.02,
+      idlePresence: 0.58,
+      characterMid: 0.62,
+    },
+  },
 ];
 
 export function getProfileById(id) {
@@ -667,7 +712,7 @@ export function getProfileById(id) {
  * Profiles shown in the carousel right now. Others stay in the codebase but
  * are hidden until tuned. Add an id here to bring a profile back.
  */
-const ACTIVE_IDS = ['classic-muscle', 'rotary-rx7'];
+const ACTIVE_IDS = ['classic-muscle', 'rotary-rx7', 's85-v10'];
 
 export function getVisibleProfiles() {
   const set = new Set(ACTIVE_IDS);

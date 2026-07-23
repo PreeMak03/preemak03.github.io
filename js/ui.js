@@ -83,6 +83,7 @@ const PROFILE_ART = {
   'rotary-rx7': 'rx7',
   'electric-hyper': 'ev',
   'classic-muscle': 'classic',
+  's85-v10': 'sedanwing',
 };
 
 function artSvg(profileId) {
