@@ -85,18 +85,21 @@ export function rpmInGear({
   revLo = REV_DEFAULT.lo,
   revHi = REV_DEFAULT.hi,
   pull = REV_DEFAULT.pull,
+  revCruise,
 }) {
   const pos = gearProgress(speedKmh, gear); // 0 at gear floor → 1 at shift point
   const span = redline - idle;
 
-  // Light-throttle sweep from just-upshifted (revLo) to ready-to-shift (revHi)
-  const cruiseN = revLo + pos * (revHi - revLo);
+  // OFF-throttle the engine coasts LOW (quiet cruise) — not up at the shift
+  // point. This is why a real car goes near-silent holding speed after a pull.
+  const cruiseTop = revCruise != null ? revCruise : revLo + (revHi - revLo) * 0.38;
+  const cruiseN = revLo + pos * (cruiseTop - revLo);
   // Under throttle, climb faster and higher toward the pull ceiling
   const pullN = revLo + Math.pow(pos, 0.82) * (pull - revLo);
   let n = cruiseN + accelLoad * (pullN - cruiseN);
 
   // Lift-off eases revs (engine-braking feel)
-  n -= decelLoad * 0.1;
+  n -= decelLoad * 0.08;
 
   // Launch in first gear can dig deeper and rev harder
   if (gear === 1 && accelLoad > 0.3) {

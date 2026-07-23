@@ -964,13 +964,19 @@ export class AudioEngine {
       return;
     }
 
-    // --- Gear from road speed (5-speed, 120 = G5 top) ---
-    const nextGear = resolveGear(speed, this._gear, accelLoad, decelLoad);
+    // --- Gear from road speed, rate-limited so hard accel can't machine-gun ---
+    this._sinceShift = (this._sinceShift || 0) + dt;
+    let nextGear = resolveGear(speed, this._gear, accelLoad, decelLoad);
+    // Row one gear at a time (no multi-gear jumps that skip the rev-up)
+    if (nextGear > this._gear + 1) nextGear = this._gear + 1;
+    else if (nextGear < this._gear - 1) nextGear = this._gear - 1;
 
-    if (nextGear !== this._gear && !this._shifting) {
+    const MIN_DWELL = 0.26; // seconds between shifts — the "rowing" cadence
+    if (nextGear !== this._gear && !this._shifting && this._sinceShift > MIN_DWELL) {
       const up = nextGear > this._gear;
       this._prevGear = this._gear;
       this._gear = nextGear;
+      this._sinceShift = 0;
       this._shifting = true;
       this._shiftTimer = up ? 0.12 : 0.09;
       this._gearBias = gearToneBias(this._gear);
@@ -1072,6 +1078,15 @@ export class AudioEngine {
     const aNorm = clamp(this._accelSmooth / this.accelRefKmhps, -1.4, 1.4);
     const accelLoad = clamp(aNorm, 0, 1);
     const decelLoad = clamp(-aNorm, 0, 1);
+
+    // Load-driven loudness — a real engine goes near-silent coasting at speed.
+    // Effort punches in on throttle, fades over ~0.4s on lift-off.
+    const effTarget = this._revUntil ? 1 : accelLoad;
+    const prevEff = this._effort ?? 0;
+    this._effort = damp(prevEff, effTarget, effTarget > prevEff ? 14 : 3.2, dt);
+    // Full when stopped (idle) or on throttle; drops to a faint hum when
+    // moving and coasting.
+    const cruiseGate = speed > 4 ? 0.28 + 0.72 * this._effort : 1;
 
     // Turbo spool: follows accel load (boost builds when pulling)
     const turboT =
@@ -1199,7 +1214,7 @@ export class AudioEngine {
         idleWobble *
         (0.8 + this.bassPresence * 0.45) *
         procDuck;
-      this._layers.low.gain.gain.setTargetAtTime(lowG * 0.75, t, rotIdle ? 0.02 : tau);
+      this._layers.low.gain.gain.setTargetAtTime(lowG * 0.75 * cruiseGate, t, rotIdle ? 0.02 : tau);
       this._layers.low.filter.frequency.setTargetAtTime(
         380 +
           rpmNorm * 1100 +
@@ -1225,7 +1240,7 @@ export class AudioEngine {
         procDuck;
       // Rotary idle rasp: each brap burst briefly opens the buzzy high layer
       const highRasp = rotIdle ? rotaryIdleBurst * 0.16 * vol : 0;
-      this._layers.high.gain.gain.setTargetAtTime(highG * 0.42 + highRasp, t, rotIdle ? 0.02 : tau);
+      this._layers.high.gain.gain.setTargetAtTime(highG * 0.42 * cruiseGate + highRasp, t, rotIdle ? 0.02 : tau);
       this._layers.high.filter.frequency.setTargetAtTime(
         1000 + rpmNorm * 3000 + tone.metallic * 700 + tunnel * 500,
         t,
@@ -1272,7 +1287,7 @@ export class AudioEngine {
         vol *
         // Rotary brap signature swells with revs
         (1 + (tone.boxer || 0) * 0.15 + (tone.rotary || 0) * rpmNorm * 0.6);
-      this._layers.scream.gain.gain.setTargetAtTime(sc, t, tau);
+      this._layers.scream.gain.gain.setTargetAtTime(sc * cruiseGate, t, tau);
       const fire = (this._rpm / 60) * ((eng.cylinders || 6) / 2);
 
       // Formant tracks 2nd firing order — the "rasp" that opens under load
