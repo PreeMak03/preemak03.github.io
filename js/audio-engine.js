@@ -950,10 +950,12 @@ export class AudioEngine {
       this._rpmSmooth = damp(this._rpmSmooth, idle + hunt + camLope, 7, dt);
       this._rpm = this._rpmSmooth;
       if ((tone.rotary || 0) > 0.5) {
-        // Rotary "panting" idle — fast, slightly irregular huffing added
-        // after the damp so it isn't smoothed away.
-        const depth = 0.7 + 0.3 * Math.sin(this._idlePhase * 3.6);
-        this._rpm += Math.sin(this._idlePhase * 7.2) * 38 * depth;
+        // Rotary "panting" idle — rate/depth matched to a real RX-7 FD idle
+        // (~4.8 Hz pulse, ~2.2 Hz irregular depth). Added after the damp so
+        // it isn't smoothed away.
+        const p = this._pantPhase || 0;
+        const depth = 0.65 + 0.35 * Math.sin(p * (2 * Math.PI * 2.2));
+        this._rpm += Math.sin(p * (2 * Math.PI * 4.8)) * 40 * depth;
       }
       this._gear = 1;
       this._prevGear = 1;
@@ -1052,6 +1054,10 @@ export class AudioEngine {
     const smoothL = this.smoothFilter ? 6 : 16;
     this._speedSmooth = damp(this._speedSmooth, this._speed, smoothL, dt);
 
+    // Dedicated real-time clock for the rotary idle pant (Hz-accurate, not
+    // tangled with _idlePhase which advances at an ambiguous rate).
+    this._pantPhase = (this._pantPhase || 0) + dt;
+
     this._updateRpmGear(dt);
 
     const eng = this.profile.engine;
@@ -1135,9 +1141,11 @@ export class AudioEngine {
       Math.sin(this._idlePhase * 2.4) * 0.04 * (0.5 + (tone.lope || 0)) +
       Math.sin(this._idlePhase * 6.1) * 0.025 * (tone.lope || 0);
     if ((tone.rotary || 0) > 0.5 && speed < 3) {
-      // Audible rotary huffing — amplitude pulses in step with the RPM pant
-      const depth = 0.7 + 0.3 * Math.sin(this._idlePhase * 3.6);
-      idleWobble += Math.sin(this._idlePhase * 7.2) * 0.13 * depth;
+      // Audible rotary huffing — deep amplitude pulse in step with the RPM
+      // pant (real RX-7 idle envelope swings hard, ~4.8 Hz).
+      const p = this._pantPhase || 0;
+      const depth = 0.65 + 0.35 * Math.sin(p * (2 * Math.PI * 2.2));
+      idleWobble += Math.sin(p * (2 * Math.PI * 4.8)) * 0.2 * depth;
     }
 
     const vol = tone.volume || 1;
