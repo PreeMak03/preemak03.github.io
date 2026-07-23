@@ -5,11 +5,12 @@
  * deployed updates in the background.
  */
 
-const CACHE = 'tas-v2';
+const CACHE = 'tas-v3';
 
 const ASSETS = [
   './',
   './index.html',
+  './404.html',
   './css/main.css',
   './css/animations.css',
   './js/app.js',
@@ -55,7 +56,10 @@ self.addEventListener('fetch', (e) => {
           }
           return res;
         })
-        .catch(() => cached);
+        .catch(() =>
+          // Offline: any navigation (incl. /tas or wrong-case paths) → the app
+          cached || (e.request.mode === 'navigate' ? caches.match('./index.html') : undefined)
+        );
       return cached || network;
     })
   );
