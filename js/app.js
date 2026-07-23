@@ -8,6 +8,7 @@ import { getProfileById } from './profiles.js';
 import { AudioEngine } from './audio-engine.js';
 import { GeolocationService } from './geolocation.js';
 import { VehiclePhysics, SIM_RATE } from './vehicle-physics.js';
+import { startOnboarding } from './onboarding.js';
 import {
   renderProfiles,
   SpeedDisplay,
@@ -344,6 +345,9 @@ function init() {
   setMode('sim', { silent: true }); // default sim so idle is easy to hear
   finishBoot();
 
+  // First-run coach marks, after the boot overlay clears
+  window.setTimeout(() => startOnboarding(), 1400);
+
   // Offline cache — skip on localhost so dev never serves stale files
   if (
     'serviceWorker' in navigator &&
@@ -434,7 +438,15 @@ function tick(dt) {
 }
 
 // Debug handle for in-car console / testing (harmless in production)
-window.TAS = { audio, state, physics, perf, driveLock, updateDriveLock };
+window.TAS = {
+  audio,
+  state,
+  physics,
+  perf,
+  driveLock,
+  updateDriveLock,
+  onboard: () => startOnboarding({ force: true }),
+};
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);

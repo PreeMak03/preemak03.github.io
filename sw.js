@@ -5,7 +5,7 @@
  * deployed updates in the background.
  */
 
-const CACHE = 'tas-v1';
+const CACHE = 'tas-v2';
 
 const ASSETS = [
   './',
@@ -21,6 +21,7 @@ const ASSETS = [
   './js/vehicle-physics.js',
   './js/geolocation.js',
   './js/sample-pack.js',
+  './js/onboarding.js',
 ];
 
 self.addEventListener('install', (e) => {
