@@ -840,6 +840,19 @@ export class AudioEngine {
     const redline = eng.redlineRpm || 7500;
     this._gearCount = isEv ? 1 : GEAR_COUNT;
 
+    // Eval hook: pin a steady RPM (A/B comparison against real samples)
+    if (this._holdRpm != null) {
+      this._rpm = this._rpmSmooth = this._holdRpm;
+      this._gear = this._gear || 3;
+      this._gearBias = gearToneBias(this._gear);
+      this._throttle = 1;
+      this._brake = 0;
+      this._load = 1;
+      this._accelSmooth = this.accelRefKmhps;
+      this._driveState = 'pull';
+      return;
+    }
+
     if (this._shifting) {
       this._shiftTimer -= dt;
       if (this._shiftTimer <= 0) this._shifting = false;
@@ -1081,7 +1094,7 @@ export class AudioEngine {
 
     // Load-driven loudness — a real engine goes near-silent coasting at speed.
     // Effort punches in on throttle, fades over ~0.4s on lift-off.
-    const effTarget = this._revUntil ? 1 : accelLoad;
+    const effTarget = this._revUntil || this._holdRpm != null ? 1 : accelLoad;
     const prevEff = this._effort ?? 0;
     this._effort = damp(prevEff, effTarget, effTarget > prevEff ? 14 : 3.2, dt);
     // Full when stopped (idle) or on throttle; drops to a faint hum when
