@@ -453,16 +453,18 @@ export class AudioEngine {
         subHeavy: 0.45 + tone.sub * 0.55,
         grit: 0.25 + tone.noise * 0.5,
       });
+      const rot = tone.rotary > 0.5 ? tone.rotary : 0;
       high = this._makeEngineBuffer({
-        pulses: Math.round(36 + (eng.cylinders || 6) * 3),
+        // Rotary: denser pulses + extra metallic/grit = the buzzy "brap"
+        pulses: Math.round(36 + (eng.cylinders || 6) * 3 + rot * 26),
         thump: 0.3 + tone.sub * 0.25,
         rasp: 0.5 + tone.scream * 0.45,
         hollow: 0.35,
-        metallic: 0.3 + tone.metallic * 0.7,
+        metallic: 0.3 + tone.metallic * 0.7 + rot * 0.15,
         uneven: tone.boxer * 0.7 + tone.rotary * 0.5,
         width: 0.008 + (1 - tone.scream) * 0.006,
         subHeavy: 0.25,
-        grit: 0.35 + tone.noise * 0.4 + tone.rotary * 0.2,
+        grit: 0.35 + tone.noise * 0.4 + tone.rotary * 0.35,
       });
     }
 
@@ -947,6 +949,12 @@ export class AudioEngine {
         Math.sin(this._idlePhase * (3.5 + (tone.lope || 0) * 4)) * 40 * (tone.lope || 0);
       this._rpmSmooth = damp(this._rpmSmooth, idle + hunt + camLope, 7, dt);
       this._rpm = this._rpmSmooth;
+      if ((tone.rotary || 0) > 0.5) {
+        // Rotary "panting" idle — fast, slightly irregular huffing added
+        // after the damp so it isn't smoothed away.
+        const depth = 0.7 + 0.3 * Math.sin(this._idlePhase * 3.6);
+        this._rpm += Math.sin(this._idlePhase * 7.2) * 38 * depth;
+      }
       this._gear = 1;
       this._prevGear = 1;
       this._gearBias = gearToneBias(1);
@@ -1118,10 +1126,15 @@ export class AudioEngine {
     const idleAlive = 0.38 + (tone.idlePresence || 0.5) * 0.55;
     // Dynamic idle wobble
     this._idlePhase += dt;
-    const idleWobble =
+    let idleWobble =
       1 +
       Math.sin(this._idlePhase * 2.4) * 0.04 * (0.5 + (tone.lope || 0)) +
       Math.sin(this._idlePhase * 6.1) * 0.025 * (tone.lope || 0);
+    if ((tone.rotary || 0) > 0.5 && speed < 3) {
+      // Audible rotary huffing — amplitude pulses in step with the RPM pant
+      const depth = 0.7 + 0.3 * Math.sin(this._idlePhase * 3.6);
+      idleWobble += Math.sin(this._idlePhase * 7.2) * 0.13 * depth;
+    }
 
     const vol = tone.volume || 1;
     const shiftMute = this._shifting ? 0.55 : 1;
@@ -1235,7 +1248,8 @@ export class AudioEngine {
           tunnel * 0.025 * (tone.metallic || 0.3)) *
         (0.4 + this.edge * 0.65) *
         vol *
-        (1 + (tone.boxer || 0) * 0.15);
+        // Rotary brap signature swells with revs
+        (1 + (tone.boxer || 0) * 0.15 + (tone.rotary || 0) * rpmNorm * 0.6);
       this._layers.scream.gain.gain.setTargetAtTime(sc, t, tau);
       const fire = (this._rpm / 60) * ((eng.cylinders || 6) / 2);
 

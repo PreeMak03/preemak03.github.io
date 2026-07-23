@@ -545,8 +545,8 @@ export const SOUND_PROFILES = [
       mid: 0.8,
       high: 1.0,
       sub: 0.2,
-      noise: 0.2,
-      metallic: 0.65,
+      noise: 0.3,
+      metallic: 0.72,
       scream: 1.0,
       turbo: 0.8,
       turboLag: 0.45,
@@ -562,8 +562,8 @@ export const SOUND_PROFILES = [
       filterRedline: 9500,
       resonance: 1.0,
       volume: 1.0,
-      /* Rotary idles quiet and buzzy, then the wail takes over */
-      idlePresence: 0.6,
+      /* Rotary idles with a buzzy "pant", then the brap wail takes over up top */
+      idlePresence: 0.64,
       characterMid: 0.4,
     },
   },
