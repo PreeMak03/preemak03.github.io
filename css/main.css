@@ -1102,6 +1102,28 @@ button {
   box-shadow: var(--shadow-panel);
 }
 
+.onb-tip.is-center {
+  width: min(340px, calc(100vw - 32px));
+  text-align: center;
+}
+
+.onb-tip-icon {
+  display: flex;
+  justify-content: center;
+  color: var(--accent);
+  margin-bottom: 10px;
+  filter: drop-shadow(0 0 10px var(--accent-glow));
+}
+
+.onb-tip-icon[hidden] {
+  display: none;
+}
+
+.onb-tip.is-center .onb-tip-foot {
+  justify-content: center;
+  gap: 14px;
+}
+
 .onb-tip-title {
   font-size: 16px;
   font-weight: 700;

@@ -33,14 +33,22 @@ const STEPS = [
     body: 'เปิดให้เสียงวิ่งตามความเร็ว GPS จริง · ปิดไว้ = โหมด Sim ปรับเองในตั้งค่า',
     pad: 6,
   },
+  {
+    center: true,
+    title: 'เปิดครั้งหน้าให้ง่าย',
+    body: 'แตะไอคอน ☆ ในแถบที่อยู่เพื่อ Bookmark หน้านี้ไว้ · ครั้งต่อไปเปิดแตะเดียว ไม่ต้องพิมพ์ใหม่ และใช้ได้แม้เน็ตไม่ดี',
+  },
 ];
+
+const BOOKMARK_SVG =
+  '<svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-5-7 5V4a1 1 0 0 1 1-1Z"/></svg>';
 
 export function startOnboarding({ force = false } = {}) {
   try {
     if (!force && localStorage.getItem(KEY)) return;
   } catch (_) {}
 
-  const steps = STEPS.filter((s) => document.querySelector(s.sel));
+  const steps = STEPS.filter((s) => !s.sel || document.querySelector(s.sel));
   if (!steps.length) return;
 
   // Never stack overlays (e.g. replay while one is still fading)
@@ -51,6 +59,7 @@ export function startOnboarding({ force = false } = {}) {
   root.innerHTML = `
     <div class="onb-hole" id="onb-hole"></div>
     <div class="onb-tip" id="onb-tip">
+      <div class="onb-tip-icon" id="onb-icon" aria-hidden="true"></div>
       <div class="onb-tip-title" id="onb-title"></div>
       <div class="onb-tip-body" id="onb-body"></div>
       <div class="onb-tip-foot">
@@ -64,6 +73,7 @@ export function startOnboarding({ force = false } = {}) {
 
   const hole = root.querySelector('#onb-hole');
   const tip = root.querySelector('#onb-tip');
+  const iconEl = root.querySelector('#onb-icon');
   const titleEl = root.querySelector('#onb-title');
   const bodyEl = root.querySelector('#onb-body');
   const stepEl = root.querySelector('#onb-step');
@@ -83,23 +93,37 @@ export function startOnboarding({ force = false } = {}) {
 
   const render = () => {
     const step = steps[i];
-    const el = document.querySelector(step.sel);
-    if (!el) {
-      i += 1;
-      if (i >= steps.length) return done();
-      return render();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    let rect = null;
+    if (step.center) {
+      // No target: collapse the spotlight to a point so the dim fills the
+      // screen, and show a centered card with a bookmark icon.
+      hole.style.left = `${vw / 2}px`;
+      hole.style.top = `${vh / 2}px`;
+      hole.style.width = '0px';
+      hole.style.height = '0px';
+      iconEl.innerHTML = BOOKMARK_SVG;
+      iconEl.hidden = false;
+      tip.classList.add('is-center');
+    } else {
+      const el = document.querySelector(step.sel);
+      if (!el) {
+        i += 1;
+        if (i >= steps.length) return done();
+        return render();
+      }
+      rect = el.getBoundingClientRect();
+      const pad = step.pad ?? 8;
+      hole.style.left = `${rect.left - pad}px`;
+      hole.style.top = `${rect.top - pad}px`;
+      hole.style.width = `${rect.width + pad * 2}px`;
+      hole.style.height = `${rect.height + pad * 2}px`;
+      hole.style.borderRadius = step.radius || '16px';
+      iconEl.hidden = true;
+      tip.classList.remove('is-center');
     }
-    const r = el.getBoundingClientRect();
-    const pad = step.pad ?? 8;
-    const x = r.left - pad;
-    const y = r.top - pad;
-    const w = r.width + pad * 2;
-    const h = r.height + pad * 2;
-    hole.style.left = `${x}px`;
-    hole.style.top = `${y}px`;
-    hole.style.width = `${w}px`;
-    hole.style.height = `${h}px`;
-    hole.style.borderRadius = step.radius || '16px';
 
     titleEl.textContent = step.title;
     bodyEl.textContent = step.body;
@@ -112,15 +136,19 @@ export function startOnboarding({ force = false } = {}) {
     tip.style.top = '0px';
     const tw = tip.offsetWidth;
     const th = tip.offsetHeight;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    let tx = r.left + r.width / 2 - tw / 2;
-    tx = Math.max(12, Math.min(tx, vw - tw - 12));
-    const above = y - th - 14;
-    const below = y + h + 14;
-    const ty = above > 12 ? above : Math.min(below, vh - th - 12);
-    tip.style.left = `${tx}px`;
-    tip.style.top = `${ty}px`;
+    if (step.center) {
+      tip.style.left = `${(vw - tw) / 2}px`;
+      tip.style.top = `${(vh - th) / 2}px`;
+    } else {
+      const pad = step.pad ?? 8;
+      let tx = rect.left + rect.width / 2 - tw / 2;
+      tx = Math.max(12, Math.min(tx, vw - tw - 12));
+      const above = rect.top - pad - th - 14;
+      const below = rect.bottom + pad + 14;
+      const ty = above > 12 ? above : Math.min(below, vh - th - 12);
+      tip.style.left = `${tx}px`;
+      tip.style.top = `${ty}px`;
+    }
     tip.style.visibility = 'visible';
   };
 

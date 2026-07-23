@@ -5,12 +5,13 @@
  * deployed updates in the background.
  */
 
-const CACHE = 'tas-v3';
+const CACHE = 'tas-v4';
 
 const ASSETS = [
   './',
   './index.html',
   './404.html',
+  './favicon.svg',
   './css/main.css',
   './css/animations.css',
   './js/app.js',
