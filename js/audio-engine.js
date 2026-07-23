@@ -973,22 +973,23 @@ export class AudioEngine {
       this._shiftTimer = up ? 0.12 : 0.09;
       this._gearBias = gearToneBias(this._gear);
       this._fireShiftClick(!up);
-      // Land on gear-specific RPM floor (not “same song from the start”)
+      // Upshift lands low (revLo) = audible drop; downshift blips revs up
       if (up) {
-        const land = shiftLandingRpm(this._gear, idle, redline);
+        const land = shiftLandingRpm(this._gear, idle, redline, eng.revLo);
         this._rpmSmooth = land;
         this._rpm = land;
       } else {
-        // Downshift: rev-match into higher band of lower gear
-        const land = shiftLandingRpm(this._gear, idle, redline) * 1.15;
-        this._rpmSmooth = Math.min(redline * 0.9, Math.max(this._rpmSmooth, land));
+        // Downshift rev-match: jump up toward the lower gear's high band
+        const revHi = eng.revHi ?? 0.7;
+        const land = idle + (redline - idle) * Math.min(0.95, revHi * 0.95);
+        this._rpmSmooth = Math.min(redline * 0.95, Math.max(this._rpmSmooth, land));
         this._rpm = this._rpmSmooth;
       }
     }
 
     this._gearBias = gearToneBias(this._gear);
 
-    // RPM target = sweep inside current gear band
+    // RPM target = sweep inside current gear band (per-profile rev character)
     let targetRpm = rpmInGear({
       speedKmh: speed,
       gear: this._gear,
@@ -996,6 +997,9 @@ export class AudioEngine {
       redline,
       accelLoad,
       decelLoad,
+      revLo: eng.revLo,
+      revHi: eng.revHi,
+      pull: eng.revPull,
     });
 
     // During shift flash: soft torque-cut RPM settle

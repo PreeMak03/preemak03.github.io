@@ -4,7 +4,7 @@
  */
 
 import { clamp } from './animations.js';
-import { SOUND_PROFILES } from './profiles.js';
+import { getVisibleProfiles } from './profiles.js';
 
 export function $(sel, root = document) {
   return root.querySelector(sel);
@@ -100,7 +100,7 @@ export function renderProfiles(scroller, activeId, onSelect) {
   const cards = [];
   let currentId = activeId;
 
-  SOUND_PROFILES.forEach((p) => {
+  getVisibleProfiles().forEach((p) => {
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'pcard' + (p.id === activeId ? ' is-selected' : '');

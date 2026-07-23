@@ -124,7 +124,7 @@ function initThemeToggle() {
 
 const state = {
   mode: 'geo', // 'geo' | 'sim'
-  profileId: 'na-v12',
+  profileId: 'classic-muscle',
   /** Fader demand (simulation target) */
   targetSpeed: 0,
   geoSpeed: 0,
@@ -334,6 +334,8 @@ function init() {
   });
 
   audio.setProfile(getProfileById(state.profileId));
+  const initName = $('#active-profile-name');
+  if (initName) initName.textContent = getProfileById(state.profileId).name;
 
   const donate = $('#donate-link');
   if (donate && DONATE_URL) {

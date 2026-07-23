@@ -537,6 +537,10 @@ export const SOUND_PROFILES = [
       redlineRpm: 8500,
       gears: [3.6, 2.35, 1.65, 1.25, 1.0, 0.82],
       rpmCurve: 1.08,
+      // Rotary screamer: revs high, brap all the way to redline
+      revLo: 0.24,
+      revHi: 0.8,
+      revPull: 1.0,
     },
     tone: {
       // High, buzzy rotary wail — strong high harmonics
@@ -621,6 +625,10 @@ export const SOUND_PROFILES = [
       redlineRpm: 5800,
       gears: [3.2, 2.0, 1.4, 1.05, 0.85],
       rpmCurve: 0.8,
+      // Stage-3 lazy muscle: cruise ~1100 rpm, shift ~2500, digs to ~4600 flat-out
+      revLo: 0.1,
+      revHi: 0.37,
+      revPull: 0.78,
     },
     tone: {
       // Cammed lopey idle + lazy thunder
@@ -652,6 +660,17 @@ export const SOUND_PROFILES = [
 ];
 
 export function getProfileById(id) {
-  return SOUND_PROFILES.find((p) => p.id === id) || SOUND_PROFILES[0];
+  return SOUND_PROFILES.find((p) => p.id === id) || getVisibleProfiles()[0];
+}
+
+/**
+ * Profiles shown in the carousel right now. Others stay in the codebase but
+ * are hidden until tuned. Add an id here to bring a profile back.
+ */
+const ACTIVE_IDS = ['classic-muscle', 'rotary-rx7'];
+
+export function getVisibleProfiles() {
+  const set = new Set(ACTIVE_IDS);
+  return SOUND_PROFILES.filter((p) => set.has(p.id));
 }
 
