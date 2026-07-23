@@ -1140,12 +1140,19 @@ export class AudioEngine {
       1 +
       Math.sin(this._idlePhase * 2.4) * 0.04 * (0.5 + (tone.lope || 0)) +
       Math.sin(this._idlePhase * 6.1) * 0.025 * (tone.lope || 0);
-    if ((tone.rotary || 0) > 0.5 && speed < 3) {
-      // Audible rotary huffing — deep amplitude pulse in step with the RPM
-      // pant (real RX-7 idle envelope swings hard, ~4.8 Hz).
+    // Rotary idle = raspy "brap...brap...brap" bursts, not a smooth huff.
+    const rotIdle = (tone.rotary || 0) > 0.5 && speed < 3;
+    let rotaryIdleBurst = 0;
+    if (rotIdle) {
       const p = this._pantPhase || 0;
-      const depth = 0.65 + 0.35 * Math.sin(p * (2 * Math.PI * 2.2));
-      idleWobble += Math.sin(p * (2 * Math.PI * 4.8)) * 0.2 * depth;
+      // Two slightly detuned pulses → rough, uneven spacing; sharpened into
+      // distinct bursts with gaps between (each burst = one raspy "brap").
+      const raw = Math.max(
+        Math.sin(p * (2 * Math.PI * 4.8)),
+        Math.sin(p * (2 * Math.PI * 5.7) + 0.6) * 0.7
+      );
+      rotaryIdleBurst = Math.pow(Math.max(0, raw), 2.4);
+      idleWobble = 0.58 + 0.6 * rotaryIdleBurst; // body punches on each brap
     }
 
     const vol = tone.volume || 1;
@@ -1192,7 +1199,7 @@ export class AudioEngine {
         idleWobble *
         (0.8 + this.bassPresence * 0.45) *
         procDuck;
-      this._layers.low.gain.gain.setTargetAtTime(lowG * 0.75, t, tau);
+      this._layers.low.gain.gain.setTargetAtTime(lowG * 0.75, t, rotIdle ? 0.02 : tau);
       this._layers.low.filter.frequency.setTargetAtTime(
         380 +
           rpmNorm * 1100 +
@@ -1216,7 +1223,9 @@ export class AudioEngine {
         shiftMute *
         (0.5 + this.edge * 0.55) *
         procDuck;
-      this._layers.high.gain.gain.setTargetAtTime(highG * 0.42, t, tau);
+      // Rotary idle rasp: each brap burst briefly opens the buzzy high layer
+      const highRasp = rotIdle ? rotaryIdleBurst * 0.16 * vol : 0;
+      this._layers.high.gain.gain.setTargetAtTime(highG * 0.42 + highRasp, t, rotIdle ? 0.02 : tau);
       this._layers.high.filter.frequency.setTargetAtTime(
         1000 + rpmNorm * 3000 + tone.metallic * 700 + tunnel * 500,
         t,
@@ -1228,10 +1237,11 @@ export class AudioEngine {
         (0.01 +
           accelLoad * 0.14 * (0.5 + tone.noise) +
           tunnel * 0.04 +
-          rpmNorm * 0.02) *
+          rpmNorm * 0.02 +
+          (rotIdle ? rotaryIdleBurst * 0.05 : 0)) *
           vol,
         t,
-        tau
+        rotIdle ? 0.02 : tau
       );
       this._layers.intake.filter.frequency.setTargetAtTime(
         1000 + accelLoad * 2800 + rpmNorm * 800,
