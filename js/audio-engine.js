@@ -1008,13 +1008,14 @@ export class AudioEngine {
         const land = shiftLandingRpm(this._gear, idle, redline, eng.revLo);
         this._rpmSmooth = land;
         this._rpm = land;
-      } else {
-        // Downshift rev-match: jump up toward the lower gear's high band
+      } else if (accelLoad > 0.25) {
+        // Sporty downshift UNDER THROTTLE: blip the revs up (rev-match).
         const revHi = eng.revHi ?? 0.7;
-        const land = idle + (redline - idle) * Math.min(0.95, revHi * 0.95);
+        const land = idle + (redline - idle) * Math.min(0.95, revHi * 0.9);
         this._rpmSmooth = Math.min(redline * 0.95, Math.max(this._rpmSmooth, land));
         this._rpm = this._rpmSmooth;
       }
+      // else: coasting/braking downshift — let the revs ease down, no rev-up hum
     }
 
     this._gearBias = gearToneBias(this._gear);
@@ -1117,9 +1118,10 @@ export class AudioEngine {
       0,
       1
     );
-    const DYN_DB = 20;
+    const DYN_DB = 22;
     let dynVol = Math.pow(10, (-DYN_DB * (1 - driveEnergy)) / 20);
-    if (speed < 4) dynVol = Math.max(dynVol, 0.5); // idle stays present when parked
+    // Idle presence eases in as you roll to a stop — no abrupt jump into a hum
+    if (speed < 4) dynVol = Math.max(dynVol, (1 - speed / 4) * 0.4 + 0.1);
     if (this.dynGain) {
       this.dynGain.gain.setTargetAtTime(dynVol, this.ctx.currentTime, 0.06);
     }

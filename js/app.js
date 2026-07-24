@@ -60,13 +60,15 @@ function initHud() {
 function updateAccelTube(accelKmhps) {
   const max = ACCEL_TUBE_MAX;
   const target = clamp(accelKmhps, -max, max);
-  hud._accelDisp = (hud._accelDisp || 0) + (target - (hud._accelDisp || 0)) * 0.2;
+  // Smooth the needle so each per-second GPS value glides (and drops back to
+  // 0 smoothly when acceleration ends) instead of snapping.
+  hud._accelDisp = (hud._accelDisp || 0) + (target - (hud._accelDisp || 0)) * 0.15;
   const a = hud._accelDisp;
 
-  // Perceptual curve: pow<1 lifts small values so the tube feels alive
-  const norm = Math.sign(a) * Math.pow(Math.min(1, Math.abs(a) / max), 0.72);
-  if (hud.fillPos) hud.fillPos.style.height = `${a > 0 ? norm * 50 : 0}%`;
-  if (hud.fillNeg) hud.fillNeg.style.height = `${a < 0 ? -norm * 50 : 0}%`;
+  // Honest linear scale: full tube = ±max, so a delta of 5 shows 5/max.
+  const frac = Math.min(1, Math.abs(a) / max);
+  if (hud.fillPos) hud.fillPos.style.height = `${a > 0 ? frac * 50 : 0}%`;
+  if (hud.fillNeg) hud.fillNeg.style.height = `${a < 0 ? frac * 50 : 0}%`;
   if (hud.readout) {
     const sign = a > 0.05 ? '+' : '';
     hud.readout.textContent = `${sign}${Math.round(a)}`;
