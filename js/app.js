@@ -347,7 +347,17 @@ function init() {
   });
 
   geo.onUpdate((payload) => {
-    state.geoSpeed = payload.speedKmh || 0;
+    const newSpeed = payload.speedKmh || 0;
+    // Real acceleration = Δspeed over the actual GPS sample interval (~1 s),
+    // NOT per render frame. Computing per-frame made a +1 km/h fix spike to
+    // ~60 km/h/s and peg the tube.
+    const nowMs = performance.now();
+    const gdt = state.lastGeoMs ? (nowMs - state.lastGeoMs) / 1000 : 0;
+    if (gdt > 0.1 && gdt < 5) {
+      state.geoAccel = (newSpeed - state.geoSpeed) / gdt;
+    }
+    state.lastGeoMs = nowMs;
+    state.geoSpeed = newSpeed;
     state.geoAccuracy = payload.accuracy;
     setGpsStatus(payload.status);
     if (payload.status === 'denied') {
@@ -411,17 +421,16 @@ function tick(dt) {
   const now = performance.now();
 
   if (state.mode === 'geo') {
-    // GPS: raw speed; accel = Δspeed/wallDt for audio load
-    if (!lastPhysicsWall) lastPhysicsWall = now;
-    const wallDt = Math.min(0.1, Math.max(0.001, (now - lastPhysicsWall) / 1000));
-    lastPhysicsWall = now;
-
-    const prev = state.activeSpeed;
-    state.activeSpeed = state.geoSpeed;
-    const dKmhps = (state.activeSpeed - prev) / wallDt;
-    state.accelKmhps = dKmhps;
-    state.throttle = Math.max(0, Math.min(1, dKmhps / SIM_RATE.maxDeltaKmhPerSec));
-    state.brake = dKmhps < -1 ? Math.min(1, -dKmhps / SIM_RATE.maxDeltaKmhPerSec) : 0;
+    // Follow GPS speed smoothly (avoid single-frame jumps between fixes)
+    state.activeSpeed += (state.geoSpeed - state.activeSpeed) * Math.min(1, dt * 5);
+    // Accel comes from the real GPS interval (set in onUpdate). Fade it toward
+    // 0 if fixes stall so a stale value doesn't stick.
+    const staleSec = (now - (state.lastGeoMs || 0)) / 1000;
+    if (staleSec > 1.5) state.geoAccel = (state.geoAccel || 0) * Math.max(0, 1 - dt * 2);
+    state.accelKmhps += ((state.geoAccel || 0) - state.accelKmhps) * Math.min(1, dt * 4);
+    const aN = state.accelKmhps / SIM_RATE.maxDeltaKmhPerSec;
+    state.throttle = clamp(aN, 0, 1);
+    state.brake = aN < -0.03 ? clamp(-aN, 0, 1) : 0;
     physics.vehicleSpeed = state.activeSpeed;
   } else {
     // Simulation: always use wall-clock so 0→100 ≈ 100/33 ≈ 3.0s even if FPS is low
