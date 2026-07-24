@@ -628,7 +628,7 @@ export const SOUND_PROFILES = [
       // Stage-3 lazy muscle: cruise ~1100 rpm, shift ~2500, digs to ~4600 flat-out
       revLo: 0.1,
       revHi: 0.37,
-      revPull: 0.78,
+      revPull: 0.88,
     },
     tone: {
       // Cammed lopey idle + lazy thunder

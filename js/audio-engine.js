@@ -50,7 +50,9 @@ export class AudioEngine {
     this._accelKmhps = 0;
     this._accelSmooth = 0;
     /** Full-load reference for audio (tube scale ±40; sim rate ±33 sits under full) */
-    this.accelRefKmhps = 40;
+    // Lower ref = the virtual engine has to WORK to match Tesla-grade accel,
+    // so normal hard acceleration already revs it hard (real-physics feel).
+    this.accelRefKmhps = 26;
 
     // Engine state (Ioniq-style)
     this._rpm = 900;
@@ -199,14 +201,14 @@ export class AudioEngine {
     this.zoneFront.Q.value = 0.7;
 
     this.rearDelay = ctx.createDelay(0.05);
-    this.rearDelay.delayTime.value = 0.016; // rear-wall reflection lag
+    this.rearDelay.delayTime.value = 0.022; // rear-wall reflection lag
 
     this.rearPanner = ctx.createPanner();
     this.rearPanner.panningModel = 'HRTF';
     if (this.rearPanner.positionZ) {
-      this.rearPanner.positionZ.value = 1.3; // behind (listener faces −z)
+      this.rearPanner.positionZ.value = 2.0; // further behind (listener faces −z)
     } else {
-      this.rearPanner.setPosition(0, 0, 1.3);
+      this.rearPanner.setPosition(0, 0, 2.0);
     }
 
     this.rearGain = ctx.createGain();
@@ -1099,7 +1101,7 @@ export class AudioEngine {
     this._effort = damp(prevEff, effTarget, effTarget > prevEff ? 14 : 3.2, dt);
     // Full when stopped (idle) or on throttle; drops to a faint hum when
     // moving and coasting.
-    const cruiseGate = speed > 4 ? 0.28 + 0.72 * this._effort : 1;
+    const cruiseGate = speed > 4 ? 0.2 + 0.8 * this._effort : 1;
 
     // Turbo spool: follows accel load (boost builds when pulling)
     const turboT =
@@ -1343,14 +1345,14 @@ export class AudioEngine {
 
     // Cabin space: a touch more wet at speed, drier under hard pull for clarity
     this.reverbWet.gain.setTargetAtTime(
-      0.1 + rpmNorm * 0.06 - accelLoad * 0.03,
+      0.06 + rpmNorm * 0.05 - accelLoad * 0.03,
       t,
       tau
     );
 
     // Zone staging: overrun pushes the exhaust rearward, pull leans front
-    this.rearGain.gain.setTargetAtTime(1.05 + decelLoad * 0.35 + this._load * 0.1, t, tau);
-    this.frontGain.gain.setTargetAtTime(0.95 + accelLoad * 0.15, t, tau);
+    this.rearGain.gain.setTargetAtTime(1.0 + decelLoad * 0.45 + this._load * 0.1, t, tau);
+    this.frontGain.gain.setTargetAtTime(1.1 + accelLoad * 0.2, t, tau);
 
     // Bus EQ
     this.lp.frequency.setTargetAtTime(
