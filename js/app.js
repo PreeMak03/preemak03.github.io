@@ -22,8 +22,8 @@ import {
   $,
 } from './ui.js';
 
-/** Accel tube scale: 0 center, ±40 km/h/s ends */
-const ACCEL_TUBE_MAX = 40;
+/** Accel tube scale — tied to the real sim rate limit, not a magic number */
+const ACCEL_TUBE_MAX = SIM_RATE.maxDeltaKmhPerSec;
 
 /** Coffee link (Ko-fi / Buy Me a Coffee / PromptPay page). Empty = hidden. */
 const DONATE_URL = '';
@@ -45,23 +45,28 @@ function initHud() {
   hud.fillNeg = $('#accel-fill-neg');
   hud.readout = $('#accel-readout');
   hud.stateEl = $('#drive-state');
+  // Labels reflect the actual scale (no hard-coded ±40)
+  const labels = document.querySelectorAll('.accel-tube-label');
+  if (labels[0]) labels[0].textContent = `+${Math.round(ACCEL_TUBE_MAX)}`;
+  if (labels[1]) labels[1].textContent = `−${Math.round(ACCEL_TUBE_MAX)}`;
 }
 
 /**
- * Vertical tube: 0 = middle, +40 = top, −40 = bottom
+ * Vertical accel tube: 0 = middle, +max = top, −max = bottom.
+ * Smoothed (GPS Δv/Δt is spiky) + a mild expansion curve so everyday
+ * acceleration is clearly visible while a full launch still pegs the ends.
  * @param {number} accelKmhps
  */
 function updateAccelTube(accelKmhps) {
-  const a = clamp(accelKmhps, -ACCEL_TUBE_MAX, ACCEL_TUBE_MAX);
-  const key = a.toFixed(1);
-  if (key === hud._lastAccelKey) return;
-  hud._lastAccelKey = key;
+  const max = ACCEL_TUBE_MAX;
+  const target = clamp(accelKmhps, -max, max);
+  hud._accelDisp = (hud._accelDisp || 0) + (target - (hud._accelDisp || 0)) * 0.2;
+  const a = hud._accelDisp;
 
-  const posPct = a > 0 ? (a / ACCEL_TUBE_MAX) * 50 : 0; // % of full tube height above center
-  const negPct = a < 0 ? (-a / ACCEL_TUBE_MAX) * 50 : 0;
-
-  if (hud.fillPos) hud.fillPos.style.height = `${posPct}%`;
-  if (hud.fillNeg) hud.fillNeg.style.height = `${negPct}%`;
+  // Perceptual curve: pow<1 lifts small values so the tube feels alive
+  const norm = Math.sign(a) * Math.pow(Math.min(1, Math.abs(a) / max), 0.72);
+  if (hud.fillPos) hud.fillPos.style.height = `${a > 0 ? norm * 50 : 0}%`;
+  if (hud.fillNeg) hud.fillNeg.style.height = `${a < 0 ? -norm * 50 : 0}%`;
   if (hud.readout) {
     const sign = a > 0.05 ? '+' : '';
     hud.readout.textContent = `${sign}${Math.round(a)}`;
