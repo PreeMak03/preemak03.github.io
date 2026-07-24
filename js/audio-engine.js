@@ -1264,10 +1264,10 @@ export class AudioEngine {
 
       // Intake — mostly pull; light whoosh in tunnel for air sense
       this._layers.intake.gain.gain.setTargetAtTime(
-        (0.01 +
-          accelLoad * 0.14 * (0.5 + tone.noise) +
-          tunnel * 0.04 +
-          rpmNorm * 0.02 +
+        (0.008 +
+          accelLoad * 0.05 * (0.35 + tone.noise * 0.4) +
+          tunnel * 0.025 +
+          rpmNorm * 0.015 +
           (rotIdle ? rotaryIdleBurst * 0.05 : 0)) *
           vol,
         t,
@@ -1289,7 +1289,7 @@ export class AudioEngine {
       this._layers.turbo.filter.Q.setTargetAtTime(1.5 + this._turbo * 3.5, t, tau);
 
       this._layers.whoosh.gain.gain.setTargetAtTime(
-        this._turbo * 0.04 * (tone.turbo || 0) + throttle * 0.03 + tunnel * 0.02,
+        this._turbo * 0.04 * (tone.turbo || 0) + throttle * 0.012 + tunnel * 0.015,
         t,
         tau
       );
