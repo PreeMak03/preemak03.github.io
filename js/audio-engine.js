@@ -97,11 +97,17 @@ export class AudioEngine {
     this.master.gain.value = 0;
 
     this.compressor = this.ctx.createDynamicsCompressor();
-    this.compressor.threshold.value = -14;
-    this.compressor.knee.value = 18;
-    this.compressor.ratio.value = 3.2;
+    this.compressor.threshold.value = -12;
+    this.compressor.knee.value = 20;
+    this.compressor.ratio.value = 2.4; // gentle — keep the drive-state dynamics
     this.compressor.attack.value = 0.005;
     this.compressor.release.value = 0.14;
+
+    // DynamicVolume: models real exhaust SPL across idle/cruise/pull. Sits
+    // AFTER the compressor so the big quiet→loud swing survives, and its
+    // ceiling is the user's Master Volume.
+    this.dynGain = this.ctx.createGain();
+    this.dynGain.gain.value = 0.5;
 
     // Small analyser — no live waveform UI; keep light for compressor tap only
     this.analyser = this.ctx.createAnalyser();
@@ -109,7 +115,8 @@ export class AudioEngine {
     this.analyser.smoothingTimeConstant = 0.8;
 
     this.master.connect(this.compressor);
-    this.compressor.connect(this.analyser);
+    this.compressor.connect(this.dynGain);
+    this.dynGain.connect(this.analyser);
     this.analyser.connect(this.ctx.destination);
 
     this._packLoader = new SamplePackLoader(this.ctx);
@@ -1096,12 +1103,27 @@ export class AudioEngine {
 
     // Load-driven loudness — a real engine goes near-silent coasting at speed.
     // Effort punches in on throttle, fades over ~0.4s on lift-off.
+    // Effort = smoothed throttle (punches in fast, fades out slow)
     const effTarget = this._revUntil || this._holdRpm != null ? 1 : accelLoad;
     const prevEff = this._effort ?? 0;
     this._effort = damp(prevEff, effTarget, effTarget > prevEff ? 14 : 3.2, dt);
-    // Full when stopped (idle) or on throttle; drops to a faint hum when
-    // moving and coasting.
-    const cruiseGate = speed > 4 ? 0.2 + 0.8 * this._effort : 1;
+
+    // --- DynamicVolume: real-exhaust SPL model, capped by Master Volume ---
+    // "Drive energy" 0..1 = how hard the exhaust is working (load + revs − lift).
+    // Real exhausts swing ~20 dB from idle/cruise up to WOT; we mirror that as a
+    // log-loudness curve so cruise is genuinely soft and a pull really opens up.
+    const driveEnergy = clamp(
+      0.12 + this._effort * 0.6 + rpmNorm * 0.32 - decelLoad * 0.12,
+      0,
+      1
+    );
+    const DYN_DB = 20;
+    let dynVol = Math.pow(10, (-DYN_DB * (1 - driveEnergy)) / 20);
+    if (speed < 4) dynVol = Math.max(dynVol, 0.5); // idle stays present when parked
+    if (this.dynGain) {
+      this.dynGain.gain.setTargetAtTime(dynVol, this.ctx.currentTime, 0.06);
+    }
+    this._dynVol = dynVol;
 
     // Turbo spool: follows accel load (boost builds when pulling)
     const turboT =
@@ -1229,7 +1251,7 @@ export class AudioEngine {
         idleWobble *
         (0.8 + this.bassPresence * 0.45) *
         procDuck;
-      this._layers.low.gain.gain.setTargetAtTime(lowG * 0.75 * cruiseGate, t, rotIdle ? 0.02 : tau);
+      this._layers.low.gain.gain.setTargetAtTime(lowG * 0.75, t, rotIdle ? 0.02 : tau);
       this._layers.low.filter.frequency.setTargetAtTime(
         380 +
           rpmNorm * 1100 +
@@ -1255,7 +1277,7 @@ export class AudioEngine {
         procDuck;
       // Rotary idle rasp: each brap burst briefly opens the buzzy high layer
       const highRasp = rotIdle ? rotaryIdleBurst * 0.16 * vol : 0;
-      this._layers.high.gain.gain.setTargetAtTime(highG * 0.42 * cruiseGate + highRasp, t, rotIdle ? 0.02 : tau);
+      this._layers.high.gain.gain.setTargetAtTime(highG * 0.42 + highRasp, t, rotIdle ? 0.02 : tau);
       this._layers.high.filter.frequency.setTargetAtTime(
         1000 + rpmNorm * 3000 + tone.metallic * 700 + tunnel * 500,
         t,
@@ -1302,7 +1324,7 @@ export class AudioEngine {
         vol *
         // Rotary brap signature swells with revs
         (1 + (tone.boxer || 0) * 0.15 + (tone.rotary || 0) * rpmNorm * 0.6);
-      this._layers.scream.gain.gain.setTargetAtTime(sc * cruiseGate, t, tau);
+      this._layers.scream.gain.gain.setTargetAtTime(sc, t, tau);
       const fire = (this._rpm / 60) * ((eng.cylinders || 6) / 2);
 
       // Formant tracks 2nd firing order — the "rasp" that opens under load

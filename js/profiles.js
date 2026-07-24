@@ -656,6 +656,8 @@ export const SOUND_PROFILES = [
       idlePresence: 0.95,
       characterMid: 0.55,
     },
+    /** Per-profile default slider positions (0–100) */
+    mix: { master: 70, bass: 90, edge: 5 },
   },
   {
     id: 's85-v10',

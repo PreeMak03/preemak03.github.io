@@ -5,7 +5,7 @@
  * deployed updates in the background.
  */
 
-const CACHE = 'tas-v14';
+const CACHE = 'tas-v15';
 
 const ASSETS = [
   './',

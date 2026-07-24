@@ -205,6 +205,22 @@ function samplePerf() {
   }
 }
 
+/** Apply a profile's default slider positions (if it defines a `mix`). */
+function applyProfileMix(profile) {
+  const mix = profile && profile.mix;
+  if (!mix) return;
+  const set = (id, v) => {
+    if (v == null) return;
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.value = v;
+    el.dispatchEvent(new Event('input'));
+  };
+  set('vol-master', mix.master);
+  set('vol-bass', mix.bass);
+  set('vol-edge', mix.edge);
+}
+
 function init() {
   initHud();
   initThemeToggle();
@@ -244,6 +260,7 @@ function init() {
     renderProfiles(scroller, state.profileId, (profile) => {
       state.profileId = profile.id;
       audio.setProfile(profile);
+      applyProfileMix(profile);
       const nameEl = $('#active-profile-name');
       if (nameEl) {
         nameEl.textContent = profile.name;
@@ -334,6 +351,7 @@ function init() {
   });
 
   audio.setProfile(getProfileById(state.profileId));
+  applyProfileMix(getProfileById(state.profileId));
   const initName = $('#active-profile-name');
   if (initName) initName.textContent = getProfileById(state.profileId).name;
 
