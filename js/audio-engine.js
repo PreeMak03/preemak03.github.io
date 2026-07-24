@@ -1058,23 +1058,25 @@ export class AudioEngine {
   }
 
   _fireShiftClick(down = false) {
-    if (!this.ctx || !this.running) return;
+    if (!this.ctx || !this.running || !this.master) return;
     const ctx = this.ctx;
     const t = ctx.currentTime;
+    // Soft mechanical tick — triangle + lowpass, low level, and routed straight
+    // to master so it bypasses the drive/EQ (no harsh, blown-speaker "pop").
     const osc = ctx.createOscillator();
-    osc.type = 'square';
-    osc.frequency.value = down ? 180 : 320;
+    osc.type = 'triangle';
+    osc.frequency.value = down ? 150 : 230;
     const g = ctx.createGain();
-    g.gain.setValueAtTime(0.08, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+    g.gain.setValueAtTime(0.028, t);
+    g.gain.exponentialRampToValueAtTime(0.0006, t + 0.045);
     const f = ctx.createBiquadFilter();
-    f.type = 'bandpass';
-    f.frequency.value = down ? 400 : 900;
+    f.type = 'lowpass';
+    f.frequency.value = down ? 480 : 680;
     osc.connect(f);
     f.connect(g);
-    g.connect(this.bus);
+    g.connect(this.master);
     osc.start(t);
-    osc.stop(t + 0.07);
+    osc.stop(t + 0.05);
   }
 
   update(dt) {

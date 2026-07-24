@@ -648,7 +648,7 @@ export const SOUND_PROFILES = [
       rotary: 0,
       electric: 0,
       exhaustPulse: 1.0,
-      drive: 0.7,
+      drive: 0.42,
       filterIdle: 220,
       filterRedline: 2600,
       resonance: 0.5,
