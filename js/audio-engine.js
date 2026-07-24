@@ -109,6 +109,15 @@ export class AudioEngine {
     this.dynGain = this.ctx.createGain();
     this.dynGain.gain.value = 0.5;
 
+    // Brick-wall limiter — final safety so heavy bass / high volume can never
+    // hard-clip into a crackly, blown-speaker "แตกๆ" sound.
+    this.limiter = this.ctx.createDynamicsCompressor();
+    this.limiter.threshold.value = -1.2;
+    this.limiter.knee.value = 0;
+    this.limiter.ratio.value = 20;
+    this.limiter.attack.value = 0.002;
+    this.limiter.release.value = 0.06;
+
     // Small analyser — no live waveform UI; keep light for compressor tap only
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 256;
@@ -116,7 +125,8 @@ export class AudioEngine {
 
     this.master.connect(this.compressor);
     this.compressor.connect(this.dynGain);
-    this.dynGain.connect(this.analyser);
+    this.dynGain.connect(this.limiter);
+    this.limiter.connect(this.analyser);
     this.analyser.connect(this.ctx.destination);
 
     this._packLoader = new SamplePackLoader(this.ctx);
@@ -1109,7 +1119,15 @@ export class AudioEngine {
     // Effort = smoothed throttle (punches in fast, fades out slow)
     const effTarget = this._revUntil || this._holdRpm != null ? 1 : accelLoad;
     const prevEff = this._effort ?? 0;
-    this._effort = damp(prevEff, effTarget, effTarget > prevEff ? 14 : 3.2, dt);
+    if (effTarget > prevEff) {
+      this._effort = damp(prevEff, effTarget, 14, dt); // punch in fast
+      this._effortHold = 1.0; // hold the level this long (s) before fading
+    } else {
+      // Hold ~1 s after lift-off, THEN fade — natural tail + no volume flicker
+      // when holding a near-constant speed (GPS accel hovers around 0).
+      this._effortHold = (this._effortHold || 0) - dt;
+      this._effort = this._effortHold > 0 ? prevEff : damp(prevEff, effTarget, 2.5, dt);
+    }
 
     // --- DynamicVolume: real-exhaust SPL model, capped by Master Volume ---
     // "Drive energy" 0..1 = how hard the exhaust is working (load + revs − lift).
@@ -1123,7 +1141,7 @@ export class AudioEngine {
     const DYN_DB = 22;
     let dynVol = Math.pow(10, (-DYN_DB * (1 - driveEnergy)) / 20);
     // Idle presence eases in as you roll to a stop — no abrupt jump into a hum
-    if (speed < 4) dynVol = Math.max(dynVol, (1 - speed / 4) * 0.4 + 0.1);
+    if (speed < 4) dynVol = Math.max(dynVol, (1 - speed / 4) * 0.24 + 0.08);
     if (this.dynGain) {
       this.dynGain.gain.setTargetAtTime(dynVol, this.ctx.currentTime, 0.06);
     }
