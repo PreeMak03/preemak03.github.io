@@ -79,6 +79,7 @@ const PROFILE_ART = {
   vr6: 'hatch',
   '4g63': 'sedanwing',
   'ls-v8': 'muscle2',
+  'camaro-restomod': 'muscle',
   b58: 'coupe',
   'rotary-rx7': 'rx7',
   'electric-hyper': 'ev',

@@ -131,7 +131,7 @@ function initThemeToggle() {
 
 const state = {
   mode: 'geo', // 'geo' | 'sim'
-  profileId: 'classic-muscle',
+  profileId: 'camaro-restomod',
   /** Fader demand (simulation target) */
   targetSpeed: 0,
   geoSpeed: 0,

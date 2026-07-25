@@ -483,6 +483,53 @@ export const SOUND_PROFILES = [
     },
   },
   {
+    id: 'camaro-restomod',
+    name: 'Camaro Restomod',
+    tag: 'LS7 Resto',
+    car: 'Chevy Camaro · LS7',
+    accent: 'rgba(234, 88, 12, 0.55)',
+    engine: {
+      type: 'ice',
+      cylinders: 8,
+      idleRpm: 780,
+      redlineRpm: 6500,
+      gears: [3.3, 2.1, 1.45, 1.1, 0.88],
+      rpmCurve: 0.82,
+      // Torquey LS7 restomod: lazy cruise, pulls with authority (not a screamer)
+      revLo: 0.15,
+      revHi: 0.5,
+      revPull: 0.9,
+    },
+    tone: {
+      // Low harmonic richness, high body, no metallic scream (spec harmonic bank)
+      harmonics: [0, 1, 0.82, 0.55, 0.48, 0.32, 0.28, 0.24, 0.18, 0.14, 0.11, 0.09, 0.08],
+      body: 0.98,
+      mid: 0.5,
+      high: 0.24,
+      sub: 0.9,
+      noise: 0.16,
+      metallic: 0.08,
+      scream: 0.12,
+      turbo: 0,
+      turboLag: 0,
+      crackle: 0.12,
+      lope: 0.62,
+      boxer: 0,
+      rotary: 0,
+      electric: 0,
+      exhaustPulse: 0.92,
+      drive: 0.48,
+      filterIdle: 260,
+      filterRedline: 2900,
+      resonance: 0.52,
+      volume: 1.12,
+      // Lopey factory-performance idle up front — the growl/roar identity
+      idlePresence: 0.88,
+      characterMid: 0.7,
+    },
+    mix: { master: 74, bass: 92, edge: 8 },
+  },
+  {
     id: 'b58',
     name: 'B58',
     tag: 'Modern Turbo',
@@ -714,7 +761,7 @@ export function getProfileById(id) {
  * Profiles shown in the carousel right now. Others stay in the codebase but
  * are hidden until tuned. Add an id here to bring a profile back.
  */
-const ACTIVE_IDS = ['classic-muscle', 'rotary-rx7', 's85-v10'];
+const ACTIVE_IDS = ['camaro-restomod', 'classic-muscle', 'rotary-rx7', 's85-v10'];
 
 export function getVisibleProfiles() {
   const set = new Set(ACTIVE_IDS);
