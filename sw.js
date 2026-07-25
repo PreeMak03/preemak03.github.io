@@ -5,7 +5,7 @@
  * deployed updates in the background.
  */
 
-const CACHE = 'tas-v21';
+const CACHE = 'tas-v22';
 
 const ASSETS = [
   './',
@@ -44,23 +44,47 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+// Network-first (with a short timeout) for our OWN files, so a fresh deploy shows
+// up immediately when online — falling back to cache on dead/slow LTE so the app
+// still opens instantly offline. Cross-origin (fonts) stays cache-first.
+const NET_TIMEOUT = 2500;
+
+function putCache(req, res) {
+  if (res && (res.ok || res.type === 'opaque')) {
+    const clone = res.clone();
+    caches.open(CACHE).then((c) => c.put(req, clone));
+  }
+}
+function offlineFallback(req) {
+  return caches.match(req).then((c) => c || (req.mode === 'navigate' ? caches.match('./index.html') : undefined));
+}
+
 self.addEventListener('fetch', (e) => {
-  if (e.request.method !== 'GET') return;
+  const req = e.request;
+  if (req.method !== 'GET') return;
+  const sameOrigin = new URL(req.url).origin === self.location.origin;
+
+  if (sameOrigin) {
+    // network-first with timeout → cache fallback
+    e.respondWith(
+      new Promise((resolve) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (settled) return;
+          caches.match(req).then((c) => { if (c && !settled) { settled = true; resolve(c); } });
+        }, NET_TIMEOUT);
+        fetch(req)
+          .then((res) => { if (settled) { putCache(req, res); return; } settled = true; clearTimeout(timer); putCache(req, res); resolve(res); })
+          .catch(() => { if (settled) return; settled = true; clearTimeout(timer); offlineFallback(req).then((c) => resolve(c || Response.error())); });
+      })
+    );
+    return;
+  }
+
+  // cross-origin (fonts, etc.): cache-first, revalidate in background
   e.respondWith(
-    caches.match(e.request).then((cached) => {
-      const network = fetch(e.request)
-        .then((res) => {
-          // Cache same-origin OK responses and opaque cross-origin (fonts)
-          if (res && (res.ok || res.type === 'opaque')) {
-            const clone = res.clone();
-            caches.open(CACHE).then((c) => c.put(e.request, clone));
-          }
-          return res;
-        })
-        .catch(() =>
-          // Offline: any navigation (incl. /tas or wrong-case paths) → the app
-          cached || (e.request.mode === 'navigate' ? caches.match('./index.html') : undefined)
-        );
+    caches.match(req).then((cached) => {
+      const network = fetch(req).then((res) => { putCache(req, res); return res; }).catch(() => cached);
       return cached || network;
     })
   );
