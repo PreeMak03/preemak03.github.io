@@ -416,13 +416,16 @@ async function init() {
 
   geo.onUpdate((payload) => {
     const newSpeed = payload.speedKmh || 0;
-    // Real acceleration = Δspeed over the actual GPS sample interval (~1 s),
-    // NOT per render frame. Computing per-frame made a +1 km/h fix spike to
-    // ~60 km/h/s and peg the tube.
+    // Real acceleration = Δspeed over GPS sample interval (~0.5–1 s).
+    // Clamp absurd spikes (single bad fix) that used to peg load → volume stutter.
     const nowMs = performance.now();
     const gdt = state.lastGeoMs ? (nowMs - state.lastGeoMs) / 1000 : 0;
-    if (gdt > 0.1 && gdt < 5) {
-      state.geoAccel = (newSpeed - state.geoSpeed) / gdt;
+    if (gdt > 0.15 && gdt < 4) {
+      let a = (newSpeed - state.geoSpeed) / gdt;
+      // ±22 km/h/s is already violent; anything beyond is GPS garbage
+      a = Math.max(-22, Math.min(22, a));
+      // One-pole soft toward new estimate (don't replace with raw jump)
+      state.geoAccel = (state.geoAccel || 0) * 0.45 + a * 0.55;
     }
     state.lastGeoMs = nowMs;
     state.geoSpeed = newSpeed;
@@ -488,16 +491,18 @@ function tick(dt) {
   const now = performance.now();
 
   if (state.mode === 'geo') {
-    // Follow GPS speed smoothly (avoid single-frame jumps between fixes)
-    state.activeSpeed += (state.geoSpeed - state.activeSpeed) * Math.min(1, dt * 5);
-    // Accel comes from the real GPS interval (set in onUpdate). Fade it toward
-    // 0 if fixes stall so a stale value doesn't stick.
+    // Follow GPS speed gently — Tesla GPS jumps 1–3 km/h every fix
+    state.activeSpeed += (state.geoSpeed - state.activeSpeed) * Math.min(1, dt * 2.8);
+    // Accel from real GPS interval. Fade stale values; deadband before throttle.
     const staleSec = (now - (state.lastGeoMs || 0)) / 1000;
-    if (staleSec > 1.5) state.geoAccel = (state.geoAccel || 0) * Math.max(0, 1 - dt * 2);
-    state.accelKmhps += ((state.geoAccel || 0) - state.accelKmhps) * Math.min(1, dt * 4);
-    const aN = state.accelKmhps / SIM_RATE.maxDeltaKmhPerSec;
+    if (staleSec > 1.2) state.geoAccel = (state.geoAccel || 0) * Math.max(0, 1 - dt * 2.5);
+    state.accelKmhps += ((state.geoAccel || 0) - state.accelKmhps) * Math.min(1, dt * 2.6);
+    // Ignore micro-jitter while "holding" speed (biggest stutter source on road)
+    let aRaw = state.accelKmhps || 0;
+    if (Math.abs(aRaw) < 2.2) aRaw = 0;
+    const aN = aRaw / SIM_RATE.maxDeltaKmhPerSec;
     state.throttle = clamp(aN, 0, 1);
-    state.brake = aN < -0.03 ? clamp(-aN, 0, 1) : 0;
+    state.brake = aN < -0.05 ? clamp(-aN, 0, 1) : 0;
     physics.vehicleSpeed = state.activeSpeed;
   } else {
     // Simulation: always use wall-clock so 0→100 ≈ 100/33 ≈ 3.0s even if FPS is low

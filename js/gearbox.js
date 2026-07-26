@@ -36,11 +36,11 @@ export function resolveGear(speedKmh, currentGear = 1, accelLoad = 0, decelLoad 
   while (g < GEAR_COUNT && v >= UP_AT[g - 1] + upBias) g += 1;
   while (g > 1 && v < DOWN_AT[g - 2] - downBias) g -= 1;
 
-  // Kickdown: hard throttle drops gear(s) for rev drama, but only where the
-  // lower gear still covers this speed (won't instantly upshift back).
-  if (accelLoad > 0.5 && g > 1) {
-    let drops = accelLoad > 0.85 ? 2 : 1;
-    while (drops > 0 && g > 1 && v < UP_AT[g - 2] + upBias - 1.5) {
+  // Kickdown: only on sustained hard pull. GPS accel noise sits ~0.2–0.45 and
+  // used to thrash gears → RPM jumps felt like stutter in the car.
+  if (accelLoad > 0.72 && g > 1) {
+    let drops = accelLoad > 0.92 ? 2 : 1;
+    while (drops > 0 && g > 1 && v < UP_AT[g - 2] + upBias - 2.5) {
       g -= 1;
       drops -= 1;
     }
@@ -123,5 +123,7 @@ export function gearToneBias(gear) {
     character: 0.55 + t * 0.55,
     howlStart: 0.38 - t * 0.12,
     shiftDrop: 0.62,
+    /** Loudness scale for Dynamic Volume (G1 headroom … G3 open … G5 ease) */
+    dynVol: [0.86, 0.91, 1.0, 0.97, 0.93][g - 1] ?? 1,
   };
 }

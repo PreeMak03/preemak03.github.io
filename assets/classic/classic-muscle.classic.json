@@ -11,92 +11,56 @@
     "type": "ice",
     "cylinders": 8,
     "idleRpm": 650,
-    "redlineRpm": 8000,
-    "gears": [
-      3.2,
-      2,
-      1.4,
-      1.05,
-      0.85
-    ],
+    "redlineRpm": 5800,
+    "gears": [3.2, 2, 1.4, 1.05, 0.85],
     "rpmCurve": 0.8,
-    "revLo": 0.1,
-    "revHi": 0.37,
+    "revLo": 0.12,
+    "revHi": 0.4,
     "revPull": 0.88
   },
   "tone": {
-    "harmonics": [
-      0,
-      1,
-      1,
-      0.35,
-      0.8,
-      0.25,
-      0.55,
-      0.18,
-      0.4,
-      0.12
-    ],
-    "body": 0,
-    "mid": 0.4,
-    "high": 0.2,
-    "sub": 1,
-    "noise": 0,
-    "metallic": 0,
-    "scream": 0.3,
+    "harmonics": [0, 1, 1, 0.35, 0.8, 0.25, 0.55, 0.18, 0.4, 0.12],
+    "body": 1,
+    "mid": 0.42,
+    "high": 0.22,
+    "sub": 0.95,
+    "noise": 0.14,
+    "metallic": 0.1,
+    "scream": 0.18,
     "turbo": 0,
     "turboLag": 0,
-    "crackle": 0,
-    "lope": 0,
+    "crackle": 0.12,
+    "lope": 0.85,
     "boxer": 0,
     "rotary": 0,
     "electric": 0,
-    "exhaustPulse": 1,
-    "drive": 0.42,
-    "filterIdle": 220,
-    "filterRedline": 8000,
-    "resonance": 999,
-    "volume": 2,
-    "idlePresence": 0,
+    "exhaustPulse": 0.95,
+    "drive": 0.4,
+    "filterIdle": 280,
+    "filterRedline": 2600,
+    "resonance": 0.5,
+    "volume": 1.05,
+    "idlePresence": 0.9,
     "characterMid": 0.55,
-    "waveguide": 0.28,
-    "whoosh": null,
-    "whine": null,
-    "dynDb": null,
-    "dynCeiling": null,
-    "loadBoost": null
+    "waveguide": 0
   },
   "mix": {
-    "master": 100,
-    "bass": 100,
-    "edge": 5
+    "master": 72,
+    "bass": 82,
+    "edge": 10
   },
-  "updatedAt": "2026-07-26T17:07:15.144Z",
   "dynamics": {
     "curve": [
-      [
-        650,
-        0.151
-      ],
-      [
-        1941,
-        0.336
-      ],
-      [
-        3238,
-        0.412
-      ],
-      [
-        6488,
-        0.433
-      ],
-      [
-        8000,
-        0.325
-      ]
+      [650, 0.62],
+      [1200, 0.74],
+      [2200, 0.9],
+      [3600, 1.0],
+      [5200, 0.94],
+      [5800, 0.88]
     ],
-    "loadBoost": 0.1,
-    "dynCeiling": 0.86,
-    "dynDb": 18
-  }
+    "loadBoost": 0.22,
+    "dynCeiling": 0.88,
+    "dynDb": 14
+  },
+  "updatedAt": "2026-07-26T18:00:00.000Z"
 }

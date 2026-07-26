@@ -24,6 +24,7 @@ import { buildRevScript } from './launch-rev.js';
 import {
   computeDynamicVolume,
   sampleVolumeCurve,
+  sanitizeCurveMul,
   DEFAULT_CLASSIC_DYN_CURVE,
 } from './dynamic-volume.js';
 
@@ -98,6 +99,13 @@ export class AudioEngine {
     this._wgNode = null;
     this._wgGain = null;
     this._wgReady = false;
+    /** Smoothed dyn path — prevents GPS pump / shift thumps */
+    this._dynVolSmooth = 0.55;
+    this._curveMulSmooth = 1;
+    this._effort = 0;
+    this._effortHold = 0;
+    /** Overrun hysteresis (avoid cruise↔overrun flutter) */
+    this._overrunLatch = false;
   }
 
   async init() {
@@ -124,11 +132,12 @@ export class AudioEngine {
     // Brick-wall limiter — final safety so heavy bass / high volume can never
     // hard-clip into a crackly, blown-speaker "แตกๆ" sound.
     this.limiter = this.ctx.createDynamicsCompressor();
-    this.limiter.threshold.value = -1.2;
-    this.limiter.knee.value = 0;
-    this.limiter.ratio.value = 20;
-    this.limiter.attack.value = 0.002;
-    this.limiter.release.value = 0.06;
+    // Softer limiter — ultra-fast release was pumping with dyn swings ("กระตุก")
+    this.limiter.threshold.value = -1.5;
+    this.limiter.knee.value = 2;
+    this.limiter.ratio.value = 12;
+    this.limiter.attack.value = 0.003;
+    this.limiter.release.value = 0.12;
 
     // Small analyser — no live waveform UI; keep light for compressor tap only
     this.analyser = this.ctx.createAnalyser();
@@ -985,9 +994,13 @@ export class AudioEngine {
 
     const speed = this.speedReactive ? this._speedSmooth : Math.max(this._speedSmooth, 40);
 
-    const aLambda = this.smoothFilter ? 10 : 18;
+    // GPS accel is noisy — heavier damp + deadband kills micro load chatter
+    const aLambda = this.smoothFilter ? 5.5 : 9;
     this._accelSmooth = damp(this._accelSmooth, this._accelKmhps, aLambda, dt);
-    const aNorm = clamp(this._accelSmooth / this.accelRefKmhps, -1.4, 1.4);
+    // Deadband ±~1.8 km/h/s (common GPS jitter while "holding" speed)
+    let accelForLoad = this._accelSmooth;
+    if (Math.abs(accelForLoad) < 1.8) accelForLoad = 0;
+    const aNorm = clamp(accelForLoad / this.accelRefKmhps, -1.4, 1.4);
     const accelLoad = clamp(aNorm, 0, 1);
     const decelLoad = clamp(-aNorm, 0, 1);
 
@@ -1058,12 +1071,18 @@ export class AudioEngine {
 
     this._load = clamp(accelLoad * 0.85 + decelLoad * 0.25 + (speed > 5 ? 0.08 : 0), 0, 1);
 
-    // THOR drive state (for layer mix + future sample crossfades)
+    // THOR drive state — hysteresis so GPS doesn't flip pull/cruise/overrun
     if (this._shifting) this._driveState = 'shift';
-    else if (speed < 1.5 && accelLoad < 0.1) this._driveState = 'idle';
-    else if (decelLoad > 0.28) this._driveState = 'overrun';
-    else if (accelLoad > 0.22) this._driveState = 'pull';
-    else this._driveState = 'cruise';
+    else if (speed < 1.5 && accelLoad < 0.1) {
+      this._driveState = 'idle';
+      this._overrunLatch = false;
+    } else {
+      if (decelLoad > 0.38) this._overrunLatch = true;
+      else if (decelLoad < 0.18 || accelLoad > 0.2) this._overrunLatch = false;
+      if (this._overrunLatch) this._driveState = 'overrun';
+      else if (accelLoad > 0.28) this._driveState = 'pull';
+      else this._driveState = 'cruise';
+    }
 
     if (isEv) {
       // Single “ratio”: map 0–120 km/h like top of 5th, plus accel pull
@@ -1109,26 +1128,30 @@ export class AudioEngine {
     if (nextGear > this._gear + 1) nextGear = this._gear + 1;
     else if (nextGear < this._gear - 1) nextGear = this._gear - 1;
 
-    const MIN_DWELL = 0.26; // seconds between shifts — the "rowing" cadence
+    const MIN_DWELL = 0.42; // longer row cadence — fewer stutters on real roads
     if (nextGear !== this._gear && !this._shifting && this._sinceShift > MIN_DWELL) {
       const up = nextGear > this._gear;
       this._prevGear = this._gear;
       this._gear = nextGear;
       this._sinceShift = 0;
       this._shifting = true;
-      this._shiftTimer = up ? 0.12 : 0.09;
+      this._shiftTimer = up ? 0.16 : 0.12;
       this._gearBias = gearToneBias(this._gear);
       this._fireShiftClick(!up);
-      // Upshift lands low (revLo) = audible drop; downshift blips revs up
+      // Upshift: glide toward landing RPM (no hard snap → no "scratch")
       if (up) {
         const land = shiftLandingRpm(this._gear, idle, redline, eng.revLo);
-        this._rpmSmooth = land;
-        this._rpm = land;
-      } else if (accelLoad > 0.25) {
-        // Sporty downshift UNDER THROTTLE: blip the revs up (rev-match).
+        // Blend 55% toward land — remaining glide is handled by damp below
+        this._rpmSmooth = this._rpmSmooth * 0.45 + land * 0.55;
+        this._rpm = this._rpmSmooth;
+      } else if (accelLoad > 0.4) {
+        // Sporty downshift UNDER THROTTLE: soft rev-match blip
         const revHi = eng.revHi ?? 0.7;
-        const land = idle + (redline - idle) * Math.min(0.95, revHi * 0.9);
-        this._rpmSmooth = Math.min(redline * 0.95, Math.max(this._rpmSmooth, land));
+        const land = idle + (redline - idle) * Math.min(0.95, revHi * 0.88);
+        this._rpmSmooth = Math.min(
+          redline * 0.95,
+          this._rpmSmooth * 0.35 + Math.max(this._rpmSmooth, land) * 0.65
+        );
         this._rpm = this._rpmSmooth;
       }
       // else: coasting/braking downshift — let the revs ease down, no rev-up hum
@@ -1149,13 +1172,13 @@ export class AudioEngine {
       pull: eng.revPull,
     });
 
-    // During shift flash: soft torque-cut RPM settle
-    let rpmLambda = this.smoothFilter ? 7 : 12;
-    if (accelLoad > 0.4) rpmLambda = 10 + accelLoad * 5;
-    if (decelLoad > 0.4) rpmLambda = 9 + decelLoad * 4;
+    // Smoother RPM follow — cruise especially (was too snappy on GPS speed wobble)
+    let rpmLambda = this.smoothFilter ? 5.5 : 8;
+    if (accelLoad > 0.4) rpmLambda = 8 + accelLoad * 3.5;
+    if (decelLoad > 0.4) rpmLambda = 7 + decelLoad * 3;
     if (this._shifting) {
-      rpmLambda = 18;
-      targetRpm = this._rpm * 0.94 + targetRpm * 0.06;
+      rpmLambda = 11;
+      targetRpm = this._rpm * 0.88 + targetRpm * 0.12;
     }
 
     this._rpmSmooth = damp(
@@ -1198,7 +1221,8 @@ export class AudioEngine {
   update(dt) {
     if (!this.ctx || !this._started) return;
 
-    const smoothL = this.smoothFilter ? 6 : 16;
+    // Speed follow — bias smooth (GPS single-fix jumps were ~1–3 km/h)
+    const smoothL = this.smoothFilter ? 4.2 : 7;
     this._speedSmooth = damp(this._speedSmooth, this._speed, smoothL, dt);
 
     // Dedicated real-time clock for the rotary idle pant (Hz-accurate, not
@@ -1213,37 +1237,41 @@ export class AudioEngine {
     const idle = eng.idleRpm || 800;
     const redline = eng.redlineRpm || 7500;
     const rpmNorm = clamp((this._rpm - idle) / Math.max(1, redline - idle), 0, 1.1);
+    // Clamp wild CommandRoom values (volume 2 / body 0 → clip or thin stutter)
+    const toneVol = clamp(tone.volume != null ? +tone.volume : 1, 0.45, 1.25);
+    const bodyAmt = clamp(tone.body == null || +tone.body < 0.15 ? 0.85 : +tone.body, 0.25, 1.2);
+    const highAmt = clamp(tone.high != null ? +tone.high : 0.4, 0, 1.2);
+    const midAmt = clamp(tone.mid != null ? +tone.mid : 0.5, 0, 1.2);
     const throttle = this._throttle;
     const load = this._load;
     const speed = this._speedSmooth;
-    const aNorm = clamp(this._accelSmooth / this.accelRefKmhps, -1.4, 1.4);
+    // Match deadband used in _updateRpmGear so layer mix + dyn stay coherent
+    let accelForLoad = this._accelSmooth;
+    if (Math.abs(accelForLoad) < 1.8) accelForLoad = 0;
+    const aNorm = clamp(accelForLoad / this.accelRefKmhps, -1.4, 1.4);
     const accelLoad = clamp(aNorm, 0, 1);
     const decelLoad = clamp(-aNorm, 0, 1);
 
-    // Load-driven loudness — a real engine goes near-silent coasting at speed.
-    // Effort punches in on throttle, fades over ~0.4s on lift-off.
-    // Effort = smoothed throttle (punches in fast, fades out slow)
+    // Effort: slower attack, longer hold — GPS holds speed with ±noise
     const effTarget = this._revUntil || this._holdRpm != null ? 1 : accelLoad;
     const prevEff = this._effort ?? 0;
     if (effTarget > prevEff) {
-      this._effort = damp(prevEff, effTarget, 14, dt); // punch in fast
-      this._effortHold = 1.0; // hold the level this long (s) before fading
+      this._effort = damp(prevEff, effTarget, 8, dt);
+      this._effortHold = 1.35;
     } else {
-      // Hold ~1 s after lift-off, THEN fade — natural tail + no volume flicker
-      // when holding a near-constant speed (GPS accel hovers around 0).
       this._effortHold = (this._effortHold || 0) - dt;
-      this._effort = this._effortHold > 0 ? prevEff : damp(prevEff, effTarget, 2.5, dt);
+      this._effort = this._effortHold > 0 ? prevEff : damp(prevEff, effTarget, 1.8, dt);
     }
 
-    // --- DynamicVolume: RPM graph curve (like Vessel) + soft ceiling + per-gear ---
-    // Primary control = dynamics.curve [[rpm, vol], …] — easy to see / drag in CommandRoom
+    // --- DynamicVolume: curve + soft ceiling + per-gear (slew-limited) ---
     const dynCfg = this.profile.dynamics || {};
     const curvePts = Array.isArray(dynCfg.curve) && dynCfg.curve.length
       ? dynCfg.curve
       : (Array.isArray(tone.dynCurve) && tone.dynCurve.length
         ? tone.dynCurve
         : DEFAULT_CLASSIC_DYN_CURVE);
-    const curveMul = sampleVolumeCurve(this._rpm, curvePts);
+    const curveMulRaw = sanitizeCurveMul(sampleVolumeCurve(this._rpm, curvePts));
+    this._curveMulSmooth = damp(this._curveMulSmooth ?? 1, curveMulRaw, 4.5, dt);
     this._dynCurve = curvePts;
 
     const dyn = computeDynamicVolume({
@@ -1257,20 +1285,22 @@ export class AudioEngine {
       gearCount: this._gearCount || GEAR_COUNT,
       shifting: !!this._shifting,
       overrun: this._driveState === 'overrun',
-      dynDb: dynCfg.dynDb != null ? dynCfg.dynDb : (tone.dynDb != null ? tone.dynDb : 18),
-      curveMul,
+      dynDb: dynCfg.dynDb != null ? dynCfg.dynDb : (tone.dynDb != null ? tone.dynDb : 14),
+      curveMul: this._curveMulSmooth,
       load: load,
-      loadBoost: dynCfg.loadBoost != null ? dynCfg.loadBoost : (tone.loadBoost != null ? tone.loadBoost : 0.35),
-      softCeiling: dynCfg.dynCeiling != null ? dynCfg.dynCeiling : (tone.dynCeiling != null ? tone.dynCeiling : 0.86),
-      floorBias: 1.05,
+      loadBoost: dynCfg.loadBoost != null ? dynCfg.loadBoost : (tone.loadBoost != null ? tone.loadBoost : 0.22),
+      softCeiling: dynCfg.dynCeiling != null ? dynCfg.dynCeiling : (tone.dynCeiling != null ? tone.dynCeiling : 0.88),
+      floorBias: 1.08,
     });
+    // Extra audio-thread slew — never let dynGain jump frame-to-frame
+    this._dynVolSmooth = damp(this._dynVolSmooth ?? dyn.dynVol, dyn.dynVol, 6.5, dt);
     if (this.dynGain) {
-      this.dynGain.gain.setTargetAtTime(dyn.dynVol, this.ctx.currentTime, 0.07);
+      this.dynGain.gain.setTargetAtTime(this._dynVolSmooth, this.ctx.currentTime, 0.14);
     }
-    this._dynVol = dyn.dynVol;
+    this._dynVol = this._dynVolSmooth;
     this._driveEnergy = dyn.driveEnergy;
     this._gearDynScale = dyn.gearScale;
-    this._curveMul = curveMul;
+    this._curveMul = this._curveMulSmooth;
 
     // Turbo spool: follows accel load (boost builds when pulling)
     const turboT =
@@ -1286,7 +1316,7 @@ export class AudioEngine {
         rpmNorm * 0.45 +
         accelLoad * 0.55 +
         (speed > 2 ? 0.08 : 0)) *
-        (tone.volume || 1) *
+        toneVol *
         (this.running ? 1 : 0),
       0,
       1.35
@@ -1297,16 +1327,16 @@ export class AudioEngine {
     if (!this.running || !this._layers) return;
 
     const t = this.ctx.currentTime;
-    // Anti-static: longer filter/gain time constants → no zipper / radio swish
-    const tau = this.smoothFilter ? 0.07 : 0.04;
-    const fTau = Math.max(tau, 0.09); // frequency/coeff paths only
+    // Longer time constants on car browsers (MCU drops rAF / audio glitches on short tau)
+    const tau = this.smoothFilter ? 0.1 : 0.065;
+    const fTau = Math.max(tau, 0.12);
 
     // Waveguide hybrid exhaust (rpm/load follow engine state)
     this._pushWaveguideParams(t, tau);
 
-    // Combustion micro-jitter random walk — kills the "perfect loop" giveaway
-    const jAmt = isEv ? 0.0015 : 0.004 + (1 - rpmNorm) * 0.008 + accelLoad * 0.003;
-    this._jitter = damp(this._jitter, (Math.random() * 2 - 1) * jAmt, 4, dt);
+    // Milder jitter — strong random walk + playbackRate 50Hz felt grainy on road
+    const jAmt = isEv ? 0.001 : 0.0022 + (1 - rpmNorm) * 0.004 + accelLoad * 0.0015;
+    this._jitter = damp(this._jitter, (Math.random() * 2 - 1) * jAmt, 3.2, dt);
     const rateJ = 1 + this._jitter;
 
     // Playback rate from RPM — sample + procedural
@@ -1330,14 +1360,15 @@ export class AudioEngine {
         rpmNorm,
         accelLoad,
         decelLoad,
-        vol: tone.volume || 1,
-        shiftMute: this._shifting ? 0.5 : 1,
+        vol: toneVol,
+        shiftMute: this._shifting ? 0.88 : 1,
         isEv,
       });
     }
 
     // Living idle gain floor — ALWAYS present when engine on (0 km/h)
-    const idleAlive = 0.38 + (tone.idlePresence || 0.5) * 0.55;
+    const idlePres = clamp(tone.idlePresence == null ? 0.75 : +tone.idlePresence, 0.2, 1.2);
+    const idleAlive = 0.4 + idlePres * 0.5;
     // Dynamic idle wobble
     this._idlePhase += dt;
     let idleWobble =
@@ -1359,8 +1390,9 @@ export class AudioEngine {
       idleWobble = 0.58 + 0.6 * rotaryIdleBurst; // body punches on each brap
     }
 
-    const vol = tone.volume || 1;
-    const shiftMute = this._shifting ? 0.55 : 1;
+    const vol = toneVol;
+    // Soft shift duck only (was 0.55 × dyn 0.55 = hard stutter every gear)
+    const shiftMute = this._shifting ? 0.88 : 1;
     const gBias = this._gearBias || gearToneBias(this._gear);
     // When samples are active, duck procedural body so packs lead (keep sub/crackle)
     const procDuck = this._useSamples ? 0.22 : 1;
@@ -1394,10 +1426,10 @@ export class AudioEngine {
       // Low body — idle bed + mid character + pull (not only aggression)
       const lowG =
         (idleAlive * 0.85 +
-          rpmNorm * 0.28 * tone.body * gBias.body +
-          tunnel * 0.55 * tone.body +
-          accelLoad * 0.32 * tone.body * gBias.aggression +
-          (speed > 3 && accelLoad < 0.2 ? 0.14 * tone.body * gBias.character : 0)) *
+          rpmNorm * 0.28 * bodyAmt * gBias.body +
+          tunnel * 0.55 * bodyAmt +
+          accelLoad * 0.32 * bodyAmt * gBias.aggression +
+          (speed > 3 && accelLoad < 0.2 ? 0.14 * bodyAmt * gBias.character : 0)) *
         vol *
         shiftMute *
         idleWobble *
@@ -1423,9 +1455,9 @@ export class AudioEngine {
       const screamGate = Math.pow(clamp((rpmNorm - howlStart) / (0.95 - howlStart), 0, 1), 1.05);
       const highG =
         (0.05 +
-          tunnel * 0.35 * tone.high +
-          rpmNorm * 0.22 * tone.high * gBias.high +
-          screamGate * tone.scream * 0.32 * gBias.aggression +
+          tunnel * 0.35 * highAmt +
+          rpmNorm * 0.22 * highAmt * gBias.high +
+          screamGate * (tone.scream || 0) * 0.32 * gBias.aggression +
           accelLoad * 0.12) *
         vol *
         shiftMute *
@@ -1493,7 +1525,7 @@ export class AudioEngine {
       // Formant tracks 2nd firing order — capped ≤1.8 kHz (anti-static)
       this.formant.frequency.setTargetAtTime(clamp(fire * 2, 220, 1800), t, fTau);
       this.formant.gain.setTargetAtTime(
-        (accelLoad * 4.0 + this._load * 1.2 + (tone.mid || 0.5) * 1.4) *
+        (accelLoad * 3.2 + this._load * 1.0 + midAmt * 1.3) *
           (0.45 + this.edge * 0.4),
         t,
         tau
@@ -1539,26 +1571,27 @@ export class AudioEngine {
     this.rearGain.gain.setTargetAtTime(1.0 + decelLoad * 0.45 + this._load * 0.1, t, tau);
     this.frontGain.gain.setTargetAtTime(1.1 + accelLoad * 0.2, t, tau);
 
-    // Bus EQ — master LPF ceiling ~2.6–3.2 kHz max open (was up to 5–7 kHz)
-    const filtIdle = tone.filterIdle || 600;
-    const filtRed = Math.min(tone.filterRedline || 5000, 3200);
+    // Bus EQ — keep cabin dark-ish; wild filterRedline values clamped hard
+    const filtIdle = clamp(tone.filterIdle || 600, 180, 1200);
+    const filtRed = Math.min(clamp(tone.filterRedline || 5000, 800, 8000), 2800);
     const lpHz =
       filtIdle +
       (filtRed - filtIdle) * Math.pow(rpmNorm, 0.9) * (0.45 + this.edge * 0.5);
-    this.lp.frequency.setTargetAtTime(Math.min(lpHz, 3000), t, fTau);
-    this.subBoost.gain.setTargetAtTime(-1 + this.bassPresence * 6 + tone.sub * 2, t, tau);
+    this.lp.frequency.setTargetAtTime(Math.min(lpHz, 2800), t, fTau);
+    const subAmt = clamp(tone.sub != null ? +tone.sub : 0.5, 0, 1.15);
+    this.subBoost.gain.setTargetAtTime(-1 + this.bassPresence * 5.5 + subAmt * 1.8, t, tau);
     // High shelf tamed (less edge hiss)
-    this.hi.gain.setTargetAtTime(-3 + this.edge * 4.5 + tone.high * 2 * rpmNorm, t, tau);
-    this.presence.gain.setTargetAtTime(1 + tone.mid * 3.2 + accelLoad * 2.2, t, tau);
+    this.hi.gain.setTargetAtTime(-3 + this.edge * 4.5 + highAmt * 2 * rpmNorm, t, tau);
+    this.presence.gain.setTargetAtTime(1 + midAmt * 3.0 + accelLoad * 1.6, t, tau);
 
-    // Drive amount — slower rebuild (zipper from waveshaper curve swap)
-    if ((this._driveTick = (this._driveTick || 0) + dt) > 0.35) {
+    // Drive amount — rebuild less often (waveshaper curve swap = zipper risk)
+    if ((this._driveTick = (this._driveTick || 0) + dt) > 0.55) {
       this._driveTick = 0;
       this.drive.curve = makeDriveCurve(
         clamp(
-          (tone.drive || 0.4) * (0.3 + rpmNorm * 0.35 + accelLoad * 0.35),
+          (tone.drive || 0.4) * (0.3 + rpmNorm * 0.35 + accelLoad * 0.3),
           0.1,
-          0.85
+          0.78
         )
       );
     }
