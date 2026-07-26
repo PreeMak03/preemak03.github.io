@@ -1,7 +1,7 @@
 {
   "schema": "tas-classic-fields/1",
   "standard": "classic-audioengine/1",
-  "description": "Every editable variable for Classic AudioEngine profiles (not VESSEL). Used by classic-tool + CommandRoom.",
+  "description": "Editable Classic profile fields. Validate-at-save uses CLASSIC_LIMITS in js/classic-profile.js — engine is a pure player.",
   "meta": [
     { "key": "id", "type": "string", "ro": true, "label": "Profile ID" },
     { "key": "name", "type": "string", "label": "Name" },
@@ -12,9 +12,9 @@
   ],
   "engine": [
     { "key": "type", "type": "enum", "values": ["ice", "electric"], "label": "Engine type" },
-    { "key": "cylinders", "type": "number", "min": 1, "max": 16, "step": 1, "label": "Cylinders" },
-    { "key": "idleRpm", "type": "number", "min": 400, "max": 2500, "step": 10, "label": "Idle RPM" },
-    { "key": "redlineRpm", "type": "number", "min": 3000, "max": 12000, "step": 50, "label": "Redline RPM" },
+    { "key": "cylinders", "type": "number", "min": 0, "max": 16, "step": 1, "label": "Cylinders (0=EV)" },
+    { "key": "idleRpm", "type": "number", "min": 0, "max": 2500, "step": 10, "label": "Idle RPM" },
+    { "key": "redlineRpm", "type": "number", "min": 1000, "max": 20000, "step": 50, "label": "Redline RPM" },
     { "key": "gears", "type": "number[]", "label": "Gear ratios (array)" },
     { "key": "rpmCurve", "type": "number", "min": 0.5, "max": 1.5, "step": 0.01, "label": "RPM curve" },
     { "key": "revLo", "type": "number", "min": 0.05, "max": 0.5, "step": 0.01, "label": "Rev lo (shift land)" },
@@ -22,8 +22,8 @@
     { "key": "revPull", "type": "number", "min": 0.5, "max": 1.1, "step": 0.01, "label": "Rev pull" }
   ],
   "tone": [
-    { "key": "harmonics", "type": "number[]", "label": "Harmonics array ( PeriodicWave-style, index 1 = fund )" },
-    { "key": "body", "type": "number", "min": 0, "max": 1.5, "step": 0.01, "label": "Body" },
+    { "key": "harmonics", "type": "number[]", "label": "Harmonics array (index 1 = fund)" },
+    { "key": "body", "type": "number", "min": 0.2, "max": 1.5, "step": 0.01, "label": "Body" },
     { "key": "mid", "type": "number", "min": 0, "max": 1.5, "step": 0.01, "label": "Mid" },
     { "key": "high", "type": "number", "min": 0, "max": 1.5, "step": 0.01, "label": "High" },
     { "key": "sub", "type": "number", "min": 0, "max": 1.5, "step": 0.01, "label": "Sub" },
@@ -42,19 +42,24 @@
     { "key": "filterIdle", "type": "number", "min": 80, "max": 4000, "step": 10, "label": "Filter idle Hz" },
     { "key": "filterRedline", "type": "number", "min": 400, "max": 14000, "step": 50, "label": "Filter redline Hz" },
     { "key": "resonance", "type": "number", "min": 0, "max": 1, "step": 0.01, "label": "Resonance" },
-    { "key": "volume", "type": "number", "min": 0.2, "max": 1.5, "step": 0.01, "label": "Volume" },
+    { "key": "volume", "type": "number", "min": 0.4, "max": 1.3, "step": 0.01, "label": "Volume" },
     { "key": "idlePresence", "type": "number", "min": 0, "max": 1.2, "step": 0.01, "label": "Idle presence" },
     { "key": "characterMid", "type": "number", "min": 0, "max": 1.2, "step": 0.01, "label": "Character mid (tunnel)" },
     { "key": "whoosh", "type": "number", "min": 0, "max": 1.2, "step": 0.01, "label": "Whoosh (EV)", "optional": true },
     { "key": "whine", "type": "number", "min": 0, "max": 1.2, "step": 0.01, "label": "Whine (EV)", "optional": true },
-    { "key": "waveguide", "type": "number", "min": 0, "max": 1, "step": 0.01, "label": "Waveguide exhaust mix (DasEtwas)", "optional": true },
-    { "key": "dynDb", "type": "number", "min": 12, "max": 28, "step": 0.5, "label": "Dynamic volume range (dB)", "optional": true },
-    { "key": "dynCeiling", "type": "number", "min": 0.5, "max": 1.0, "step": 0.01, "label": "Dynamic volume soft ceiling", "optional": true },
-    { "key": "loadBoost", "type": "number", "min": 0, "max": 1, "step": 0.05, "label": "Dyn volume load boost", "optional": true }
+    { "key": "waveguide", "type": "number", "min": 0, "max": 1, "step": 0.01, "label": "Waveguide exhaust mix", "optional": true }
   ],
   "mix": [
     { "key": "master", "type": "number", "min": 0, "max": 100, "step": 1, "label": "Default master %" },
     { "key": "bass", "type": "number", "min": 0, "max": 100, "step": 1, "label": "Default bass %" },
     { "key": "edge", "type": "number", "min": 0, "max": 100, "step": 1, "label": "Default edge %" }
+  ],
+  "dynamics": [
+    { "key": "dynDb", "type": "number", "min": 8, "max": 22, "step": 0.5, "label": "Dyn range (dB)" },
+    { "key": "dynCeiling", "type": "number", "min": 0.5, "max": 1.0, "step": 0.01, "label": "Soft ceiling" },
+    { "key": "loadBoost", "type": "number", "min": 0, "max": 0.6, "step": 0.01, "label": "Load boost" },
+    { "key": "shiftDuck", "type": "number", "min": 0.7, "max": 1.0, "step": 0.01, "label": "Shift duck" },
+    { "key": "overrunDuck", "type": "number", "min": 0.7, "max": 1.0, "step": 0.01, "label": "Overrun duck" },
+    { "key": "floorBias", "type": "number", "min": 0.8, "max": 1.3, "step": 0.01, "label": "Floor bias" }
   ]
 }

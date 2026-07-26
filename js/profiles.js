@@ -834,6 +834,9 @@ export const SOUND_PROFILES = [
       loadBoost: 0.22,
       dynCeiling: 0.88,
       dynDb: 14,
+      shiftDuck: 0.9,
+      overrunDuck: 0.9,
+      floorBias: 1.0,
     },
   },
   {
@@ -953,13 +956,14 @@ export async function loadLiveSet() {
 
 /**
  * Merge Classic standard JSON (assets/classic/*.classic.json) into SOUND_PROFILES.
- * Vessel profiles (vessel:true) are never overwritten — they stay sealed/rig-based.
- * Embedded profiles.js remains fallback if fetch fails.
+ * JSON is source of truth; mergeClassicDoc + resolveClassicProfile fill gaps only.
+ * Vessel profiles (vessel:true) are never overwritten.
  * @returns {Promise<number>} number of profiles merged
  */
 export async function loadClassicStandards() {
   if (_classicLoaded) return 0;
   try {
+    const { mergeClassicDoc } = await import('./classic-profile.js');
     const regRes = await fetch(CLASSIC_REGISTRY_URL, { cache: 'no-store' });
     if (!regRes.ok) return 0;
     const reg = await regRes.json();
@@ -969,42 +973,17 @@ export async function loadClassicStandards() {
       list.map(async (entry) => {
         const id = entry?.id;
         if (!id) return;
-        const base = SOUND_PROFILES.find((p) => p.id === id);
-        if (!base || base.vessel) return;
+        const idx = SOUND_PROFILES.findIndex((p) => p.id === id);
+        if (idx < 0) return;
+        const base = SOUND_PROFILES[idx];
+        if (base.vessel) return;
         const url = entry.file || `assets/classic/${id}.classic.json`;
         try {
           const r = await fetch(url, { cache: 'no-store' });
           if (!r.ok) return;
           const doc = await r.json();
-          if (doc.name != null) base.name = doc.name;
-          if (doc.tag != null) base.tag = doc.tag;
-          if (doc.car != null) base.car = doc.car;
-          if (doc.accent != null) base.accent = doc.accent;
-          if (doc.samplePack != null) base.samplePack = doc.samplePack;
-          if (doc.engine && typeof doc.engine === 'object') {
-            base.engine = { ...base.engine, ...doc.engine };
-          }
-          if (doc.tone && typeof doc.tone === 'object') {
-            base.tone = { ...base.tone, ...doc.tone };
-            if (Array.isArray(doc.tone.harmonics)) {
-              base.tone.harmonics = doc.tone.harmonics.slice();
-            }
-          }
-          if (doc.mix && typeof doc.mix === 'object') {
-            base.mix = { ...(base.mix || {}), ...doc.mix };
-          }
-          // Dyn Volume graph (RPM→loudness) + soft ceiling from CommandRoom
-          if (doc.dynamics && typeof doc.dynamics === 'object') {
-            base.dynamics = {
-              ...(base.dynamics || {}),
-              ...doc.dynamics,
-            };
-            if (Array.isArray(doc.dynamics.curve)) {
-              base.dynamics.curve = doc.dynamics.curve.map((p) =>
-                Array.isArray(p) ? [+p[0], +p[1]] : p
-              );
-            }
-          }
+          // Replace slot with fully resolved SoT (JSON wins + defaults for gaps)
+          SOUND_PROFILES[idx] = mergeClassicDoc(base, doc);
           n += 1;
         } catch (_) {}
       })

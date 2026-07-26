@@ -24,9 +24,9 @@ import { buildRevScript } from './launch-rev.js';
 import {
   computeDynamicVolume,
   sampleVolumeCurve,
-  sanitizeCurveMul,
   DEFAULT_CLASSIC_DYN_CURVE,
 } from './dynamic-volume.js';
+import { resolveClassicProfile } from './classic-profile.js';
 
 const REF_RPM = 4000; // buffer authored at this rpm feel
 
@@ -819,20 +819,28 @@ export class AudioEngine {
     this.master.gain.linearRampToValueAtTime(0, t + 0.4);
   }
 
+  /**
+   * Pure profile player: resolve missing defaults once, then only *read*
+   * this.profile in update(). No mid-stream "fix" of author values.
+   */
   setProfile(profile) {
-    this.profile = profile;
+    const resolved = profile?.vessel
+      ? profile
+      : resolveClassicProfile(profile || {});
+    this.profile = resolved;
     this._gear = 1;
     this._shifting = false;
+    this._dynVolSmooth = 0.55;
+    this._curveMulSmooth = 1;
     // Bust procedural buffer cache so tone/engine edits re-render loops
-    if (profile?.id && this._bufferCache) this._bufferCache.delete(profile.id);
+    if (resolved?.id && this._bufferCache) this._bufferCache.delete(resolved.id);
     if (this._started) {
       this._rebuildLayers();
-      this._tryLoadSamples(profile?.samplePack);
-      // Reconfigure waveguide geometry / enable mix for this profile
+      this._tryLoadSamples(resolved?.samplePack);
       if (this._wgNode) {
         try {
           this._wgNode.port.postMessage({
-            configure: this._waveguideOptsFromProfile(profile),
+            configure: this._waveguideOptsFromProfile(resolved),
           });
         } catch (_) {}
         this._syncWaveguideMix(this.ctx.currentTime, 0.03);
@@ -1237,11 +1245,11 @@ export class AudioEngine {
     const idle = eng.idleRpm || 800;
     const redline = eng.redlineRpm || 7500;
     const rpmNorm = clamp((this._rpm - idle) / Math.max(1, redline - idle), 0, 1.1);
-    // Clamp wild CommandRoom values (volume 2 / body 0 → clip or thin stutter)
-    const toneVol = clamp(tone.volume != null ? +tone.volume : 1, 0.45, 1.25);
-    const bodyAmt = clamp(tone.body == null || +tone.body < 0.15 ? 0.85 : +tone.body, 0.25, 1.2);
-    const highAmt = clamp(tone.high != null ? +tone.high : 0.4, 0, 1.2);
-    const midAmt = clamp(tone.mid != null ? +tone.mid : 0.5, 0, 1.2);
+    // Pure read from resolved profile (validate-at-save guarantees ranges)
+    const toneVol = +tone.volume || 1;
+    const bodyAmt = +tone.body || 0;
+    const highAmt = +tone.high || 0;
+    const midAmt = +tone.mid || 0;
     const throttle = this._throttle;
     const load = this._load;
     const speed = this._speedSmooth;
@@ -1263,16 +1271,17 @@ export class AudioEngine {
       this._effort = this._effortHold > 0 ? prevEff : damp(prevEff, effTarget, 1.8, dt);
     }
 
-    // --- DynamicVolume: curve + soft ceiling + per-gear (slew-limited) ---
+    // --- DynamicVolume: pure profile.dynamics (smoothing = audio glue only) ---
     const dynCfg = this.profile.dynamics || {};
-    const curvePts = Array.isArray(dynCfg.curve) && dynCfg.curve.length
-      ? dynCfg.curve
-      : (Array.isArray(tone.dynCurve) && tone.dynCurve.length
-        ? tone.dynCurve
-        : DEFAULT_CLASSIC_DYN_CURVE);
-    const curveMulRaw = sanitizeCurveMul(sampleVolumeCurve(this._rpm, curvePts));
-    this._curveMulSmooth = damp(this._curveMulSmooth ?? 1, curveMulRaw, 4.5, dt);
+    const curvePts =
+      Array.isArray(dynCfg.curve) && dynCfg.curve.length
+        ? dynCfg.curve
+        : DEFAULT_CLASSIC_DYN_CURVE;
+    const curveMulRaw = sampleVolumeCurve(this._rpm, curvePts);
+    // Light slew so GPS RPM wobble doesn't zipper — does not rewrite author curve
+    this._curveMulSmooth = damp(this._curveMulSmooth ?? curveMulRaw, curveMulRaw, 5, dt);
     this._dynCurve = curvePts;
+    const shiftDuck = dynCfg.shiftDuck != null ? +dynCfg.shiftDuck : 0.9;
 
     const dyn = computeDynamicVolume({
       effort: this._effort ?? 0,
@@ -1283,16 +1292,18 @@ export class AudioEngine {
       idlePresence: tone.idlePresence ?? 0.75,
       gear: this._gear || 1,
       gearCount: this._gearCount || GEAR_COUNT,
+      gearScale: dynCfg.gearScale,
       shifting: !!this._shifting,
       overrun: this._driveState === 'overrun',
-      dynDb: dynCfg.dynDb != null ? dynCfg.dynDb : (tone.dynDb != null ? tone.dynDb : 14),
+      dynDb: dynCfg.dynDb,
       curveMul: this._curveMulSmooth,
-      load: load,
-      loadBoost: dynCfg.loadBoost != null ? dynCfg.loadBoost : (tone.loadBoost != null ? tone.loadBoost : 0.22),
-      softCeiling: dynCfg.dynCeiling != null ? dynCfg.dynCeiling : (tone.dynCeiling != null ? tone.dynCeiling : 0.88),
-      floorBias: 1.08,
+      load,
+      loadBoost: dynCfg.loadBoost,
+      softCeiling: dynCfg.dynCeiling,
+      floorBias: dynCfg.floorBias,
+      shiftDuck,
+      overrunDuck: dynCfg.overrunDuck,
     });
-    // Extra audio-thread slew — never let dynGain jump frame-to-frame
     this._dynVolSmooth = damp(this._dynVolSmooth ?? dyn.dynVol, dyn.dynVol, 6.5, dt);
     if (this.dynGain) {
       this.dynGain.gain.setTargetAtTime(this._dynVolSmooth, this.ctx.currentTime, 0.14);
@@ -1301,6 +1312,7 @@ export class AudioEngine {
     this._driveEnergy = dyn.driveEnergy;
     this._gearDynScale = dyn.gearScale;
     this._curveMul = this._curveMulSmooth;
+    this._shiftDuck = shiftDuck;
 
     // Turbo spool: follows accel load (boost builds when pulling)
     const turboT =
@@ -1361,13 +1373,13 @@ export class AudioEngine {
         accelLoad,
         decelLoad,
         vol: toneVol,
-        shiftMute: this._shifting ? 0.88 : 1,
+        shiftMute: this._shifting ? (this._shiftDuck ?? 0.9) : 1,
         isEv,
       });
     }
 
-    // Living idle gain floor — ALWAYS present when engine on (0 km/h)
-    const idlePres = clamp(tone.idlePresence == null ? 0.75 : +tone.idlePresence, 0.2, 1.2);
+    // Living idle gain floor — from tone.idlePresence (profile)
+    const idlePres = +tone.idlePresence || 0.75;
     const idleAlive = 0.4 + idlePres * 0.5;
     // Dynamic idle wobble
     this._idlePhase += dt;
@@ -1391,8 +1403,8 @@ export class AudioEngine {
     }
 
     const vol = toneVol;
-    // Soft shift duck only (was 0.55 × dyn 0.55 = hard stutter every gear)
-    const shiftMute = this._shifting ? 0.88 : 1;
+    // Same shiftDuck as dynamics (profile) — single duck, not double secret mute
+    const shiftMute = this._shifting ? (this._shiftDuck ?? 0.9) : 1;
     const gBias = this._gearBias || gearToneBias(this._gear);
     // When samples are active, duck procedural body so packs lead (keep sub/crackle)
     const procDuck = this._useSamples ? 0.22 : 1;
@@ -1571,14 +1583,14 @@ export class AudioEngine {
     this.rearGain.gain.setTargetAtTime(1.0 + decelLoad * 0.45 + this._load * 0.1, t, tau);
     this.frontGain.gain.setTargetAtTime(1.1 + accelLoad * 0.2, t, tau);
 
-    // Bus EQ — keep cabin dark-ish; wild filterRedline values clamped hard
-    const filtIdle = clamp(tone.filterIdle || 600, 180, 1200);
-    const filtRed = Math.min(clamp(tone.filterRedline || 5000, 800, 8000), 2800);
+    // Bus EQ — filterIdle / filterRedline from profile as authored
+    const filtIdle = +tone.filterIdle || 600;
+    const filtRed = +tone.filterRedline || 3200;
     const lpHz =
       filtIdle +
       (filtRed - filtIdle) * Math.pow(rpmNorm, 0.9) * (0.45 + this.edge * 0.5);
-    this.lp.frequency.setTargetAtTime(Math.min(lpHz, 2800), t, fTau);
-    const subAmt = clamp(tone.sub != null ? +tone.sub : 0.5, 0, 1.15);
+    this.lp.frequency.setTargetAtTime(Math.max(80, lpHz), t, fTau);
+    const subAmt = +tone.sub || 0;
     this.subBoost.gain.setTargetAtTime(-1 + this.bassPresence * 5.5 + subAmt * 1.8, t, tau);
     // High shelf tamed (less edge hiss)
     this.hi.gain.setTargetAtTime(-3 + this.edge * 4.5 + highAmt * 2 * rpmNorm, t, tau);

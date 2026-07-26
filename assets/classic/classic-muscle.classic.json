@@ -60,7 +60,11 @@
     ],
     "loadBoost": 0.22,
     "dynCeiling": 0.88,
-    "dynDb": 14
+    "dynDb": 14,
+    "shiftDuck": 0.9,
+    "overrunDuck": 0.9,
+    "floorBias": 1.0,
+    "gearScale": [0.94, 0.97, 1.0, 0.98, 0.96]
   },
-  "updatedAt": "2026-07-26T18:00:00.000Z"
+  "updatedAt": "2026-07-26T20:00:00.000Z"
 }
