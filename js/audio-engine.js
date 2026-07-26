@@ -3,10 +3,20 @@
  *
  * Primary model (see docs/thor_ref.md):
  * 1. Drive states: idle · pull · cruise · overrun · shift
- * 2. Virtual RPM + 3-speed virtual gearbox (EV-style)
+ * 2. Virtual RPM + virtual gearbox
  * 3. Multi-layer mix: sample pack when available, else procedural
  * 4. Layer roles ≈ THUNDER(body) / STORM(mid) / ECHO(high)
  * 5. Load from accel/throttle; overrun character on decel
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * BINDING: PURE PROFILE PLAYER — docs/CLASSIC-CONTRACT.md · AGENTS.md
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Classic sound character lives in assets/classic/{id}.classic.json only.
+ * This class READs a resolved profile. It must NOT sanitize/override author
+ * values (body, volume, dyn curve, idlePresence, …) mid-update.
+ * Reject bad tunes at Save (validateClassicProfile), not here.
+ * Defaults for missing keys: resolveClassicProfile() once in setProfile().
+ * App-only: Master slider + GPS path (js/app.js) — not tone fields.
  */
 
 import { clamp, damp } from './animations.js';

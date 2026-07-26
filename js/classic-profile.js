@@ -1,14 +1,23 @@
 /**
  * Classic profile contract — single source of truth helpers.
  *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * BINDING LAW — see docs/CLASSIC-CONTRACT.md and root AGENTS.md
+ * ═══════════════════════════════════════════════════════════════════════════
+ *   1. Tune finishes in assets/classic/{id}.classic.json
+ *   2. AudioEngine is a pure profile player (no silent rewrite in update())
+ *   3. validateClassicProfile() gates every Save — bad values never ship
+ *   4. resolveClassicProfile() fills *missing* keys once — never mid-frame
+ *   5. App system (Master / GPS) is NOT a sound profile field
+ *
+ * Violating this when you have many profiles breaks every card at once.
+ * These rules were written before and then neglected — do not neglect again.
+ *
  * Architecture:
  *   assets/classic/{id}.classic.json  = SoT (tune finishes here)
  *   validateClassicProfile()          = gate on Save / Deploy authoring
  *   resolveClassicProfile()           = fill *missing* defaults once at load
  *   AudioEngine                       = pure player (reads resolved profile only)
- *
- * App system (NOT in profile): Master slider, GPS smoothing, UI.
- * Never "fix" intentional profile values at runtime — reject at save instead.
  */
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));

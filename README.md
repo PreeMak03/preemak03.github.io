@@ -38,6 +38,19 @@ No install, no account. Works offline after the first load.
 Vanilla JavaScript + Web Audio API — เสียงทั้งหมดสังเคราะห์สด ไม่มีไฟล์เสียง ไม่มี dependency
 Pure client-side · no build step · no external libraries.
 
+### ⛔ สถาปัตย์ Classic (กฏบังคับ — ห้ามละเลย)
+
+**จูนจบที่โปรไฟล์ · engine เป็น pure player · validate ตอน save**
+
+| เอกสาร | สำหรับ |
+|--------|--------|
+| [`AGENTS.md`](AGENTS.md) | AI / dev — LAW ทั้งชุด |
+| [`docs/CLASSIC-CONTRACT.md`](docs/CLASSIC-CONTRACT.md) | สัญญาเต็ม + ตัวอย่างถูก/ผิด |
+| [`vessel/standards/CLASSIC.md`](vessel/standards/CLASSIC.md) | มาตรฐาน Classic ย่อ |
+
+SoT: `assets/classic/{id}.classic.json` · อย่า sanitize เสียงใน `audio-engine` แทนการจูน  
+Lab: [`docs/COMMAND-ROOM.md`](docs/COMMAND-ROOM.md)
+
 ---
 
 ## 📄 License

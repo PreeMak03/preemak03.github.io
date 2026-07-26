@@ -1,9 +1,11 @@
 /**
  * Dynamic Volume math — pure functions.
  *
+ * BINDING (docs/CLASSIC-CONTRACT.md · AGENTS.md):
  * All behaviour parameters come from the *resolved* profile (dynamics + tone).
- * This module does NOT rewrite profile intent. Missing values must be filled by
- * resolveClassicProfile() before play.
+ * This module does NOT rewrite profile intent / sanitize author curves.
+ * Missing values must be filled by resolveClassicProfile() before play.
+ * Do not re-introduce clamp-over-author here to "fix the car".
  */
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));

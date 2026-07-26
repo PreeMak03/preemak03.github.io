@@ -21,6 +21,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { execSync, spawnSync } from 'child_process';
 import { createReadStream } from 'fs';
+import {
+  validateClassicProfile,
+  resolveClassicProfile,
+} from '../../js/classic-profile.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
@@ -194,6 +198,7 @@ function applyAndPush(action, payload) {
       'js/engine-waveguide.worklet.js',
       'js/audio-engine.js',
       'js/dynamic-volume.js',
+      'js/classic-profile.js',
       'js/launch-rev.js',
       'js/gearbox.js',
       'sw.js',
@@ -431,6 +436,20 @@ const server = http.createServer(async (req, res) => {
         send(res, 400, { ok: false, message: 'bad id' });
         return;
       }
+      // LAW: validate-at-save (docs/CLASSIC-CONTRACT.md · AGENTS.md)
+      // Reject bad tunes so AudioEngine stays a pure profile player.
+      const check = validateClassicProfile(doc);
+      if (!check.ok) {
+        send(res, 400, {
+          ok: false,
+          message: 'profile validation failed',
+          errors: check.errors,
+          warnings: check.warnings,
+        });
+        return;
+      }
+      // Materialize defaults so 200 profiles on disk are complete SoT
+      doc = resolveClassicProfile(doc);
       doc.schema = 'tas-classic/1';
       doc.standard = 'classic-audioengine/1';
       doc.updatedAt = new Date().toISOString();

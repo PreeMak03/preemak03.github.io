@@ -2,6 +2,9 @@
 
 **Not shown in the Tesla user app.** Local author tool only.
 
+> **Classic LAW (binding):** [`docs/CLASSIC-CONTRACT.md`](CLASSIC-CONTRACT.md) · root [`AGENTS.md`](../AGENTS.md)  
+> จูนจบที่ JSON · validate ตอน Save · engine ห้ามทับค่า author — ละเลยแล้วพังทั้งกองโปรไฟล์
+
 ## Start
 
 ```
@@ -38,13 +41,23 @@ Plain `python -m http.server` can browse files but **cannot** push to GitHub.
 
 ## Classic tab
 
-Edit **every** Classic AudioEngine variable (`engine` / `tone` / `mix` / meta).
+Edit **every** Classic AudioEngine variable (`engine` / `tone` / `mix` / `dynamics` / meta).
 
-- Source of truth: `assets/classic/{id}.classic.json`
-- Field schema: `assets/classic/fields.json`
+- **Source of truth:** `assets/classic/{id}.classic.json`
+- **Contract:** tune finishes here; main app `AudioEngine` is a **pure profile player** (no silent rewrite of author values)
+- **Validate-at-save:** `js/classic-profile.js` → `validateClassicProfile` (CommandRoom + `POST /__lab/classic-save`)
+- Field schema: `assets/classic/fields.json` (aligned with `CLASSIC_LIMITS`)
 - CLI: `node vessel/tools/classic-tool.mjs help`
-- Save → `POST /__lab/classic-save` (lab-serve only)
-- User app merges JSON via `loadClassicStandards()` on boot
+- Save materializes defaults via `resolveClassicProfile` so each JSON is complete
+- User app: `loadClassicStandards()` → `mergeClassicDoc` on boot
+
+### App system vs profile (do not mix)
+
+| Profile (per card) | App system (global) |
+|--------------------|---------------------|
+| engine / tone / mix / dynamics | Master slider |
+| Dyn curve, shiftDuck, dynDb | GPS smoothing / deadband |
+| waveguide mix in tone | Online carousel (`live-set`) |
 
 ### Classic tab — Listen + Launch Rev
 
