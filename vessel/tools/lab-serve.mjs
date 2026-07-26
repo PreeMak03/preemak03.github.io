@@ -88,17 +88,33 @@ function writeLive(data) {
   fs.writeFileSync(LIVE_PATH, JSON.stringify(data, null, 2) + '\n', 'utf8');
 }
 
-function git(cmd) {
-  return execSync(cmd, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+/**
+ * Run git/shell with a hard timeout so Deploy never hangs the HTTP request forever
+ * (common on Windows when credential UI / dual servers block).
+ * @param {string} cmd
+ * @param {number} [timeoutMs]
+ */
+function git(cmd, timeoutMs = 120000) {
+  return execSync(cmd, {
+    cwd: ROOT,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: timeoutMs,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+  });
 }
 
-function gitOk(cmd) {
+function gitOk(cmd, timeoutMs) {
   try {
-    return { ok: true, out: git(cmd) };
+    return { ok: true, out: git(cmd, timeoutMs) };
   } catch (e) {
+    const timedOut = e.killed || e.signal === 'SIGTERM' || /ETIMEDOUT|timed out/i.test(String(e.message || ''));
     return {
       ok: false,
-      out: (e.stdout || '') + (e.stderr || e.message || String(e)),
+      out:
+        (e.stdout || '') +
+        (e.stderr || e.message || String(e)) +
+        (timedOut ? '\n[timeout] command exceeded limit — check git auth / network' : ''),
     };
   }
 }
@@ -174,6 +190,7 @@ function applyAndPush(action, payload) {
       'js/vessel-runtime.worklet.js',
       'js/engine-waveguide.worklet.js',
       'js/audio-engine.js',
+      'js/dynamic-volume.js',
       'js/launch-rev.js',
       'js/gearbox.js',
       'sw.js',
