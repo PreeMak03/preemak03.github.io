@@ -1,0 +1,65 @@
+{
+  "schema": "tas-classic/1",
+  "standard": "classic-audioengine/1",
+  "id": "vr6",
+  "name": "VR6",
+  "tag": "Unique I6",
+  "car": "VW Golf R32",
+  "accent": "rgba(34, 197, 94, 0.5)",
+  "samplePack": null,
+  "engine": {
+    "type": "ice",
+    "cylinders": 6,
+    "idleRpm": 800,
+    "redlineRpm": 6800,
+    "gears": [
+      3.5,
+      2.2,
+      1.55,
+      1.15,
+      0.9,
+      0.75
+    ],
+    "rpmCurve": 0.9
+  },
+  "tone": {
+    "harmonics": [
+      0,
+      1,
+      0.75,
+      0.6,
+      0.55,
+      0.45,
+      0.38,
+      0.3,
+      0.25
+    ],
+    "body": 0.8,
+    "mid": 0.85,
+    "high": 0.45,
+    "sub": 0.55,
+    "noise": 0.12,
+    "metallic": 0.25,
+    "scream": 0.4,
+    "turbo": 0,
+    "turboLag": 0,
+    "crackle": 0.1,
+    "lope": 0.12,
+    "boxer": 0.2,
+    "rotary": 0,
+    "electric": 0,
+    "exhaustPulse": 0.5,
+    "drive": 0.45,
+    "filterIdle": 480,
+    "filterRedline": 4200,
+    "resonance": 0.65,
+    "volume": 1,
+    "idlePresence": 0.72,
+    "characterMid": 0.85
+  },
+  "mix": {
+    "master": 70,
+    "bass": 55,
+    "edge": 35
+  }
+}

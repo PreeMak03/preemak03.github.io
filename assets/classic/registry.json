@@ -1,0 +1,93 @@
+{
+  "schema": "tas-classic-registry/1",
+  "updatedAt": "2026-07-26T15:40:18.456Z",
+  "note": "Classic AudioEngine standard — editable via vessel/tools/classic-tool.mjs + CommandRoom Classic tab. Vessel profiles are sealed separately under vessel/standards/.",
+  "standard": "classic-audioengine/1",
+  "profiles": [
+    {
+      "id": "na-v12",
+      "name": "NA V12",
+      "file": "assets/classic/na-v12.classic.json"
+    },
+    {
+      "id": "rb26",
+      "name": "RB26",
+      "file": "assets/classic/rb26.classic.json"
+    },
+    {
+      "id": "2jz",
+      "name": "2JZ",
+      "file": "assets/classic/2jz.classic.json"
+    },
+    {
+      "id": "f20c",
+      "name": "F20C",
+      "file": "assets/classic/f20c.classic.json"
+    },
+    {
+      "id": "flat6-911",
+      "name": "Flat-6",
+      "file": "assets/classic/flat6-911.classic.json"
+    },
+    {
+      "id": "s58-s55",
+      "name": "S58 / S55",
+      "file": "assets/classic/s58-s55.classic.json"
+    },
+    {
+      "id": "coyote-v8",
+      "name": "Coyote V8",
+      "file": "assets/classic/coyote-v8.classic.json"
+    },
+    {
+      "id": "k20c",
+      "name": "K20C",
+      "file": "assets/classic/k20c.classic.json"
+    },
+    {
+      "id": "vr6",
+      "name": "VR6",
+      "file": "assets/classic/vr6.classic.json"
+    },
+    {
+      "id": "4g63",
+      "name": "4G63",
+      "file": "assets/classic/4g63.classic.json"
+    },
+    {
+      "id": "ls-v8",
+      "name": "LS V8",
+      "file": "assets/classic/ls-v8.classic.json"
+    },
+    {
+      "id": "camaro-restomod",
+      "name": "Camaro Restomod",
+      "file": "assets/classic/camaro-restomod.classic.json"
+    },
+    {
+      "id": "b58",
+      "name": "B58",
+      "file": "assets/classic/b58.classic.json"
+    },
+    {
+      "id": "rotary-rx7",
+      "name": "Rotary",
+      "file": "assets/classic/rotary-rx7.classic.json"
+    },
+    {
+      "id": "electric-hyper",
+      "name": "Electric Hyper",
+      "file": "assets/classic/electric-hyper.classic.json"
+    },
+    {
+      "id": "classic-muscle",
+      "name": "Classic Muscle",
+      "file": "assets/classic/classic-muscle.classic.json"
+    },
+    {
+      "id": "s85-v10",
+      "name": "S85 V10",
+      "file": "assets/classic/s85-v10.classic.json"
+    }
+  ]
+}

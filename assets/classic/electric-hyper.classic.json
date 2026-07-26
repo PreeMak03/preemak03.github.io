@@ -1,0 +1,58 @@
+{
+  "schema": "tas-classic/1",
+  "standard": "classic-audioengine/1",
+  "id": "electric-hyper",
+  "name": "Electric Hyper",
+  "tag": "Futuristic",
+  "car": "Rimac · Battista",
+  "accent": "rgba(167, 139, 250, 0.55)",
+  "samplePack": null,
+  "engine": {
+    "type": "electric",
+    "cylinders": 0,
+    "idleRpm": 0,
+    "redlineRpm": 18000,
+    "gears": [
+      1
+    ],
+    "rpmCurve": 1.15
+  },
+  "tone": {
+    "harmonics": [
+      0,
+      1,
+      0.2,
+      0.15,
+      0.1,
+      0.08
+    ],
+    "body": 0.25,
+    "mid": 0.4,
+    "high": 0.9,
+    "sub": 0.15,
+    "noise": 0.35,
+    "metallic": 0.2,
+    "scream": 0.7,
+    "turbo": 0,
+    "turboLag": 0,
+    "crackle": 0,
+    "lope": 0,
+    "boxer": 0,
+    "rotary": 0,
+    "electric": 1,
+    "exhaustPulse": 0,
+    "drive": 0.15,
+    "filterIdle": 1200,
+    "filterRedline": 12000,
+    "resonance": 0.4,
+    "volume": 0.95,
+    "idlePresence": 0.12,
+    "whoosh": 0.9,
+    "whine": 1
+  },
+  "mix": {
+    "master": 70,
+    "bass": 55,
+    "edge": 35
+  }
+}

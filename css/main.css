@@ -903,6 +903,102 @@ button {
   color: var(--accent);
 }
 
+.scope-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: -4px;
+}
+
+.scope-chip {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+}
+
+.scope-chip.is-vessel {
+  color: #5eead4;
+  border-color: rgba(94, 234, 212, 0.35);
+  background: rgba(94, 234, 212, 0.1);
+}
+
+.scope-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.3;
+  flex: 1;
+  min-width: 140px;
+}
+
+.tune-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 12px 14px;
+  border-radius: var(--radius-md, 12px);
+  border: 1px solid var(--border-subtle);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.tune-section[data-scope="sound"] {
+  border-color: rgba(94, 234, 212, 0.18);
+}
+
+.tune-section[data-scope="app"] {
+  border-color: rgba(167, 139, 250, 0.18);
+}
+
+.tune-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tune-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.tune-section-tag {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  color: #5eead4;
+  background: rgba(94, 234, 212, 0.12);
+}
+
+.tune-section-tag--app {
+  color: #c4b5fd;
+  background: rgba(167, 139, 250, 0.14);
+}
+
+.tune-section-note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.tune-sheet {
+  max-height: min(78vh, 640px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .sheet-meta {
   display: flex;
   justify-content: space-between;

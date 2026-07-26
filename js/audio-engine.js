@@ -20,6 +20,7 @@ import {
   shiftLandingRpm,
 } from './gearbox.js';
 import { SamplePackLoader, createSampleLayer } from './sample-pack.js';
+import { buildRevScript } from './launch-rev.js';
 
 const REF_RPM = 4000; // buffer authored at this rpm feel
 
@@ -86,6 +87,12 @@ export class AudioEngine {
     this._useSamples = false;
     this._prevRpm = 900;
     this._bufferCache = new Map();
+    /** Eval / Classic editor pin (null = free RPM) */
+    this._holdRpm = null;
+    /** Optional DasEtwas-lineage waveguide worklet (exhaust color) */
+    this._wgNode = null;
+    this._wgGain = null;
+    this._wgReady = false;
   }
 
   async init() {
@@ -134,8 +141,93 @@ export class AudioEngine {
     this._rebuildLayers();
     // Try sample pack for default profile (non-blocking)
     this._tryLoadSamples(this.profile?.samplePack);
+    // Waveguide exhaust (async; no-op if worklet fails)
+    this._initWaveguide().catch((e) => console.warn('[AudioEngine] waveguide', e));
     this._started = true;
     this._startUpdateLoop();
+  }
+
+  /**
+   * Optional hybrid exhaust path — js/engine-waveguide.worklet.js
+   * Enabled when profile.tone.waveguide > 0 (or profile.waveguide === true).
+   */
+  async _initWaveguide() {
+    if (!this.ctx || this._wgReady) return;
+    try {
+      // Allow CommandRoom / nested paths to override (window.__TAS_WG_WORKLET__)
+      const wgUrl = (typeof window !== 'undefined' && window.__TAS_WG_WORKLET__)
+        || 'js/engine-waveguide.worklet.js';
+      await this.ctx.audioWorklet.addModule(wgUrl);
+      this._wgNode = new AudioWorkletNode(this.ctx, 'engine-waveguide', {
+        numberOfOutputs: 1,
+        outputChannelCount: [1],
+        processorOptions: this._waveguideOptsFromProfile(this.profile),
+      });
+      this._wgGain = this.ctx.createGain();
+      this._wgGain.gain.value = 0;
+      // Into bus before drive/EQ so cabin LPF still applies
+      this._wgNode.connect(this._wgGain);
+      this._wgGain.connect(this.bus);
+      this._wgReady = true;
+      this._syncWaveguideMix(this.ctx.currentTime, 0.02);
+    } catch (e) {
+      this._wgReady = false;
+      this._wgNode = null;
+      throw e;
+    }
+  }
+
+  _waveguideOptsFromProfile(profile) {
+    const eng = profile?.engine || {};
+    const tone = profile?.tone || {};
+    const nCyl = eng.cylinders || 8;
+    const offsets = [];
+    for (let i = 0; i < nCyl; i++) offsets.push(i / nCyl);
+    return {
+      enabled: true,
+      cylinders: nCyl,
+      crankOffsets: offsets,
+      intakeLenM: 0.38,
+      exhaustLenM: 0.55,
+      extractorLenM: 0.42,
+      straightPipeLenM: 1.05,
+      mufflerAction: 0.12 + (tone.noise || 0) * 0.05,
+      ignitionTime: 0.05 + (1 - (tone.scream || 0.2)) * 0.04,
+      pistonMotionFactor: 1.8 + (tone.sub || 0.5) * 0.6,
+      ignitionFactor: 3.5 + (tone.exhaustPulse || 0.5) * 1.5,
+      intakeVolume: 0,
+      exhaustVolume: 0.7,
+      engineVibrationsVolume: 0.04,
+      intakeNoiseFactor: 0,
+      crankshaftFluctuation: 0.08 + (tone.lope || 0) * 0.2,
+      exhaustLpfHz: Math.min(1400, (tone.filterRedline || 2600) * 0.45),
+      master: 0.38,
+    };
+  }
+
+  _waveguideMixLevel() {
+    const p = this.profile;
+    if (!p) return 0;
+    if (p.waveguide === true) return p.tone?.waveguide != null ? p.tone.waveguide : 0.3;
+    if (p.tone?.waveguide != null) return Math.max(0, p.tone.waveguide);
+    return 0; // default off — enable via tone.waveguide in classic JSON
+  }
+
+  _syncWaveguideMix(t, tau = 0.05) {
+    if (!this._wgGain) return;
+    const lvl = this._waveguideMixLevel();
+    this._wgGain.gain.setTargetAtTime(lvl * 0.55, t, tau);
+  }
+
+  _pushWaveguideParams(t, tau = 0.04) {
+    if (!this._wgReady || !this._wgNode) return;
+    try {
+      this._wgNode.parameters.get('rpm').setTargetAtTime(this._rpm, t, tau);
+      this._wgNode.parameters.get('load').setTargetAtTime(this._load || 0, t, tau);
+      const mix = Math.min(1, this._waveguideMixLevel() + 0.15);
+      this._wgNode.parameters.get('mix').setTargetAtTime(mix, t, tau);
+      this._syncWaveguideMix(t, tau);
+    } catch (_) {}
   }
 
   /**
@@ -329,11 +421,17 @@ export class AudioEngine {
 
       for (let i = 0; i < plen && start + i < n; i++) {
         const u = i / plen;
-        // Exhaust blow envelope — fast attack, exponential body
+        // Exhaust blow envelope — softer attack (anti-alias / no radio static)
         const env = Math.exp(-u * (4.5 + hollow * 3)) * (1 - u * 0.15);
-        const atk = Math.min(1, i / Math.max(1, sr * 0.0008));
+        // ~1.2 ms min attack ≈ bandlimited step vs 0.8 ms hard click
+        const atk = Math.min(1, i / Math.max(1, sr * 0.0012));
+        // smoothstep attack (PolyBLEP-ish continuous derivative)
+        const atkS = atk * atk * (3 - 2 * atk);
 
         const t = i / sr;
+        // Cap partials below ~1.6 kHz to reduce foldover when loop is rate-scaled
+        const midFc = Math.min(midF, 900);
+        const hiFc = Math.min(midFc * 1.85, 1600);
         // Combustion thump
         const th =
           Math.sin(2 * Math.PI * thumpF * t) *
@@ -342,36 +440,37 @@ export class AudioEngine {
           subHeavy;
         // Mid body
         const mid =
-          Math.sin(2 * Math.PI * midF * t + 0.4) *
+          Math.sin(2 * Math.PI * midFc * t + 0.4) *
           Math.exp(-u * 6) *
-          (0.45 + rasp * 0.4);
-        // Higher rasp partials
+          (0.45 + rasp * 0.35);
+        // Higher rasp partials (tamed)
         const hi =
-          Math.sin(2 * Math.PI * (midF * 2.1) * t) *
-          Math.exp(-u * 12) *
+          Math.sin(2 * Math.PI * hiFc * t) *
+          Math.exp(-u * 14) *
           rasp *
-          0.35;
+          0.22;
 
-        // Filtered noise burst (exhaust gas)
+        // Filtered noise burst — grit hard-gated / dark (≤~1 kHz character)
         const white = Math.random() * 2 - 1;
         b0 = 0.99886 * b0 + white * 0.0555179;
         b1 = 0.99332 * b1 + white * 0.0750759;
         b2 = 0.969 * b2 + white * 0.153852;
-        const pink = (b0 + b1 + b2 + white * 0.15) * 0.15;
+        const pink = (b0 + b1 + b2 + white * 0.08) * 0.12;
+        // Steep darken of grit (anti-static: no 2–6 kHz brush)
+        const gritDark = grit * 0.55;
+        const noiseBurst = pink * Math.exp(-u * (7 + metallic * 5)) * gritDark;
 
-        const noiseBurst = pink * Math.exp(-u * (5 + metallic * 4)) * grit;
-
-        // Metallic ring
+        // Metallic ring — lower / softer (was 2.2–4 kHz radio zone)
         const ring =
-          metallic > 0.05
-            ? Math.sin(2 * Math.PI * (2200 + metallic * 1800) * t) *
-              Math.exp(-u * 25) *
+          metallic > 0.08
+            ? Math.sin(2 * Math.PI * (1200 + metallic * 900) * t) *
+              Math.exp(-u * 28) *
               metallic *
-              0.25
+              0.12
             : 0;
 
         const sample =
-          (th * 1.1 + mid + hi + noiseBurst + ring) * env * atk * 0.55;
+          (th * 1.15 + mid + hi + noiseBurst + ring) * env * atkS * 0.55;
         const idx = start + i;
         data[idx] = clamp(data[idx] + sample, -1, 1);
         // wrap soft for seamless loop
@@ -381,17 +480,29 @@ export class AudioEngine {
       }
     }
 
+    // Soft one-pole LPF on buffer (~1.8 kHz) — post anti-alias for rate-stretch
+    {
+      const fc = 1800;
+      const a = Math.exp((-2 * Math.PI * fc) / sr);
+      let y = 0;
+      for (let i = 0; i < n; i++) {
+        y = data[i] + a * (y - data[i]);
+        data[i] = y;
+      }
+    }
+
     // Soft normalize
     let peak = 0.001;
     for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(data[i]));
     const norm = 0.9 / peak;
     for (let i = 0; i < n; i++) data[i] *= norm;
 
-    // Crossfade loop ends
-    const xfade = Math.floor(sr * 0.02);
+    // Crossfade loop ends (longer = fewer seam clicks / static ticks)
+    const xfade = Math.floor(sr * 0.035);
     for (let i = 0; i < xfade; i++) {
       const k = i / xfade;
-      data[i] = data[i] * k + data[n - xfade + i] * (1 - k);
+      const ks = k * k * (3 - 2 * k);
+      data[i] = data[i] * ks + data[n - xfade + i] * (1 - ks);
     }
 
     return buffer;
@@ -698,10 +809,31 @@ export class AudioEngine {
     this.profile = profile;
     this._gear = 1;
     this._shifting = false;
+    // Bust procedural buffer cache so tone/engine edits re-render loops
+    if (profile?.id && this._bufferCache) this._bufferCache.delete(profile.id);
     if (this._started) {
       this._rebuildLayers();
       this._tryLoadSamples(profile?.samplePack);
+      // Reconfigure waveguide geometry / enable mix for this profile
+      if (this._wgNode) {
+        try {
+          this._wgNode.port.postMessage({
+            configure: this._waveguideOptsFromProfile(profile),
+          });
+        } catch (_) {}
+        this._syncWaveguideMix(this.ctx.currentTime, 0.03);
+      } else if (this._waveguideMixLevel() > 0) {
+        this._initWaveguide().catch(() => {});
+      }
     }
+  }
+
+  /**
+   * Pin RPM for A/B or Classic editor preview (null to release).
+   * @param {number|null} rpm
+   */
+  setHoldRpm(rpm) {
+    this._holdRpm = rpm == null ? null : Math.max(0, rpm);
   }
 
   /**
@@ -770,41 +902,10 @@ export class AudioEngine {
     const tone = this.profile.tone;
     const isEv = eng.type === 'electric' || tone.electric > 0.8;
     this._revDuration = clamp(seconds, 2, 10);
-    this._revScript = this._buildRevScript(this._revDuration, isEv);
+    // Shared with VesselAudio + Vessel Lab bench (js/launch-rev.js)
+    this._revScript = buildRevScript(this._revDuration, isEv);
     this._revUntil = performance.now() + this._revDuration * 1000;
     return true;
-  }
-
-  /**
-   * Drag-run schedule: full-throttle pulls to redline separated by torque-cut
-   * shifts, packed into `total` seconds, ending with a lift-off release.
-   * Norms are fractions of (idle→redline); shift landings match gearbox.js.
-   */
-  _buildRevScript(total, isEv) {
-    const release = Math.min(0.9, total * 0.18);
-    const pullTotal = total - release;
-    const segs = [];
-    if (isEv) {
-      // Single-ratio EV: one long surge instead of gear bangs
-      segs.push({ type: 'pull', t0: 0, t1: pullTotal, from: 0.12, to: 0.86, gear: 1 });
-    } else {
-      const shiftGap = 0.12;
-      const weights = [0.3, 0.33, 0.37]; // higher gears pull a little longer
-      const froms = [0.16, 0.42, 0.46]; // launch, then G2/G3 shift landings
-      const pullTime = pullTotal - shiftGap * 2;
-      let t = 0;
-      for (let i = 0; i < 3; i++) {
-        const dur = pullTime * weights[i];
-        segs.push({ type: 'pull', t0: t, t1: t + dur, from: froms[i], to: 1.0, gear: i + 1 });
-        t += dur;
-        if (i < 2) {
-          segs.push({ type: 'shift', t0: t, t1: t + shiftGap, gear: i + 2, land: froms[i + 1], fired: false });
-          t += shiftGap;
-        }
-      }
-    }
-    segs.push({ type: 'release', t0: total - release, t1: total, from: 1.0 });
-    return segs;
   }
 
   get revActive() {
@@ -1172,7 +1273,12 @@ export class AudioEngine {
     if (!this.running || !this._layers) return;
 
     const t = this.ctx.currentTime;
-    const tau = this.smoothFilter ? 0.05 : 0.02;
+    // Anti-static: longer filter/gain time constants → no zipper / radio swish
+    const tau = this.smoothFilter ? 0.07 : 0.04;
+    const fTau = Math.max(tau, 0.09); // frequency/coeff paths only
+
+    // Waveguide hybrid exhaust (rpm/load follow engine state)
+    this._pushWaveguideParams(t, tau);
 
     // Combustion micro-jitter random walk — kills the "perfect loop" giveaway
     const jAmt = isEv ? 0.0015 : 0.004 + (1 - rpmNorm) * 0.008 + accelLoad * 0.003;
@@ -1273,15 +1379,19 @@ export class AudioEngine {
         idleWobble *
         (0.8 + this.bassPresence * 0.45) *
         procDuck;
-      this._layers.low.gain.gain.setTargetAtTime(lowG * 0.75, t, rotIdle ? 0.02 : tau);
+      this._layers.low.gain.gain.setTargetAtTime(lowG * 0.75, t, rotIdle ? 0.03 : tau);
+      // Cap low-layer LPF open (~1.5 kHz) — less alias when rate-stretched
       this._layers.low.filter.frequency.setTargetAtTime(
-        380 +
-          rpmNorm * 1100 +
-          tunnel * 400 +
-          accelLoad * 500 +
-          (this._gear - 1) * 80,
+        Math.min(
+          1500,
+          380 +
+            rpmNorm * 900 +
+            tunnel * 300 +
+            accelLoad * 350 +
+            (this._gear - 1) * 60
+        ),
         t,
-        tau
+        fTau
       );
 
       // High layer: opens earlier (howlStart) but softer — boxer/911 howl without redline only
@@ -1299,41 +1409,48 @@ export class AudioEngine {
         procDuck;
       // Rotary idle rasp: each brap burst briefly opens the buzzy high layer
       const highRasp = rotIdle ? rotaryIdleBurst * 0.16 * vol : 0;
-      this._layers.high.gain.gain.setTargetAtTime(highG * 0.42 + highRasp, t, rotIdle ? 0.02 : tau);
+      this._layers.high.gain.gain.setTargetAtTime(highG * 0.42 + highRasp, t, rotIdle ? 0.03 : tau);
+      // High BP center capped ~2.2 kHz (was up to ~4 kHz+ = radio zone)
       this._layers.high.filter.frequency.setTargetAtTime(
-        1000 + rpmNorm * 3000 + tone.metallic * 700 + tunnel * 500,
+        Math.min(2200, 900 + rpmNorm * 1100 + tone.metallic * 400 + tunnel * 350),
         t,
-        tau
+        fTau
       );
 
-      // Intake — mostly pull; light whoosh in tunnel for air sense
+      // Intake — hard-gate grit at high load (anti-static brush)
+      const noiseGate = clamp(1 - accelLoad * 0.55, 0.35, 1);
       this._layers.intake.gain.gain.setTargetAtTime(
         (0.008 +
-          accelLoad * 0.05 * (0.35 + tone.noise * 0.4) +
-          tunnel * 0.025 +
-          rpmNorm * 0.015 +
+          accelLoad * 0.035 * (0.25 + tone.noise * 0.25) * noiseGate +
+          tunnel * 0.02 +
+          rpmNorm * 0.012 +
           (rotIdle ? rotaryIdleBurst * 0.05 : 0)) *
           vol,
         t,
         rotIdle ? 0.02 : tau
       );
+      // Intake BP dark — noise bed hard-capped <1 kHz (anti-static)
       this._layers.intake.filter.frequency.setTargetAtTime(
-        1000 + accelLoad * 2800 + rpmNorm * 800,
+        Math.min(1000, 480 + accelLoad * 400 + rpmNorm * 200),
         t,
-        tau
+        fTau
       );
 
       // Turbo only if profile has it — NOT tied to gear number
       this._layers.turbo.gain.gain.setTargetAtTime(
-        this._turbo * (tone.turbo || 0) * 0.16 * vol,
+        this._turbo * (tone.turbo || 0) * 0.14 * vol,
         t,
         tau
       );
-      this._layers.turbo.filter.frequency.setTargetAtTime(1800 + this._turbo * 4500, t, tau);
-      this._layers.turbo.filter.Q.setTargetAtTime(1.5 + this._turbo * 3.5, t, tau);
+      this._layers.turbo.filter.frequency.setTargetAtTime(
+        Math.min(2800, 1400 + this._turbo * 1200),
+        t,
+        fTau
+      );
+      this._layers.turbo.filter.Q.setTargetAtTime(1.2 + this._turbo * 2.2, t, fTau);
 
       this._layers.whoosh.gain.gain.setTargetAtTime(
-        this._turbo * 0.04 * (tone.turbo || 0) + throttle * 0.012 + tunnel * 0.015,
+        (this._turbo * 0.03 * (tone.turbo || 0) + throttle * 0.008 + tunnel * 0.01) * noiseGate,
         t,
         tau
       );
@@ -1349,24 +1466,24 @@ export class AudioEngine {
       this._layers.scream.gain.gain.setTargetAtTime(sc, t, tau);
       const fire = (this._rpm / 60) * ((eng.cylinders || 6) / 2);
 
-      // Formant tracks 2nd firing order — the "rasp" that opens under load
-      this.formant.frequency.setTargetAtTime(clamp(fire * 2, 220, 2400), t, tau);
+      // Formant tracks 2nd firing order — capped ≤1.8 kHz (anti-static)
+      this.formant.frequency.setTargetAtTime(clamp(fire * 2, 220, 1800), t, fTau);
       this.formant.gain.setTargetAtTime(
-        (accelLoad * 5.5 + this._load * 1.5 + (tone.mid || 0.5) * 1.8) *
-          (0.5 + this.edge * 0.5),
+        (accelLoad * 4.0 + this._load * 1.2 + (tone.mid || 0.5) * 1.4) *
+          (0.45 + this.edge * 0.4),
         t,
         tau
       );
       // Slight boxer detune wobble on pitch feel via filter Q path
       this._layers.scream.src.frequency.setTargetAtTime(
-        Math.max(100, fire * (1.8 + tone.scream * 0.8) + rpmNorm * 500 + tunnel * 200),
+        Math.max(100, fire * (1.8 + tone.scream * 0.8) + rpmNorm * 400 + tunnel * 150),
         t,
-        tau
+        fTau
       );
       this._layers.scream.filter.frequency.setTargetAtTime(
-        1400 + rpmNorm * 3600 + (tone.boxer || 0) * 400,
+        Math.min(2400, 1100 + rpmNorm * 1100 + (tone.boxer || 0) * 250),
         t,
-        tau
+        fTau
       );
 
       // Exhaust pulse / sub — stronger in mid for flat-6 character
@@ -1398,25 +1515,26 @@ export class AudioEngine {
     this.rearGain.gain.setTargetAtTime(1.0 + decelLoad * 0.45 + this._load * 0.1, t, tau);
     this.frontGain.gain.setTargetAtTime(1.1 + accelLoad * 0.2, t, tau);
 
-    // Bus EQ
-    this.lp.frequency.setTargetAtTime(
-      (tone.filterIdle || 600) +
-        ((tone.filterRedline || 5000) - (tone.filterIdle || 600)) * Math.pow(rpmNorm, 0.9) * (0.5 + this.edge * 0.6),
-      t,
-      tau
-    );
+    // Bus EQ — master LPF ceiling ~2.6–3.2 kHz max open (was up to 5–7 kHz)
+    const filtIdle = tone.filterIdle || 600;
+    const filtRed = Math.min(tone.filterRedline || 5000, 3200);
+    const lpHz =
+      filtIdle +
+      (filtRed - filtIdle) * Math.pow(rpmNorm, 0.9) * (0.45 + this.edge * 0.5);
+    this.lp.frequency.setTargetAtTime(Math.min(lpHz, 3000), t, fTau);
     this.subBoost.gain.setTargetAtTime(-1 + this.bassPresence * 6 + tone.sub * 2, t, tau);
-    this.hi.gain.setTargetAtTime(-2 + this.edge * 6 + tone.high * 3 * rpmNorm, t, tau);
-    this.presence.gain.setTargetAtTime(1 + tone.mid * 4 + accelLoad * 3, t, tau);
+    // High shelf tamed (less edge hiss)
+    this.hi.gain.setTargetAtTime(-3 + this.edge * 4.5 + tone.high * 2 * rpmNorm, t, tau);
+    this.presence.gain.setTargetAtTime(1 + tone.mid * 3.2 + accelLoad * 2.2, t, tau);
 
-    // Drive amount
-    if ((this._driveTick = (this._driveTick || 0) + dt) > 0.2) {
+    // Drive amount — slower rebuild (zipper from waveshaper curve swap)
+    if ((this._driveTick = (this._driveTick || 0) + dt) > 0.35) {
       this._driveTick = 0;
       this.drive.curve = makeDriveCurve(
         clamp(
-          (tone.drive || 0.4) * (0.3 + rpmNorm * 0.4 + accelLoad * 0.4),
+          (tone.drive || 0.4) * (0.3 + rpmNorm * 0.35 + accelLoad * 0.35),
           0.1,
-          0.9
+          0.85
         )
       );
     }

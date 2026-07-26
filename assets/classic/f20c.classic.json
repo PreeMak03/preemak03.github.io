@@ -1,0 +1,68 @@
+{
+  "schema": "tas-classic/1",
+  "standard": "classic-audioengine/1",
+  "id": "f20c",
+  "name": "F20C",
+  "tag": "Metallic",
+  "car": "Honda S2000",
+  "accent": "rgba(248, 250, 252, 0.5)",
+  "samplePack": null,
+  "engine": {
+    "type": "ice",
+    "cylinders": 4,
+    "idleRpm": 870,
+    "redlineRpm": 9000,
+    "gears": [
+      3.9,
+      2.6,
+      1.85,
+      1.4,
+      1.1,
+      0.9
+    ],
+    "rpmCurve": 1.05
+  },
+  "tone": {
+    "harmonics": [
+      0,
+      1,
+      0.4,
+      0.75,
+      0.25,
+      0.55,
+      0.2,
+      0.45,
+      0.18,
+      0.35,
+      0.15,
+      0.28
+    ],
+    "body": 0.55,
+    "mid": 0.7,
+    "high": 1,
+    "sub": 0.25,
+    "noise": 0.12,
+    "metallic": 0.95,
+    "scream": 1,
+    "turbo": 0,
+    "turboLag": 0,
+    "crackle": 0.08,
+    "lope": 0.05,
+    "boxer": 0,
+    "rotary": 0,
+    "electric": 0,
+    "exhaustPulse": 0.35,
+    "drive": 0.4,
+    "filterIdle": 1100,
+    "filterRedline": 9000,
+    "resonance": 0.85,
+    "volume": 0.98,
+    "idlePresence": 0.55,
+    "characterMid": 0.35
+  },
+  "mix": {
+    "master": 70,
+    "bass": 55,
+    "edge": 35
+  }
+}

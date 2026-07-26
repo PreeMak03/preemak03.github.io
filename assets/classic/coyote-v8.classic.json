@@ -1,0 +1,66 @@
+{
+  "schema": "tas-classic/1",
+  "standard": "classic-audioengine/1",
+  "id": "coyote-v8",
+  "name": "Coyote V8",
+  "tag": "American",
+  "car": "Ford Mustang",
+  "accent": "rgba(239, 68, 68, 0.5)",
+  "samplePack": null,
+  "engine": {
+    "type": "ice",
+    "cylinders": 8,
+    "idleRpm": 700,
+    "redlineRpm": 7500,
+    "gears": [
+      3.4,
+      2.15,
+      1.5,
+      1.15,
+      0.9,
+      0.72
+    ],
+    "rpmCurve": 0.88
+  },
+  "tone": {
+    "harmonics": [
+      0,
+      1,
+      0.9,
+      0.45,
+      0.7,
+      0.35,
+      0.55,
+      0.25,
+      0.4,
+      0.2
+    ],
+    "body": 0.9,
+    "mid": 0.55,
+    "high": 0.4,
+    "sub": 0.85,
+    "noise": 0.16,
+    "metallic": 0.2,
+    "scream": 0.35,
+    "turbo": 0,
+    "turboLag": 0,
+    "crackle": 0.15,
+    "lope": 0.35,
+    "boxer": 0,
+    "rotary": 0,
+    "electric": 0,
+    "exhaustPulse": 0.7,
+    "drive": 0.55,
+    "filterIdle": 350,
+    "filterRedline": 3800,
+    "resonance": 0.6,
+    "volume": 1.08,
+    "idlePresence": 0.8,
+    "characterMid": 0.6
+  },
+  "mix": {
+    "master": 70,
+    "bass": 55,
+    "edge": 35
+  }
+}

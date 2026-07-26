@@ -1,0 +1,65 @@
+{
+  "schema": "tas-classic/1",
+  "standard": "classic-audioengine/1",
+  "id": "4g63",
+  "name": "4G63",
+  "tag": "Spool+Crackle",
+  "car": "Lancer Evo",
+  "accent": "rgba(239, 68, 68, 0.45)",
+  "samplePack": null,
+  "engine": {
+    "type": "ice",
+    "cylinders": 4,
+    "idleRpm": 900,
+    "redlineRpm": 7500,
+    "gears": [
+      3.7,
+      2.4,
+      1.7,
+      1.25,
+      1,
+      0.82
+    ],
+    "rpmCurve": 0.98
+  },
+  "tone": {
+    "harmonics": [
+      0,
+      1,
+      0.5,
+      0.65,
+      0.35,
+      0.45,
+      0.28,
+      0.35,
+      0.2
+    ],
+    "body": 0.65,
+    "mid": 0.7,
+    "high": 0.6,
+    "sub": 0.45,
+    "noise": 0.28,
+    "metallic": 0.4,
+    "scream": 0.55,
+    "turbo": 1,
+    "turboLag": 0.7,
+    "turboTone": 0.85,
+    "crackle": 0.95,
+    "lope": 0.1,
+    "boxer": 0,
+    "rotary": 0,
+    "electric": 0,
+    "exhaustPulse": 0.48,
+    "drive": 0.65,
+    "filterIdle": 500,
+    "filterRedline": 5500,
+    "resonance": 0.8,
+    "volume": 1.05,
+    "idlePresence": 0.64
+  },
+  "mix": {
+    "master": 70,
+    "bass": 55,
+    "edge": 35
+  }
+}

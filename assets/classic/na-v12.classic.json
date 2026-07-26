@@ -1,0 +1,69 @@
+{
+  "schema": "tas-classic/1",
+  "standard": "classic-audioengine/1",
+  "id": "na-v12",
+  "name": "NA V12",
+  "tag": "Scream",
+  "car": "Ferrari 812 · Lambo",
+  "accent": "rgba(239, 68, 68, 0.55)",
+  "samplePack": null,
+  "engine": {
+    "type": "ice",
+    "cylinders": 12,
+    "idleRpm": 880,
+    "redlineRpm": 8900,
+    "gears": [
+      3.8,
+      2.5,
+      1.8,
+      1.35,
+      1.05,
+      0.88
+    ],
+    "rpmCurve": 0.92
+  },
+  "tone": {
+    "harmonics": [
+      0,
+      1,
+      0.72,
+      0.55,
+      0.42,
+      0.38,
+      0.32,
+      0.28,
+      0.24,
+      0.2,
+      0.16,
+      0.14,
+      0.12
+    ],
+    "body": 0.72,
+    "mid": 0.55,
+    "high": 0.95,
+    "sub": 0.35,
+    "noise": 0.1,
+    "metallic": 0.45,
+    "scream": 1,
+    "turbo": 0,
+    "turboLag": 0,
+    "crackle": 0.05,
+    "lope": 0.05,
+    "boxer": 0,
+    "rotary": 0,
+    "electric": 0,
+    "exhaustPulse": 0.25,
+    "drive": 0.35,
+    "filterIdle": 900,
+    "filterRedline": 7800,
+    "resonance": 0.55,
+    "volume": 1,
+    "idlePresence": 0.62,
+    "characterMid": 0.6
+  },
+  "mix": {
+    "master": 70,
+    "bass": 55,
+    "edge": 35
+  }
+}

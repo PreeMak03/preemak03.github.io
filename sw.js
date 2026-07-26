@@ -1,11 +1,12 @@
 /**
- * Tesla Active Sound — offline cache
+ * Tesla Active Sound � offline cache
  * Precache the app shell; stale-while-revalidate on every GET so the app
  * opens instantly in the car even on dead LTE, while still picking up
  * deployed updates in the background.
  */
 
-const CACHE = 'tas-v22';
+// Bump when ship assets change so cars drop stale offline shells
+const CACHE = 'tas-v33';
 
 const ASSETS = [
   './',
@@ -24,6 +25,17 @@ const ASSETS = [
   './js/geolocation.js',
   './js/sample-pack.js',
   './js/onboarding.js',
+  './js/vessel-audio.js',
+  './js/launch-rev.js',
+  './js/vessel-runtime.worklet.js',
+  './js/engine-waveguide.worklet.js',
+  './assets/vessel/camaro.rig.json',
+  './assets/vessel/rotary.rig.json',
+  './assets/vessel/american.rig.json',
+  './assets/vessel/gentle.rig.json',
+  './assets/vessel/live-set.json',
+  './assets/classic/registry.json',
+  // vessel/command-room/* is Lab-only — never precache
 ];
 
 self.addEventListener('install', (e) => {
@@ -45,7 +57,7 @@ self.addEventListener('activate', (e) => {
 });
 
 // Network-first (with a short timeout) for our OWN files, so a fresh deploy shows
-// up immediately when online — falling back to cache on dead/slow LTE so the app
+// up immediately when online � falling back to cache on dead/slow LTE so the app
 // still opens instantly offline. Cross-origin (fonts) stays cache-first.
 const NET_TIMEOUT = 2500;
 
@@ -65,7 +77,7 @@ self.addEventListener('fetch', (e) => {
   const sameOrigin = new URL(req.url).origin === self.location.origin;
 
   if (sameOrigin) {
-    // network-first with timeout → cache fallback
+    // network-first with timeout ? cache fallback
     e.respondWith(
       new Promise((resolve) => {
         let settled = false;

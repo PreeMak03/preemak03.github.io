@@ -1,0 +1,57 @@
+{
+  "schema": "tas-classic-fields/1",
+  "standard": "classic-audioengine/1",
+  "description": "Every editable variable for Classic AudioEngine profiles (not VESSEL). Used by classic-tool + CommandRoom.",
+  "meta": [
+    { "key": "id", "type": "string", "ro": true, "label": "Profile ID" },
+    { "key": "name", "type": "string", "label": "Name" },
+    { "key": "tag", "type": "string", "label": "Tag" },
+    { "key": "car", "type": "string", "label": "Car line" },
+    { "key": "accent", "type": "string", "label": "Accent CSS color" },
+    { "key": "samplePack", "type": "string", "label": "Sample pack folder", "optional": true }
+  ],
+  "engine": [
+    { "key": "type", "type": "enum", "values": ["ice", "electric"], "label": "Engine type" },
+    { "key": "cylinders", "type": "number", "min": 1, "max": 16, "step": 1, "label": "Cylinders" },
+    { "key": "idleRpm", "type": "number", "min": 400, "max": 2500, "step": 10, "label": "Idle RPM" },
+    { "key": "redlineRpm", "type": "number", "min": 3000, "max": 12000, "step": 50, "label": "Redline RPM" },
+    { "key": "gears", "type": "number[]", "label": "Gear ratios (array)" },
+    { "key": "rpmCurve", "type": "number", "min": 0.5, "max": 1.5, "step": 0.01, "label": "RPM curve" },
+    { "key": "revLo", "type": "number", "min": 0.05, "max": 0.5, "step": 0.01, "label": "Rev lo (shift land)" },
+    { "key": "revHi", "type": "number", "min": 0.2, "max": 1.0, "step": 0.01, "label": "Rev hi (shift point)" },
+    { "key": "revPull", "type": "number", "min": 0.5, "max": 1.1, "step": 0.01, "label": "Rev pull" }
+  ],
+  "tone": [
+    { "key": "harmonics", "type": "number[]", "label": "Harmonics array ( PeriodicWave-style, index 1 = fund )" },
+    { "key": "body", "type": "number", "min": 0, "max": 1.5, "step": 0.01, "label": "Body" },
+    { "key": "mid", "type": "number", "min": 0, "max": 1.5, "step": 0.01, "label": "Mid" },
+    { "key": "high", "type": "number", "min": 0, "max": 1.5, "step": 0.01, "label": "High" },
+    { "key": "sub", "type": "number", "min": 0, "max": 1.5, "step": 0.01, "label": "Sub" },
+    { "key": "noise", "type": "number", "min": 0, "max": 1, "step": 0.01, "label": "Noise / grit" },
+    { "key": "metallic", "type": "number", "min": 0, "max": 1, "step": 0.01, "label": "Metallic" },
+    { "key": "scream", "type": "number", "min": 0, "max": 1.2, "step": 0.01, "label": "Scream" },
+    { "key": "turbo", "type": "number", "min": 0, "max": 1, "step": 0.01, "label": "Turbo" },
+    { "key": "turboLag", "type": "number", "min": 0, "max": 1, "step": 0.01, "label": "Turbo lag" },
+    { "key": "crackle", "type": "number", "min": 0, "max": 1, "step": 0.01, "label": "Crackle" },
+    { "key": "lope", "type": "number", "min": 0, "max": 1.2, "step": 0.01, "label": "Cam lope" },
+    { "key": "boxer", "type": "number", "min": 0, "max": 1, "step": 0.01, "label": "Boxer" },
+    { "key": "rotary", "type": "number", "min": 0, "max": 1, "step": 0.01, "label": "Rotary" },
+    { "key": "electric", "type": "number", "min": 0, "max": 1, "step": 0.01, "label": "Electric" },
+    { "key": "exhaustPulse", "type": "number", "min": 0, "max": 1.2, "step": 0.01, "label": "Exhaust pulse" },
+    { "key": "drive", "type": "number", "min": 0, "max": 1, "step": 0.01, "label": "Drive / saturation" },
+    { "key": "filterIdle", "type": "number", "min": 80, "max": 4000, "step": 10, "label": "Filter idle Hz" },
+    { "key": "filterRedline", "type": "number", "min": 400, "max": 14000, "step": 50, "label": "Filter redline Hz" },
+    { "key": "resonance", "type": "number", "min": 0, "max": 1, "step": 0.01, "label": "Resonance" },
+    { "key": "volume", "type": "number", "min": 0.2, "max": 1.5, "step": 0.01, "label": "Volume" },
+    { "key": "idlePresence", "type": "number", "min": 0, "max": 1.2, "step": 0.01, "label": "Idle presence" },
+    { "key": "characterMid", "type": "number", "min": 0, "max": 1.2, "step": 0.01, "label": "Character mid (tunnel)" },
+    { "key": "whoosh", "type": "number", "min": 0, "max": 1.2, "step": 0.01, "label": "Whoosh (EV)", "optional": true },
+    { "key": "whine", "type": "number", "min": 0, "max": 1.2, "step": 0.01, "label": "Whine (EV)", "optional": true },
+    { "key": "waveguide", "type": "number", "min": 0, "max": 1, "step": 0.01, "label": "Waveguide exhaust mix (DasEtwas)", "optional": true }
+  ],
+  "mix": [
+    { "key": "master", "type": "number", "min": 0, "max": 100, "step": 1, "label": "Default master %" },
+    { "key": "bass", "type": "number", "min": 0, "max": 100, "step": 1, "label": "Default bass %" },
+    { "key": "edge", "type": "number", "min": 0, "max": 100, "step": 1, "label": "Default edge %" }
+  ]
+}

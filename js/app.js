@@ -4,8 +4,9 @@
  */
 
 import { ticker, waapi, clamp } from './animations.js';
-import { getProfileById } from './profiles.js';
+import { getProfileById, loadLiveSet, loadClassicStandards, getLiveProfileIds } from './profiles.js';
 import { AudioEngine } from './audio-engine.js';
+import { VesselAudio, hasRig } from './vessel-audio.js';
 import { GeolocationService } from './geolocation.js';
 import { VehiclePhysics, SIM_RATE } from './vehicle-physics.js';
 import { startOnboarding } from './onboarding.js';
@@ -145,7 +146,32 @@ const state = {
   engineOn: false,
 };
 
-const audio = new AudioEngine();
+let audio = new AudioEngine();
+
+/**
+ * Pick the sound engine for a profile: VESSEL synthesis runtime for rigs that
+ * have a compiled .vsl, the classic AudioEngine otherwise. Swaps the live
+ * `audio` instance (restarting if running). Falls back to AudioEngine if the
+ * VESSEL runtime fails to load, so the app never goes silent.
+ */
+async function ensureEngineFor(id) {
+  const wantVessel = hasRig(id);
+  const isVessel = audio instanceof VesselAudio;
+  if (wantVessel === isVessel) return;
+  const wasRunning = state.engineOn;
+  try {
+    if (wasRunning) audio.stop();
+    audio = wantVessel ? new VesselAudio() : new AudioEngine();
+    audio.setProfile(getProfileById(id));
+    if (wasRunning) await audio.start();
+  } catch (e) {
+    console.warn('[app] VESSEL engine unavailable, falling back', e);
+    if (audio) try { audio.stop(); } catch {}
+    audio = new AudioEngine();
+    audio.setProfile(getProfileById(id));
+    if (wasRunning) await audio.start();
+  }
+}
 const geo = new GeolocationService();
 const physics = new VehiclePhysics(SIM_RATE);
 const speedUI = new SpeedDisplay();
@@ -223,14 +249,63 @@ function applyProfileMix(profile) {
     el.value = v;
     el.dispatchEvent(new Event('input'));
   };
+  // Master is APP SYSTEM — only apply if profile explicitly sets it as a starting default
   set('vol-master', mix.master);
+  // Bass/Edge are SOUND PROFILE (cabin for VESSEL, tone for classic)
   set('vol-bass', mix.bass);
   set('vol-edge', mix.edge);
 }
 
-function init() {
+/**
+ * Label the tune sheet so it's obvious whether you're on:
+ *   Sound Profile (this car)  vs  App System (global webapp)
+ *   + Classic tone engine     vs  VESSEL synthesis
+ */
+function updateTuneScope(profileId) {
+  const vessel = hasRig(profileId);
+  const chip = $('#engine-scope-chip');
+  const hint = $('#tune-scope-hint');
+  const note = $('#sound-profile-note');
+  if (chip) {
+    chip.textContent = vessel ? 'VESSEL · synthesis' : 'Classic · tone';
+    chip.classList.toggle('is-vessel', vessel);
+  }
+  if (hint) {
+    hint.textContent = vessel
+      ? 'Sound = cabin/DNA of this card · App = Master/GPS (global)'
+      : 'Bass/Edge = this card · Master/GPS = app-wide';
+  }
+  if (note) {
+    note.textContent = vessel
+      ? 'Bass/Edge = cabin path. Engine DNA = vessel/presets/*.engine.json (bench). Vehicle RPM = camaro.deploy.json → vehicle{}.'
+      : 'Bass/Edge follow this card’s tone mix. Engine character is the classic procedural profile.';
+  }
+}
+
+async function selectProfile(profileId) {
+  const profile = getProfileById(profileId);
+  if (!profile) return;
+  state.profileId = profile.id;
+  await ensureEngineFor(profile.id);
+  audio.setProfile(profile);
+  applyProfileMix(profile);
+  updateTuneScope(profile.id);
+  const nameEl = $('#active-profile-name');
+  if (nameEl) nameEl.textContent = profile.name;
+}
+
+async function init() {
   initHud();
   initThemeToggle();
+
+  // Online carousel = assets/vessel/live-set.json (CommandRoom Apply → GitHub)
+  await loadLiveSet();
+  // Classic standard JSON (assets/classic/*.classic.json) — merge into profiles
+  await loadClassicStandards();
+  {
+    const live = getLiveProfileIds();
+    if (live.length && !live.includes(state.profileId)) state.profileId = live[0];
+  }
 
   // Sim demand slider (in the tune sheet)
   const simSlider = $('#sim-speed');
@@ -264,23 +339,13 @@ function init() {
 
   const scroller = $('#profile-scroller');
   if (scroller) {
-    renderProfiles(scroller, state.profileId, (profile) => {
-      state.profileId = profile.id;
-      audio.setProfile(profile);
-      applyProfileMix(profile);
-      const nameEl = $('#active-profile-name');
-      if (nameEl) {
-        nameEl.textContent = profile.name;
-        waapi(
-          nameEl,
-          [
-            { opacity: 0.4, transform: 'translateY(4px)' },
-            { opacity: 1, transform: 'translateY(0)' },
-          ],
-          { duration: 320 }
-        );
-      }
-      showToast(`${profile.name} · ${profile.car || profile.tag}`);
+    renderProfiles(scroller, state.profileId, async (profile) => {
+      await selectProfile(profile.id);
+      showToast(
+        hasRig(profile.id)
+          ? `${profile.name} · Sound Profile (VESSEL)`
+          : `${profile.name} · ${profile.car || profile.tag}`
+      );
     });
   }
 
@@ -297,6 +362,7 @@ function init() {
     btn?.classList.add('anim-pressed');
     try {
       if (!state.engineOn) {
+        await ensureEngineFor(state.profileId);
         await audio.start();
         state.engineOn = true;
         setAudioStatus(true);
@@ -367,8 +433,7 @@ function init() {
     }
   });
 
-  audio.setProfile(getProfileById(state.profileId));
-  applyProfileMix(getProfileById(state.profileId));
+  await selectProfile(state.profileId);
   const initName = $('#active-profile-name');
   if (initName) initName.textContent = getProfileById(state.profileId).name;
 
@@ -475,7 +540,8 @@ function tick(dt) {
 
 // Debug handle for in-car console / testing (harmless in production)
 window.TAS = {
-  audio,
+  get audio() { return audio; },   // live — the instance swaps between AudioEngine / VesselAudio
+  get engine() { return audio instanceof VesselAudio ? 'vessel' : 'classic'; },
   state,
   physics,
   perf,

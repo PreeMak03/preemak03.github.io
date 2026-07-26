@@ -1,0 +1,72 @@
+{
+  "schema": "tas-classic/1",
+  "standard": "classic-audioengine/1",
+  "id": "classic-muscle",
+  "name": "Classic Muscle",
+  "tag": "Lopey V8",
+  "car": "Old school American",
+  "accent": "rgba(180, 83, 9, 0.55)",
+  "samplePack": "",
+  "engine": {
+    "type": "ice",
+    "cylinders": 8,
+    "idleRpm": 650,
+    "redlineRpm": 8000,
+    "gears": [
+      3.2,
+      2,
+      1.4,
+      1.05,
+      0.85
+    ],
+    "rpmCurve": 0.8,
+    "revLo": 0.1,
+    "revHi": 0.37,
+    "revPull": 0.88
+  },
+  "tone": {
+    "harmonics": [
+      0,
+      1,
+      1,
+      0.35,
+      0.8,
+      0.25,
+      0.55,
+      0.18,
+      0.4,
+      0.12
+    ],
+    "body": 0,
+    "mid": 0.4,
+    "high": 0.2,
+    "sub": 1,
+    "noise": 0,
+    "metallic": 0,
+    "scream": 0.3,
+    "turbo": 0,
+    "turboLag": 0,
+    "crackle": 0,
+    "lope": 0,
+    "boxer": 0,
+    "rotary": 0,
+    "electric": 0,
+    "exhaustPulse": 1,
+    "drive": 0.42,
+    "filterIdle": 220,
+    "filterRedline": 8000,
+    "resonance": 999,
+    "volume": 2,
+    "idlePresence": 0,
+    "characterMid": 0.55,
+    "waveguide": 0.28,
+    "whoosh": null,
+    "whine": null
+  },
+  "mix": {
+    "master": 100,
+    "bass": 100,
+    "edge": 5
+  },
+  "updatedAt": "2026-07-26T15:40:18.455Z"
+}

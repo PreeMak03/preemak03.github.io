@@ -1,0 +1,72 @@
+{
+  "schema": "tas-classic/1",
+  "standard": "classic-audioengine/1",
+  "id": "rotary-rx7",
+  "name": "Rotary",
+  "tag": "Wail",
+  "car": "Mazda RX-7 FD",
+  "accent": "rgba(251, 113, 133, 0.55)",
+  "samplePack": null,
+  "engine": {
+    "type": "rotary",
+    "cylinders": 2,
+    "idleRpm": 820,
+    "redlineRpm": 8500,
+    "gears": [
+      3.6,
+      2.35,
+      1.65,
+      1.25,
+      1,
+      0.82
+    ],
+    "rpmCurve": 1.08,
+    "revLo": 0.24,
+    "revHi": 0.8,
+    "revPull": 1
+  },
+  "tone": {
+    "harmonics": [
+      0,
+      1,
+      0.3,
+      0.85,
+      0.25,
+      0.7,
+      0.2,
+      0.55,
+      0.18,
+      0.45,
+      0.15,
+      0.35
+    ],
+    "body": 0.5,
+    "mid": 0.8,
+    "high": 1,
+    "sub": 0.2,
+    "noise": 0.3,
+    "metallic": 0.72,
+    "scream": 1,
+    "turbo": 0.8,
+    "turboLag": 0.45,
+    "turboTone": 0.7,
+    "crackle": 0.35,
+    "lope": 0.08,
+    "boxer": 0,
+    "rotary": 1,
+    "electric": 0,
+    "exhaustPulse": 0.3,
+    "drive": 0.45,
+    "filterIdle": 1000,
+    "filterRedline": 9500,
+    "resonance": 1,
+    "volume": 1,
+    "idlePresence": 0.64,
+    "characterMid": 0.4
+  },
+  "mix": {
+    "master": 70,
+    "bass": 55,
+    "edge": 35
+  }
+}
