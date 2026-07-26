@@ -1,9 +1,9 @@
 {
   "schema": "tas-live-set/1",
-  "updatedAt": "2026-07-26T16:00:00.000Z",
+  "updatedAt": "2026-07-26T15:50:39.725Z",
   "source": "command-room",
   "status": "online",
-  "message": "Full ship deploy · classic-muscle Online · https://preemak03.github.io/",
+  "message": "Deployed · 4 Online · commit 26ec620 · https://preemak03.github.io/",
   "site": "https://preemak03.github.io/",
   "live": [
     "classic-muscle",
@@ -24,9 +24,9 @@
     "camaro-restomod"
   ],
   "lastPush": {
-    "at": "2026-07-26T16:00:00.000Z",
+    "at": "2026-07-26T15:50:39.724Z",
     "ok": true,
     "action": "deploy",
-    "commit": null
+    "commit": "26ec620"
   }
 }
