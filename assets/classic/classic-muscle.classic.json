@@ -61,12 +61,42 @@
     "characterMid": 0.55,
     "waveguide": 0.28,
     "whoosh": null,
-    "whine": null
+    "whine": null,
+    "dynDb": null,
+    "dynCeiling": null,
+    "loadBoost": null
   },
   "mix": {
     "master": 100,
     "bass": 100,
     "edge": 5
   },
-  "updatedAt": "2026-07-26T15:40:18.455Z"
+  "updatedAt": "2026-07-26T17:07:15.144Z",
+  "dynamics": {
+    "curve": [
+      [
+        650,
+        0.151
+      ],
+      [
+        1941,
+        0.336
+      ],
+      [
+        3238,
+        0.412
+      ],
+      [
+        6488,
+        0.433
+      ],
+      [
+        8000,
+        0.325
+      ]
+    ],
+    "loadBoost": 0.1,
+    "dynCeiling": 0.86,
+    "dynDb": 18
+  }
 }

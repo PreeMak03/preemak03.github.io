@@ -21,6 +21,7 @@ import {
   gearToneBias,
 } from './gearbox.js';
 import { buildRevScript, stepRevScript } from './launch-rev.js';
+import { computeDynamicVolume } from './dynamic-volume.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const damp = (cur, target, lambda, dt) => cur + (target - cur) * (1 - Math.exp(-lambda * dt));
@@ -616,27 +617,40 @@ export class VesselAudio {
       );
     }
 
-    // --- Classic DynamicVolume (dB model) + curve + shift mute + idle presence ---
+    // --- DynamicVolume (shared with Classic): soft ceiling + per-gear + idle floor ---
     const drpm = this._rpm - this._prevRpm; this._prevRpm = this._rpm;
     this._accelEnv += (clamp(drpm / 40, 0, 1) - this._accelEnv) * 0.15;
-    const driveEnergy = clamp(
-      0.12 + this._effort * 0.55 + rpmNorm * 0.28 + this._accelEnv * (d.accelBoost ?? 0.35) * 0.25
-        - decelLoad * 0.14,
+    const curveMul = this._sampleCurve(this._rpm);
+    // Fold accel envelope into effort-like term for energy (pull swell)
+    const effortEff = clamp(
+      (this._effort ?? 0) + this._accelEnv * (d.accelBoost ?? 0.35) * 0.35,
       0,
       1
     );
-    const DYN_DB = 20;
-    let dynVol = Math.pow(10, (-DYN_DB * (1 - driveEnergy)) / 20);
-    // Volume↔RPM curve from deploy (Classic layer mix equivalent)
-    dynVol *= this._sampleCurve(this._rpm) * (1 + (d.loadBoost ?? 0.5) * (loadOut - 0.3));
-    // Idle presence floor when rolling to stop
-    const ip = this._idlePresence ?? 0.75;
-    if (speed < 4) dynVol = Math.max(dynVol, (1 - speed / 4) * (0.18 + ip * 0.14) + 0.06);
-    // Shift mute (Classic ~0.55)
-    if (this._shifting) dynVol *= 0.55;
-    // Overrun quieting
-    if (this._driveState === 'overrun') dynVol *= 0.72;
-    if (this._nodes) this._nodes.dyn.gain.setTargetAtTime(clamp(dynVol, 0.04, 1.15), ac.currentTime, 0.06);
+    const dyn = computeDynamicVolume({
+      effort: effortEff,
+      rpmNorm,
+      accelLoad,
+      decelLoad,
+      speed,
+      idlePresence: this._idlePresence ?? 0.75,
+      gear: this._gear || 1,
+      gearCount: GEAR_COUNT,
+      shifting: !!this._shifting,
+      overrun: this._driveState === 'overrun',
+      dynDb: d.dynDb != null ? d.dynDb : 20,
+      curveMul,
+      loadBoost: d.loadBoost ?? 0.5,
+      load: loadOut,
+      softCeiling: d.dynCeiling != null ? d.dynCeiling : 0.88,
+      floorBias: 1.0,
+    });
+    if (this._nodes) {
+      this._nodes.dyn.gain.setTargetAtTime(dyn.dynVol, ac.currentTime, 0.07);
+    }
+    this._dynVol = dyn.dynVol;
+    this._driveEnergy = dyn.driveEnergy;
+    this._gearDynScale = dyn.gearScale;
   }
 
   setSpeed(kmh, extras = {}) {

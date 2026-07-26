@@ -980,6 +980,18 @@ export async function loadClassicStandards() {
           if (doc.mix && typeof doc.mix === 'object') {
             base.mix = { ...(base.mix || {}), ...doc.mix };
           }
+          // Dyn Volume graph (RPM→loudness) + soft ceiling from CommandRoom
+          if (doc.dynamics && typeof doc.dynamics === 'object') {
+            base.dynamics = {
+              ...(base.dynamics || {}),
+              ...doc.dynamics,
+            };
+            if (Array.isArray(doc.dynamics.curve)) {
+              base.dynamics.curve = doc.dynamics.curve.map((p) =>
+                Array.isArray(p) ? [+p[0], +p[1]] : p
+              );
+            }
+          }
           n += 1;
         } catch (_) {}
       })

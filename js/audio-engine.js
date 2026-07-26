@@ -21,6 +21,11 @@ import {
 } from './gearbox.js';
 import { SamplePackLoader, createSampleLayer } from './sample-pack.js';
 import { buildRevScript } from './launch-rev.js';
+import {
+  computeDynamicVolume,
+  sampleVolumeCurve,
+  DEFAULT_CLASSIC_DYN_CURVE,
+} from './dynamic-volume.js';
 
 const REF_RPM = 4000; // buffer authored at this rpm feel
 
@@ -1230,23 +1235,42 @@ export class AudioEngine {
       this._effort = this._effortHold > 0 ? prevEff : damp(prevEff, effTarget, 2.5, dt);
     }
 
-    // --- DynamicVolume: real-exhaust SPL model, capped by Master Volume ---
-    // "Drive energy" 0..1 = how hard the exhaust is working (load + revs − lift).
-    // Real exhausts swing ~20 dB from idle/cruise up to WOT; we mirror that as a
-    // log-loudness curve so cruise is genuinely soft and a pull really opens up.
-    const driveEnergy = clamp(
-      0.12 + this._effort * 0.6 + rpmNorm * 0.32 - decelLoad * 0.12,
-      0,
-      1
-    );
-    const DYN_DB = 22;
-    let dynVol = Math.pow(10, (-DYN_DB * (1 - driveEnergy)) / 20);
-    // Idle presence eases in as you roll to a stop — no abrupt jump into a hum
-    if (speed < 4) dynVol = Math.max(dynVol, (1 - speed / 4) * 0.24 + 0.08);
+    // --- DynamicVolume: RPM graph curve (like Vessel) + soft ceiling + per-gear ---
+    // Primary control = dynamics.curve [[rpm, vol], …] — easy to see / drag in CommandRoom
+    const dynCfg = this.profile.dynamics || {};
+    const curvePts = Array.isArray(dynCfg.curve) && dynCfg.curve.length
+      ? dynCfg.curve
+      : (Array.isArray(tone.dynCurve) && tone.dynCurve.length
+        ? tone.dynCurve
+        : DEFAULT_CLASSIC_DYN_CURVE);
+    const curveMul = sampleVolumeCurve(this._rpm, curvePts);
+    this._dynCurve = curvePts;
+
+    const dyn = computeDynamicVolume({
+      effort: this._effort ?? 0,
+      rpmNorm,
+      accelLoad,
+      decelLoad,
+      speed,
+      idlePresence: tone.idlePresence ?? 0.75,
+      gear: this._gear || 1,
+      gearCount: this._gearCount || GEAR_COUNT,
+      shifting: !!this._shifting,
+      overrun: this._driveState === 'overrun',
+      dynDb: dynCfg.dynDb != null ? dynCfg.dynDb : (tone.dynDb != null ? tone.dynDb : 18),
+      curveMul,
+      load: load,
+      loadBoost: dynCfg.loadBoost != null ? dynCfg.loadBoost : (tone.loadBoost != null ? tone.loadBoost : 0.35),
+      softCeiling: dynCfg.dynCeiling != null ? dynCfg.dynCeiling : (tone.dynCeiling != null ? tone.dynCeiling : 0.86),
+      floorBias: 1.05,
+    });
     if (this.dynGain) {
-      this.dynGain.gain.setTargetAtTime(dynVol, this.ctx.currentTime, 0.06);
+      this.dynGain.gain.setTargetAtTime(dyn.dynVol, this.ctx.currentTime, 0.07);
     }
-    this._dynVol = dynVol;
+    this._dynVol = dyn.dynVol;
+    this._driveEnergy = dyn.driveEnergy;
+    this._gearDynScale = dyn.gearScale;
+    this._curveMul = curveMul;
 
     // Turbo spool: follows accel load (boost builds when pulling)
     const turboT =
@@ -1555,6 +1579,21 @@ export class AudioEngine {
 
   get gearIndex() {
     return this._gear;
+  }
+
+  /** Current Dynamic Volume linear gain (for Lab graph needle) */
+  get dynVol() {
+    return this._dynVol ?? 0;
+  }
+
+  /** Sampled dynamics.curve multiplier at current RPM */
+  get curveMul() {
+    return this._curveMul ?? 1;
+  }
+
+  /** Active RPM→vol curve points [[rpm, mul], …] */
+  get dynCurve() {
+    return this._dynCurve || DEFAULT_CLASSIC_DYN_CURVE;
   }
 
   get gearCount() {

@@ -47,7 +47,10 @@
     { "key": "characterMid", "type": "number", "min": 0, "max": 1.2, "step": 0.01, "label": "Character mid (tunnel)" },
     { "key": "whoosh", "type": "number", "min": 0, "max": 1.2, "step": 0.01, "label": "Whoosh (EV)", "optional": true },
     { "key": "whine", "type": "number", "min": 0, "max": 1.2, "step": 0.01, "label": "Whine (EV)", "optional": true },
-    { "key": "waveguide", "type": "number", "min": 0, "max": 1, "step": 0.01, "label": "Waveguide exhaust mix (DasEtwas)", "optional": true }
+    { "key": "waveguide", "type": "number", "min": 0, "max": 1, "step": 0.01, "label": "Waveguide exhaust mix (DasEtwas)", "optional": true },
+    { "key": "dynDb", "type": "number", "min": 12, "max": 28, "step": 0.5, "label": "Dynamic volume range (dB)", "optional": true },
+    { "key": "dynCeiling", "type": "number", "min": 0.5, "max": 1.0, "step": 0.01, "label": "Dynamic volume soft ceiling", "optional": true },
+    { "key": "loadBoost", "type": "number", "min": 0, "max": 1, "step": 0.05, "label": "Dyn volume load boost", "optional": true }
   ],
   "mix": [
     { "key": "master", "type": "number", "min": 0, "max": 100, "step": 1, "label": "Default master %" },
