@@ -1,32 +1,37 @@
 {
   "schema": "tas-live-set/1",
-  "updatedAt": "2026-07-26T15:50:39.725Z",
+  "updatedAt": "2026-07-26T16:45:57.702Z",
   "source": "command-room",
-  "status": "online",
-  "message": "Deployed · 4 Online · commit 26ec620 · https://preemak03.github.io/",
+  "status": "pushing",
+  "message": "Applying Online set to GitHub…",
   "site": "https://preemak03.github.io/",
   "live": [
-    "classic-muscle",
-    "gentle-vessel",
-    "camaro-vessel",
-    "camaro-restomod"
+    "classic-muscle"
   ],
   "versions": {
     "camaro-vessel": "v1.1-fp-cabin",
     "camaro-restomod": "tone-current",
     "classic-muscle": "tone-current",
+    "rotary-rx7": "tone-current",
+    "s85-v10": "tone-current",
+    "na-v12": "tone-current",
+    "rb26": "tone-current",
+    "2jz": "tone-current",
+    "flat6-911": "tone-current",
+    "ls-v8": "tone-current",
+    "b58": "tone-current",
+    "electric-hyper": "tone-current",
+    "rotary-vessel": "v1.0-13b",
+    "american-vessel": "v1.0-deep",
     "gentle-vessel": "v1.0-gentle"
   },
   "deployPick": [
-    "classic-muscle",
-    "gentle-vessel",
-    "camaro-vessel",
-    "camaro-restomod"
+    "classic-muscle"
   ],
   "lastPush": {
-    "at": "2026-07-26T15:50:39.724Z",
-    "ok": true,
-    "action": "deploy",
-    "commit": "26ec620"
+    "at": "2026-07-26T16:45:57.702Z",
+    "ok": false,
+    "action": "apply-online",
+    "commit": null
   }
 }
