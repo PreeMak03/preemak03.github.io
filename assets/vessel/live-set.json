@@ -1,6 +1,6 @@
 {
   "schema": "tas-live-set/1",
-  "updatedAt": "2026-07-26T17:07:23.426Z",
+  "updatedAt": "2026-07-26T17:14:40.667Z",
   "source": "command-room",
   "status": "pushing",
   "message": "Deploying to GitHub Pages…",
@@ -9,27 +9,13 @@
     "classic-muscle"
   ],
   "versions": {
-    "camaro-vessel": "v1.1-fp-cabin",
-    "camaro-restomod": "tone-current",
-    "classic-muscle": "tone-current",
-    "rotary-rx7": "tone-current",
-    "s85-v10": "tone-current",
-    "na-v12": "tone-current",
-    "rb26": "tone-current",
-    "2jz": "tone-current",
-    "flat6-911": "tone-current",
-    "ls-v8": "tone-current",
-    "b58": "tone-current",
-    "electric-hyper": "tone-current",
-    "rotary-vessel": "v1.0-13b",
-    "american-vessel": "v1.0-deep",
-    "gentle-vessel": "v1.0-gentle"
+    "classic-muscle": "tone-current"
   },
   "deployPick": [
     "classic-muscle"
   ],
   "lastPush": {
-    "at": "2026-07-26T17:07:23.426Z",
+    "at": "2026-07-26T17:14:40.667Z",
     "ok": false,
     "action": "deploy",
     "commit": null
