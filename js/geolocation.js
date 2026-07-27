@@ -94,15 +94,14 @@ export class GeolocationService {
     if (kmh < 1.2 && (this.accuracy == null || this.accuracy > 40)) {
       kmh = 0;
     }
-    // Soft-limit single-fix jumps (Tesla GPS often ±2–4 km/h flicker)
+    // Soft-limit absurd single-fix jumps only (teleport / bad fix)
     const prev = this.speedKmh || 0;
     const jump = kmh - prev;
-    if (Math.abs(jump) > 4 && prev > 5) {
-      // Cap to ±4 km/h per fix — rest catches up on next samples
-      kmh = prev + Math.sign(jump) * 4;
+    if (Math.abs(jump) > 12 && prev > 8) {
+      kmh = prev + Math.sign(jump) * 12;
     }
-    // Stronger EMA — audio gears/RPM must not see every GPS twitch
-    this.speedKmh = prev * 0.55 + kmh * 0.45;
+    // Light EMA — heavy lag made UI/audio speed trail the real car
+    this.speedKmh = prev * 0.25 + kmh * 0.75;
     this._emit();
   }
 

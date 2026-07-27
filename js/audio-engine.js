@@ -165,20 +165,20 @@ export class AudioEngine {
     this._rebuildLayers();
     // Try sample pack for default profile (non-blocking)
     this._tryLoadSamples(this.profile?.samplePack);
-    // Waveguide exhaust (async; no-op if worklet fails)
-    this._initWaveguide().catch((e) => console.warn('[AudioEngine] waveguide', e));
+    // Waveguide is LAZY — never load worklet until tone.waveguide > 0.
+    // (Old bug: always init → full DSP every sample even at mix 0 = MCU thrash.)
     this._started = true;
-    this._startUpdateLoop();
+    // Update loop starts on play only (see start/stop)
   }
 
   /**
-   * Optional hybrid exhaust path — js/engine-waveguide.worklet.js
-   * Enabled when profile.tone.waveguide > 0 (or profile.waveguide === true).
+   * Optional hybrid exhaust — ONLY when profile asks for mix > 0.
+   * Must disconnect fully when off: AudioWorklet still burns CPU at gain=0.
    */
   async _initWaveguide() {
     if (!this.ctx || this._wgReady) return;
+    if (this._waveguideMixLevel() <= 0.001) return;
     try {
-      // Allow CommandRoom / nested paths to override (window.__TAS_WG_WORKLET__)
       const wgUrl = (typeof window !== 'undefined' && window.__TAS_WG_WORKLET__)
         || 'js/engine-waveguide.worklet.js';
       await this.ctx.audioWorklet.addModule(wgUrl);
@@ -189,7 +189,6 @@ export class AudioEngine {
       });
       this._wgGain = this.ctx.createGain();
       this._wgGain.gain.value = 0;
-      // Into bus before drive/EQ so cabin LPF still applies
       this._wgNode.connect(this._wgGain);
       this._wgGain.connect(this.bus);
       this._wgReady = true;
@@ -197,7 +196,33 @@ export class AudioEngine {
     } catch (e) {
       this._wgReady = false;
       this._wgNode = null;
-      throw e;
+      this._wgGain = null;
+      console.warn('[AudioEngine] waveguide unavailable', e);
+    }
+  }
+
+  /** Tear down waveguide completely (CPU off) — not just gain=0. */
+  _disposeWaveguide() {
+    try {
+      this._wgNode?.disconnect();
+    } catch (_) {}
+    try {
+      this._wgGain?.disconnect();
+    } catch (_) {}
+    this._wgNode = null;
+    this._wgGain = null;
+    this._wgReady = false;
+  }
+
+  /** Ensure WG matches profile: load if needed, dispose if off. */
+  _syncWaveguidePresence() {
+    const want = this._waveguideMixLevel() > 0.001;
+    if (want && !this._wgReady) {
+      this._initWaveguide().catch(() => {});
+    } else if (!want && this._wgReady) {
+      this._disposeWaveguide();
+    } else if (want && this._wgReady) {
+      this._syncWaveguideMix(this.ctx?.currentTime || 0, 0.03);
     }
   }
 
@@ -244,31 +269,43 @@ export class AudioEngine {
   }
 
   _pushWaveguideParams(t, tau = 0.04) {
+    // No node = feature cleanly off (not "gain zero while DSP still runs")
     if (!this._wgReady || !this._wgNode) return;
+    const lvl = this._waveguideMixLevel();
+    if (lvl <= 0.001) {
+      this._disposeWaveguide();
+      return;
+    }
     try {
       this._wgNode.parameters.get('rpm').setTargetAtTime(this._rpm, t, tau);
       this._wgNode.parameters.get('load').setTargetAtTime(this._load || 0, t, tau);
-      const mix = Math.min(1, this._waveguideMixLevel() + 0.15);
-      this._wgNode.parameters.get('mix').setTargetAtTime(mix, t, tau);
+      this._wgNode.parameters.get('mix').setTargetAtTime(Math.min(1, lvl), t, tau);
       this._syncWaveguideMix(t, tau);
     } catch (_) {}
   }
 
   /**
-   * Self-clocked 50 Hz parameter loop, independent of display rAF.
-   * Tesla Browser rAF often runs at 20–40 fps (MCU2) or drops while in
-   * Drive — audio smoothness must not depend on rendering frame rate.
+   * Self-clocked parameter loop ONLY while engine is running.
+   * Was started at init() even when silent — wasted main-thread on car MCU.
    */
   _startUpdateLoop() {
     if (this._updateTimer) return;
     this._lastUpdateWall = performance.now();
     this._updateTimer = window.setInterval(() => {
+      if (!this.running) return;
       const now = performance.now();
       let dt = (now - this._lastUpdateWall) / 1000;
       this._lastUpdateWall = now;
       if (!(dt > 0) || dt > 0.25) dt = 0.02;
       this.update(dt);
     }, 20);
+  }
+
+  _stopUpdateLoop() {
+    if (this._updateTimer) {
+      clearInterval(this._updateTimer);
+      this._updateTimer = null;
+    }
   }
 
   _buildBus() {
@@ -749,6 +786,9 @@ export class AudioEngine {
     if (this.running) return;
     if (!this._layers) this._rebuildLayers();
     this.running = true;
+    this._lastUpdateWall = performance.now();
+    this._startUpdateLoop();
+    this._syncWaveguidePresence();
     const t = this.ctx.currentTime;
     this.master.gain.cancelScheduledValues(t);
     this.master.gain.setValueAtTime(this.master.gain.value, t);
@@ -818,11 +858,11 @@ export class AudioEngine {
   }
 
   stop() {
-    if (!this.ctx) {
-      this.running = false;
-      return;
-    }
     this.running = false;
+    this._stopUpdateLoop();
+    // Free WG CPU while engine off
+    this._disposeWaveguide();
+    if (!this.ctx) return;
     const t = this.ctx.currentTime;
     this.master.gain.cancelScheduledValues(t);
     this.master.gain.setValueAtTime(this.master.gain.value, t);
@@ -847,15 +887,14 @@ export class AudioEngine {
     if (this._started) {
       this._rebuildLayers();
       this._tryLoadSamples(resolved?.samplePack);
-      if (this._wgNode) {
+      // WG: load only if profile wants it; dispose if not (clean off ≠ gain 0)
+      this._syncWaveguidePresence();
+      if (this._wgReady && this._wgNode) {
         try {
           this._wgNode.port.postMessage({
             configure: this._waveguideOptsFromProfile(resolved),
           });
         } catch (_) {}
-        this._syncWaveguideMix(this.ctx.currentTime, 0.03);
-      } else if (this._waveguideMixLevel() > 0) {
-        this._initWaveguide().catch(() => {});
       }
     }
   }
@@ -1012,12 +1051,11 @@ export class AudioEngine {
 
     const speed = this.speedReactive ? this._speedSmooth : Math.max(this._speedSmooth, 40);
 
-    // GPS accel is noisy — heavy damp + wide deadband (hold-speed chatter)
-    const aLambda = this.smoothFilter ? 3.8 : 6.5;
+    // GPS accel damp — keep responsive (wide deadband made load lag the car)
+    const aLambda = this.smoothFilter ? 7 : 12;
     this._accelSmooth = damp(this._accelSmooth, this._accelKmhps, aLambda, dt);
-    // ±3 km/h/s is normal GPS flutter at "constant" speed on Tesla
     let accelForLoad = this._accelSmooth;
-    if (Math.abs(accelForLoad) < 3.0) accelForLoad = 0;
+    if (Math.abs(accelForLoad) < 1.5) accelForLoad = 0;
     const aNorm = clamp(accelForLoad / this.accelRefKmhps, -1.4, 1.4);
     const accelLoad = clamp(aNorm, 0, 1);
     const decelLoad = clamp(-aNorm, 0, 1);
@@ -1239,8 +1277,8 @@ export class AudioEngine {
   update(dt) {
     if (!this.ctx || !this._started) return;
 
-    // Speed follow — heavy lag on GPS (1–4 km/h fix noise → gear/RPM thrash)
-    const smoothL = this.smoothFilter ? 2.8 : 4.5;
+    // Light speed follow — heavy lag made cabin speed trail the car (user report)
+    const smoothL = this.smoothFilter ? 8 : 14;
     this._speedSmooth = damp(this._speedSmooth, this._speed, smoothL, dt);
 
     // Dedicated real-time clock for the rotary idle pant (Hz-accurate, not
@@ -1263,9 +1301,8 @@ export class AudioEngine {
     const throttle = this._throttle;
     const load = this._load;
     const speed = this._speedSmooth;
-    // Same deadband as gear path
     let accelForLoad = this._accelSmooth;
-    if (Math.abs(accelForLoad) < 3.0) accelForLoad = 0;
+    if (Math.abs(accelForLoad) < 1.5) accelForLoad = 0;
     const aNorm = clamp(accelForLoad / this.accelRefKmhps, -1.4, 1.4);
     const accelLoad = clamp(aNorm, 0, 1);
     const decelLoad = clamp(-aNorm, 0, 1);
@@ -1353,10 +1390,8 @@ export class AudioEngine {
     const tau = this.smoothFilter ? 0.14 : 0.09;
     const fTau = Math.max(tau, 0.16);
 
-    // Waveguide only when profile asks (mix>0) — skip work when off
-    if (this._waveguideMixLevel() > 0.001) {
-      this._pushWaveguideParams(t, tau);
-    }
+    // WG only if node exists (lazily created); never keep a silent worklet warm
+    if (this._wgReady) this._pushWaveguideParams(t, tau);
 
     // Very mild jitter (was grainy when applied to playbackRate @ 50 Hz)
     const jAmt = isEv ? 0.0006 : 0.0012 + (1 - rpmNorm) * 0.002 + accelLoad * 0.0008;

@@ -22,6 +22,9 @@ import {
 } from './gearbox.js';
 import { buildRevScript, stepRevScript } from './launch-rev.js';
 import { computeDynamicVolume } from './dynamic-volume.js';
+import { VESSEL_RIGS, hasRig, listVesselRigs, isVesselProfileId } from './vessel-rigs.js';
+
+export { hasRig, listVesselRigs, isVesselProfileId };
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const damp = (cur, target, lambda, dt) => cur + (target - cur) * (1 - Math.exp(-lambda * dt));
@@ -42,18 +45,7 @@ function vesselWorkletUrl() {
   return tasUrl('js/vessel-runtime.worklet.js');
 }
 
-// profileId → shipped rig (built by vessel/tools/build-all.mjs from presets/manifest.json)
-const RIGS = {
-  'camaro-vessel': 'assets/vessel/camaro.rig.json',
-  'rotary-vessel': 'assets/vessel/rotary.rig.json',
-  'american-vessel': 'assets/vessel/american.rig.json',
-  'gentle-vessel': 'assets/vessel/gentle.rig.json',
-};
-export function hasRig(id) { return !!RIGS[id]; }
-export function listVesselRigs() { return { ...RIGS }; }
-
-/** True when current audio path is VESSEL (for UI: Sound Profile vs App System). */
-export function isVesselProfileId(id) { return hasRig(id); }
+const RIGS = VESSEL_RIGS;
 
 const DEFAULT_VEH = { idle: 800, redline: 7000, revLo: 0.15, revHi: 0.5, pull: 0.9 };
 const DEFAULT_DYN = { curve: [[800, 0.6], [7000, 1.0]], loadBoost: 0.5, accelBoost: 0.35 };

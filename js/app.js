@@ -6,7 +6,8 @@
 import { ticker, waapi, clamp } from './animations.js';
 import { getProfileById, loadLiveSet, loadClassicStandards, getLiveProfileIds } from './profiles.js';
 import { AudioEngine } from './audio-engine.js';
-import { VesselAudio, hasRig } from './vessel-audio.js';
+// hasRig is tiny; VesselAudio itself is dynamic-imported only for VESSEL cards
+import { hasRig } from './vessel-rigs.js';
 import { GeolocationService } from './geolocation.js';
 import { VehiclePhysics, SIM_RATE } from './vehicle-physics.js';
 import { startOnboarding } from './onboarding.js';
@@ -156,12 +157,17 @@ let audio = new AudioEngine();
  */
 async function ensureEngineFor(id) {
   const wantVessel = hasRig(id);
-  const isVessel = audio instanceof VesselAudio;
+  const isVessel = audio?.constructor?.name === 'VesselAudio';
   if (wantVessel === isVessel) return;
   const wasRunning = state.engineOn;
   try {
     if (wasRunning) audio.stop();
-    audio = wantVessel ? new VesselAudio() : new AudioEngine();
+    if (wantVessel) {
+      const { VesselAudio } = await import('./vessel-audio.js');
+      audio = new VesselAudio();
+    } else {
+      audio = new AudioEngine();
+    }
     audio.setProfile(getProfileById(id));
     if (wasRunning) await audio.start();
   } catch (e) {
@@ -416,13 +422,13 @@ async function init() {
 
   geo.onUpdate((payload) => {
     const newSpeed = payload.speedKmh || 0;
-    // Accel from GPS interval; heavy clamp + lag (never peg dyn from one bad fix)
+    // Accel from real GPS interval (not per-frame). Light clamp only.
     const nowMs = performance.now();
     const gdt = state.lastGeoMs ? (nowMs - state.lastGeoMs) / 1000 : 0;
-    if (gdt > 0.2 && gdt < 3.5) {
+    if (gdt > 0.12 && gdt < 4) {
       let a = (newSpeed - state.geoSpeed) / gdt;
-      a = Math.max(-16, Math.min(16, a));
-      state.geoAccel = (state.geoAccel || 0) * 0.62 + a * 0.38;
+      a = Math.max(-30, Math.min(30, a));
+      state.geoAccel = (state.geoAccel || 0) * 0.35 + a * 0.65;
     }
     state.lastGeoMs = nowMs;
     state.geoSpeed = newSpeed;
@@ -488,17 +494,17 @@ function tick(dt) {
   const now = performance.now();
 
   if (state.mode === 'geo') {
-    // Heavy lag — Tesla GPS ±2–4 km/h every fix; audio gears off activeSpeed
-    state.activeSpeed += (state.geoSpeed - state.activeSpeed) * Math.min(1, dt * 1.6);
+    // Track GPS closely — stacked EMA was making speed lag the real car
+    state.activeSpeed += (state.geoSpeed - state.activeSpeed) * Math.min(1, dt * 6);
     const staleSec = (now - (state.lastGeoMs || 0)) / 1000;
-    if (staleSec > 1.0) state.geoAccel = (state.geoAccel || 0) * Math.max(0, 1 - dt * 3);
-    state.accelKmhps += ((state.geoAccel || 0) - state.accelKmhps) * Math.min(1, dt * 1.8);
-    // Wide deadband while "holding" speed (primary remaining stutter source)
+    if (staleSec > 1.5) state.geoAccel = (state.geoAccel || 0) * Math.max(0, 1 - dt * 2);
+    state.accelKmhps += ((state.geoAccel || 0) - state.accelKmhps) * Math.min(1, dt * 5);
+    // Small deadband only (not wide — that made load feel sticky/laggy)
     let aRaw = state.accelKmhps || 0;
-    if (Math.abs(aRaw) < 3.5) aRaw = 0;
+    if (Math.abs(aRaw) < 1.2) aRaw = 0;
     const aN = aRaw / SIM_RATE.maxDeltaKmhPerSec;
     state.throttle = clamp(aN, 0, 1);
-    state.brake = aN < -0.08 ? clamp(-aN, 0, 1) : 0;
+    state.brake = aN < -0.04 ? clamp(-aN, 0, 1) : 0;
     physics.vehicleSpeed = state.activeSpeed;
   } else {
     // Simulation: always use wall-clock so 0→100 ≈ 100/33 ≈ 3.0s even if FPS is low
