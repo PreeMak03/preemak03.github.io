@@ -41,30 +41,13 @@
     "resonance": 0.6,
     "volume": 1.02,
     "idlePresence": 0.58,
-    "characterMid": 0.62,
-    "waveguide": 0
+    "characterMid": 0.62
   },
   "mix": {
     "master": 70,
     "bass": 55,
     "edge": 35
   },
-  "dynamics": {
-    "curve": [
-      [700, 0.7],
-      [1600, 0.8],
-      [3200, 0.92],
-      [5000, 1.0],
-      [7000, 0.96],
-      [8250, 0.9]
-    ],
-    "loadBoost": 0.12,
-    "dynCeiling": 0.88,
-    "dynDb": 12,
-    "shiftDuck": 0.95,
-    "overrunDuck": 0.94,
-    "floorBias": 1.0,
-    "gearScale": [0.96, 0.98, 1.0, 0.99, 0.97]
-  },
-  "updatedAt": "2026-07-27T05:00:00.000Z"
+  "updatedAt": "2026-07-27T06:00:00.000Z",
+  "_restore": "Restored original S85 ship (pre forced dynamics retune)"
 }
