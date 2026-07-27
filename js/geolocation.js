@@ -97,12 +97,12 @@ export class GeolocationService {
     // Soft-limit single-fix jumps (Tesla GPS often ±2–4 km/h flicker)
     const prev = this.speedKmh || 0;
     const jump = kmh - prev;
-    if (Math.abs(jump) > 6 && prev > 5) {
-      // Cap to ±6 km/h per fix — rest catches up on next samples
-      kmh = prev + Math.sign(jump) * 6;
+    if (Math.abs(jump) > 4 && prev > 5) {
+      // Cap to ±4 km/h per fix — rest catches up on next samples
+      kmh = prev + Math.sign(jump) * 4;
     }
-    // Light EMA so watchPosition noise doesn't thrash audio every 500 ms
-    this.speedKmh = prev * 0.35 + kmh * 0.65;
+    // Stronger EMA — audio gears/RPM must not see every GPS twitch
+    this.speedKmh = prev * 0.55 + kmh * 0.45;
     this._emit();
   }
 

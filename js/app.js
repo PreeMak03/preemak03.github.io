@@ -416,16 +416,13 @@ async function init() {
 
   geo.onUpdate((payload) => {
     const newSpeed = payload.speedKmh || 0;
-    // Real acceleration = Δspeed over GPS sample interval (~0.5–1 s).
-    // Clamp absurd spikes (single bad fix) that used to peg load → volume stutter.
+    // Accel from GPS interval; heavy clamp + lag (never peg dyn from one bad fix)
     const nowMs = performance.now();
     const gdt = state.lastGeoMs ? (nowMs - state.lastGeoMs) / 1000 : 0;
-    if (gdt > 0.15 && gdt < 4) {
+    if (gdt > 0.2 && gdt < 3.5) {
       let a = (newSpeed - state.geoSpeed) / gdt;
-      // ±22 km/h/s is already violent; anything beyond is GPS garbage
-      a = Math.max(-22, Math.min(22, a));
-      // One-pole soft toward new estimate (don't replace with raw jump)
-      state.geoAccel = (state.geoAccel || 0) * 0.45 + a * 0.55;
+      a = Math.max(-16, Math.min(16, a));
+      state.geoAccel = (state.geoAccel || 0) * 0.62 + a * 0.38;
     }
     state.lastGeoMs = nowMs;
     state.geoSpeed = newSpeed;
@@ -491,18 +488,17 @@ function tick(dt) {
   const now = performance.now();
 
   if (state.mode === 'geo') {
-    // Follow GPS speed gently — Tesla GPS jumps 1–3 km/h every fix
-    state.activeSpeed += (state.geoSpeed - state.activeSpeed) * Math.min(1, dt * 2.8);
-    // Accel from real GPS interval. Fade stale values; deadband before throttle.
+    // Heavy lag — Tesla GPS ±2–4 km/h every fix; audio gears off activeSpeed
+    state.activeSpeed += (state.geoSpeed - state.activeSpeed) * Math.min(1, dt * 1.6);
     const staleSec = (now - (state.lastGeoMs || 0)) / 1000;
-    if (staleSec > 1.2) state.geoAccel = (state.geoAccel || 0) * Math.max(0, 1 - dt * 2.5);
-    state.accelKmhps += ((state.geoAccel || 0) - state.accelKmhps) * Math.min(1, dt * 2.6);
-    // Ignore micro-jitter while "holding" speed (biggest stutter source on road)
+    if (staleSec > 1.0) state.geoAccel = (state.geoAccel || 0) * Math.max(0, 1 - dt * 3);
+    state.accelKmhps += ((state.geoAccel || 0) - state.accelKmhps) * Math.min(1, dt * 1.8);
+    // Wide deadband while "holding" speed (primary remaining stutter source)
     let aRaw = state.accelKmhps || 0;
-    if (Math.abs(aRaw) < 2.2) aRaw = 0;
+    if (Math.abs(aRaw) < 3.5) aRaw = 0;
     const aN = aRaw / SIM_RATE.maxDeltaKmhPerSec;
     state.throttle = clamp(aN, 0, 1);
-    state.brake = aN < -0.05 ? clamp(-aN, 0, 1) : 0;
+    state.brake = aN < -0.08 ? clamp(-aN, 0, 1) : 0;
     physics.vehicleSpeed = state.activeSpeed;
   } else {
     // Simulation: always use wall-clock so 0→100 ≈ 100/33 ≈ 3.0s even if FPS is low

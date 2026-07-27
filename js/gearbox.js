@@ -15,12 +15,14 @@
 
 import { clamp } from './animations.js';
 
-export const GEAR_VMAX = [25, 50, 70, 90, 200];
+export const GEAR_VMAX = [26, 52, 73, 94, 200];
 export const GEAR_COUNT = 5;
 
-const UP_AT = [25, 50, 70, 90, 999];
-/** DOWN_AT[i] = drop out of gear i+2 below this speed (G2→G1 @18 … G5→G4 @82) */
-const DOWN_AT = [18, 42, 62, 82];
+// Wide hysteresis (~10–14 km/h gap) so Tesla GPS ±2–4 km/h never thrash gears.
+// Thrashing gear = RPM jumps = the main "กระตุก" left after dyn soft-fix.
+const UP_AT = [26, 52, 73, 94, 999];
+/** DOWN_AT[i] = leave gear i+2 below this speed */
+const DOWN_AT = [12, 34, 54, 74];
 
 /** Fallback rev character when a profile doesn't specify one. */
 const REV_DEFAULT = { lo: 0.18, hi: 0.7, pull: 0.96 };
@@ -29,21 +31,17 @@ export function resolveGear(speedKmh, currentGear = 1, accelLoad = 0, decelLoad 
   let g = clamp(Math.round(currentGear) || 1, 1, GEAR_COUNT);
   const v = Math.max(0, speedKmh);
 
-  // Under load, hold each gear a little longer before upshifting
-  const upBias = accelLoad * 8;
-  const downBias = decelLoad * 8;
+  // Slight bias under load — still keep large gap between up/down thresholds
+  const upBias = accelLoad * 5;
+  const downBias = decelLoad * 5;
 
-  while (g < GEAR_COUNT && v >= UP_AT[g - 1] + upBias) g += 1;
-  while (g > 1 && v < DOWN_AT[g - 2] - downBias) g -= 1;
+  // One step at a time (caller also clamps) — only cross clear thresholds
+  if (g < GEAR_COUNT && v >= UP_AT[g - 1] + upBias) g += 1;
+  else if (g > 1 && v < DOWN_AT[g - 2] - downBias) g -= 1;
 
-  // Kickdown: only on sustained hard pull. GPS accel noise sits ~0.2–0.45 and
-  // used to thrash gears → RPM jumps felt like stutter in the car.
-  if (accelLoad > 0.72 && g > 1) {
-    let drops = accelLoad > 0.92 ? 2 : 1;
-    while (drops > 0 && g > 1 && v < UP_AT[g - 2] + upBias - 2.5) {
-      g -= 1;
-      drops -= 1;
-    }
+  // Kickdown: rare, single step only — GPS noise must never multi-drop
+  if (accelLoad > 0.88 && g > 1 && v < UP_AT[g - 2] + upBias - 4) {
+    g -= 1;
   }
 
   if (v < 2) g = 1;

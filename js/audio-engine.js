@@ -1012,12 +1012,12 @@ export class AudioEngine {
 
     const speed = this.speedReactive ? this._speedSmooth : Math.max(this._speedSmooth, 40);
 
-    // GPS accel is noisy — heavier damp + deadband kills micro load chatter
-    const aLambda = this.smoothFilter ? 5.5 : 9;
+    // GPS accel is noisy — heavy damp + wide deadband (hold-speed chatter)
+    const aLambda = this.smoothFilter ? 3.8 : 6.5;
     this._accelSmooth = damp(this._accelSmooth, this._accelKmhps, aLambda, dt);
-    // Deadband ±~1.8 km/h/s (common GPS jitter while "holding" speed)
+    // ±3 km/h/s is normal GPS flutter at "constant" speed on Tesla
     let accelForLoad = this._accelSmooth;
-    if (Math.abs(accelForLoad) < 1.8) accelForLoad = 0;
+    if (Math.abs(accelForLoad) < 3.0) accelForLoad = 0;
     const aNorm = clamp(accelForLoad / this.accelRefKmhps, -1.4, 1.4);
     const accelLoad = clamp(aNorm, 0, 1);
     const decelLoad = clamp(-aNorm, 0, 1);
@@ -1080,14 +1080,14 @@ export class AudioEngine {
       }
     }
 
-    this._throttle = Math.max(this._throttle * 0.35, accelLoad);
-    this._brake = Math.max(this._brake * 0.35, decelLoad);
-    if (speed < 1 && accelLoad < 0.05) {
-      this._throttle = 0;
-      this._brake = 0;
-    }
+    // Soft throttle follow — avoid sticky-then-snap (felt like volume stutters)
+    const thrT = speed < 1 && accelLoad < 0.05 ? 0 : accelLoad;
+    const brkT = speed < 1 && accelLoad < 0.05 ? 0 : decelLoad;
+    this._throttle = damp(this._throttle || 0, thrT, 6, dt);
+    this._brake = damp(this._brake || 0, brkT, 6, dt);
 
-    this._load = clamp(accelLoad * 0.85 + decelLoad * 0.25 + (speed > 5 ? 0.08 : 0), 0, 1);
+    const loadT = clamp(accelLoad * 0.85 + decelLoad * 0.25 + (speed > 5 ? 0.08 : 0), 0, 1);
+    this._load = damp(this._load || 0, loadT, 5, dt);
 
     // THOR drive state — hysteresis so GPS doesn't flip pull/cruise/overrun
     if (this._shifting) this._driveState = 'shift';
@@ -1146,57 +1146,58 @@ export class AudioEngine {
     if (nextGear > this._gear + 1) nextGear = this._gear + 1;
     else if (nextGear < this._gear - 1) nextGear = this._gear - 1;
 
-    const MIN_DWELL = 0.42; // longer row cadence — fewer stutters on real roads
+    const MIN_DWELL = 0.58; // row cadence — GPS must not re-shift immediately
     if (nextGear !== this._gear && !this._shifting && this._sinceShift > MIN_DWELL) {
       const up = nextGear > this._gear;
       this._prevGear = this._gear;
       this._gear = nextGear;
       this._sinceShift = 0;
       this._shifting = true;
-      this._shiftTimer = up ? 0.16 : 0.12;
+      this._shiftTimer = up ? 0.2 : 0.15;
       this._gearBias = gearToneBias(this._gear);
+      // Very soft tick — loud click was read as "กระตุก" on cabin speakers
       this._fireShiftClick(!up);
-      // Upshift: glide toward landing RPM (no hard snap → no "scratch")
+      // Upshift: gentle glide toward landing (small blend; damp does the rest)
       if (up) {
         const land = shiftLandingRpm(this._gear, idle, redline, eng.revLo);
-        // Blend 55% toward land — remaining glide is handled by damp below
-        this._rpmSmooth = this._rpmSmooth * 0.45 + land * 0.55;
+        this._rpmSmooth = this._rpmSmooth * 0.72 + land * 0.28;
         this._rpm = this._rpmSmooth;
-      } else if (accelLoad > 0.4) {
-        // Sporty downshift UNDER THROTTLE: soft rev-match blip
+      } else if (accelLoad > 0.55) {
+        // Downshift blip only on clear pull
         const revHi = eng.revHi ?? 0.7;
         const land = idle + (redline - idle) * Math.min(0.95, revHi * 0.88);
         this._rpmSmooth = Math.min(
           redline * 0.95,
-          this._rpmSmooth * 0.35 + Math.max(this._rpmSmooth, land) * 0.65
+          this._rpmSmooth * 0.55 + Math.max(this._rpmSmooth, land) * 0.45
         );
         this._rpm = this._rpmSmooth;
       }
-      // else: coasting/braking downshift — let the revs ease down, no rev-up hum
     }
 
     this._gearBias = gearToneBias(this._gear);
 
-    // RPM target = sweep inside current gear band (per-profile rev character)
+    // RPM target — at cruise use near-zero load so GPS flutter doesn't modulate revs
+    const rpmAccel = accelLoad > 0.12 ? accelLoad : 0;
+    const rpmDecel = decelLoad > 0.15 ? decelLoad : 0;
     let targetRpm = rpmInGear({
       speedKmh: speed,
       gear: this._gear,
       idle,
       redline,
-      accelLoad,
-      decelLoad,
+      accelLoad: rpmAccel,
+      decelLoad: rpmDecel,
       revLo: eng.revLo,
       revHi: eng.revHi,
       pull: eng.revPull,
     });
 
-    // Smoother RPM follow — cruise especially (was too snappy on GPS speed wobble)
-    let rpmLambda = this.smoothFilter ? 5.5 : 8;
-    if (accelLoad > 0.4) rpmLambda = 8 + accelLoad * 3.5;
-    if (decelLoad > 0.4) rpmLambda = 7 + decelLoad * 3;
+    // Cruise = slow follow (GPS speed wobble); pull/shift a bit snappier
+    let rpmLambda = this.smoothFilter ? 3.6 : 5.5;
+    if (rpmAccel > 0.35) rpmLambda = 6 + rpmAccel * 2.5;
+    if (rpmDecel > 0.35) rpmLambda = 5.5 + rpmDecel * 2;
     if (this._shifting) {
-      rpmLambda = 11;
-      targetRpm = this._rpm * 0.88 + targetRpm * 0.12;
+      rpmLambda = 8;
+      targetRpm = this._rpm * 0.9 + targetRpm * 0.1;
     }
 
     this._rpmSmooth = damp(
@@ -1207,10 +1208,10 @@ export class AudioEngine {
     );
     this._rpm = this._rpmSmooth;
 
-    // Extra load cue near top of gear (pre-shift pull)
+    // Soft pre-shift load swell (damped — no step)
     const gPos = gearProgress(speed, this._gear);
-    if (accelLoad > 0.3 && gPos > 0.75) {
-      this._load = clamp(this._load + 0.15, 0, 1);
+    if (rpmAccel > 0.3 && gPos > 0.75) {
+      this._load = damp(this._load, clamp(this._load + 0.12, 0, 1), 4, dt);
     }
   }
 
@@ -1218,29 +1219,28 @@ export class AudioEngine {
     if (!this.ctx || !this.running || !this.master) return;
     const ctx = this.ctx;
     const t = ctx.currentTime;
-    // Soft mechanical tick — triangle + lowpass, low level, and routed straight
-    // to master so it bypasses the drive/EQ (no harsh, blown-speaker "pop").
     const osc = ctx.createOscillator();
     osc.type = 'triangle';
-    osc.frequency.value = down ? 150 : 230;
+    osc.frequency.value = down ? 140 : 200;
     const g = ctx.createGain();
-    g.gain.setValueAtTime(0.028, t);
-    g.gain.exponentialRampToValueAtTime(0.0006, t + 0.045);
+    // Quieter than before — still tactile, not a cabin "tick stutter"
+    g.gain.setValueAtTime(0.012, t);
+    g.gain.exponentialRampToValueAtTime(0.0005, t + 0.04);
     const f = ctx.createBiquadFilter();
     f.type = 'lowpass';
-    f.frequency.value = down ? 480 : 680;
+    f.frequency.value = down ? 420 : 560;
     osc.connect(f);
     f.connect(g);
     g.connect(this.master);
     osc.start(t);
-    osc.stop(t + 0.05);
+    osc.stop(t + 0.045);
   }
 
   update(dt) {
     if (!this.ctx || !this._started) return;
 
-    // Speed follow — bias smooth (GPS single-fix jumps were ~1–3 km/h)
-    const smoothL = this.smoothFilter ? 4.2 : 7;
+    // Speed follow — heavy lag on GPS (1–4 km/h fix noise → gear/RPM thrash)
+    const smoothL = this.smoothFilter ? 2.8 : 4.5;
     this._speedSmooth = damp(this._speedSmooth, this._speed, smoothL, dt);
 
     // Dedicated real-time clock for the rotary idle pant (Hz-accurate, not
@@ -1263,22 +1263,22 @@ export class AudioEngine {
     const throttle = this._throttle;
     const load = this._load;
     const speed = this._speedSmooth;
-    // Match deadband used in _updateRpmGear so layer mix + dyn stay coherent
+    // Same deadband as gear path
     let accelForLoad = this._accelSmooth;
-    if (Math.abs(accelForLoad) < 1.8) accelForLoad = 0;
+    if (Math.abs(accelForLoad) < 3.0) accelForLoad = 0;
     const aNorm = clamp(accelForLoad / this.accelRefKmhps, -1.4, 1.4);
     const accelLoad = clamp(aNorm, 0, 1);
     const decelLoad = clamp(-aNorm, 0, 1);
 
-    // Effort: slower attack, longer hold — GPS holds speed with ±noise
+    // Effort: slow attack + long hold so GPS flutter doesn't pump dyn
     const effTarget = this._revUntil || this._holdRpm != null ? 1 : accelLoad;
     const prevEff = this._effort ?? 0;
     if (effTarget > prevEff) {
-      this._effort = damp(prevEff, effTarget, 8, dt);
-      this._effortHold = 1.35;
+      this._effort = damp(prevEff, effTarget, 5.5, dt);
+      this._effortHold = 1.6;
     } else {
       this._effortHold = (this._effortHold || 0) - dt;
-      this._effort = this._effortHold > 0 ? prevEff : damp(prevEff, effTarget, 1.8, dt);
+      this._effort = this._effortHold > 0 ? prevEff : damp(prevEff, effTarget, 1.4, dt);
     }
 
     // --- DynamicVolume: pure profile.dynamics (smoothing = audio glue only) ---
@@ -1314,9 +1314,9 @@ export class AudioEngine {
       shiftDuck,
       overrunDuck: dynCfg.overrunDuck,
     });
-    this._dynVolSmooth = damp(this._dynVolSmooth ?? dyn.dynVol, dyn.dynVol, 6.5, dt);
+    this._dynVolSmooth = damp(this._dynVolSmooth ?? dyn.dynVol, dyn.dynVol, 4.5, dt);
     if (this.dynGain) {
-      this.dynGain.gain.setTargetAtTime(this._dynVolSmooth, this.ctx.currentTime, 0.14);
+      this.dynGain.gain.setTargetAtTime(this._dynVolSmooth, this.ctx.currentTime, 0.18);
     }
     this._dynVol = this._dynVolSmooth;
     this._driveEnergy = dyn.driveEnergy;
@@ -1349,16 +1349,18 @@ export class AudioEngine {
     if (!this.running || !this._layers) return;
 
     const t = this.ctx.currentTime;
-    // Longer time constants on car browsers (MCU drops rAF / audio glitches on short tau)
-    const tau = this.smoothFilter ? 0.1 : 0.065;
-    const fTau = Math.max(tau, 0.12);
+    // Long time constants — Tesla MCU audio thread hates dense setTarget spam
+    const tau = this.smoothFilter ? 0.14 : 0.09;
+    const fTau = Math.max(tau, 0.16);
 
-    // Waveguide hybrid exhaust (rpm/load follow engine state)
-    this._pushWaveguideParams(t, tau);
+    // Waveguide only when profile asks (mix>0) — skip work when off
+    if (this._waveguideMixLevel() > 0.001) {
+      this._pushWaveguideParams(t, tau);
+    }
 
-    // Milder jitter — strong random walk + playbackRate 50Hz felt grainy on road
-    const jAmt = isEv ? 0.001 : 0.0022 + (1 - rpmNorm) * 0.004 + accelLoad * 0.0015;
-    this._jitter = damp(this._jitter, (Math.random() * 2 - 1) * jAmt, 3.2, dt);
+    // Very mild jitter (was grainy when applied to playbackRate @ 50 Hz)
+    const jAmt = isEv ? 0.0006 : 0.0012 + (1 - rpmNorm) * 0.002 + accelLoad * 0.0008;
+    this._jitter = damp(this._jitter, (Math.random() * 2 - 1) * jAmt, 2.4, dt);
     const rateJ = 1 + this._jitter;
 
     // Playback rate from RPM — sample + procedural
@@ -1366,12 +1368,27 @@ export class AudioEngine {
     const rate = clamp(this._rpm / refRpm, 0.18, 2.8) * rateJ;
     const rateHi = clamp(this._rpm / (refRpm * 0.85), 0.2, 3.0) * rateJ;
 
+    // Push AudioParams at ~25 Hz with epsilon — halves automation load, less zipper
+    this._paramTick = (this._paramTick || 0) + 1;
+    const pushAudio = (this._paramTick & 1) === 0;
+    const setRate = (node, value, eps = 0.006) => {
+      if (!node || !pushAudio) return;
+      const key = node;
+      const prev = this._lastParam?.get(key);
+      if (prev != null && Math.abs(prev - value) < eps) return;
+      if (!this._lastParam) this._lastParam = new WeakMap();
+      this._lastParam.set(key, value);
+      try {
+        node.setTargetAtTime(value, t, tau);
+      } catch (_) {}
+    };
+
     try {
-      this._layers.low.src.playbackRate.setTargetAtTime(rate * (isEv ? 0.8 : 1), t, tau);
-      this._layers.high.src.playbackRate.setTargetAtTime(rateHi * (0.95 + tone.scream * 0.1), t, tau);
-      this._layers.intake.src.playbackRate.setTargetAtTime(0.6 + rpmNorm * 1.2 + throttle * 0.4, t, tau);
-      this._layers.turbo.src.playbackRate.setTargetAtTime(0.8 + this._turbo * 2.2, t, tau);
-      this._layers.whoosh.src.playbackRate.setTargetAtTime(0.5 + rpmNorm * 1.5, t, tau);
+      setRate(this._layers.low.src.playbackRate, rate * (isEv ? 0.8 : 1));
+      setRate(this._layers.high.src.playbackRate, rateHi * (0.95 + tone.scream * 0.1));
+      setRate(this._layers.intake.src.playbackRate, 0.6 + rpmNorm * 1.2 + throttle * 0.4);
+      setRate(this._layers.turbo.src.playbackRate, 0.8 + this._turbo * 2.2);
+      setRate(this._layers.whoosh.src.playbackRate, 0.5 + rpmNorm * 1.5);
     } catch (_) {}
 
     // THOR-style sample layers (if pack loaded)
