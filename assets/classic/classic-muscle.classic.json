@@ -14,9 +14,10 @@
     "redlineRpm": 5800,
     "gears": [3.2, 2, 1.4, 1.05, 0.85],
     "rpmCurve": 0.8,
-    "revLo": 0.12,
-    "revHi": 0.4,
-    "revPull": 0.88
+    "revLo": 0.15,
+    "revHi": 0.82,
+    "revPull": 0.96,
+    "revCruise": 0.75
   },
   "tone": {
     "harmonics": [0, 1, 1, 0.35, 0.8, 0.25, 0.55, 0.18, 0.4, 0.12],

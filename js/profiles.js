@@ -789,9 +789,11 @@ export const SOUND_PROFILES = [
       redlineRpm: 5800,
       gears: [3.2, 2.0, 1.4, 1.05, 0.85],
       rpmCurve: 0.8,
-      revLo: 0.12,
-      revHi: 0.4,
-      revPull: 0.88,
+      // rev* are 0–1 of idle→redline: old revHi 0.4 capped ~1800 cruise — raise to ~4500
+      revLo: 0.15,
+      revHi: 0.82,
+      revPull: 0.96,
+      revCruise: 0.75,
     },
     tone: {
       // Restored pre-wrong-retune character (commit 5f62469) — not S85-softened

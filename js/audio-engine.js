@@ -1227,6 +1227,8 @@ export class AudioEngine {
       revLo: eng.revLo,
       revHi: eng.revHi,
       pull: eng.revPull,
+      // Optional: cruise ceiling as fraction of idle→redline (Muscle ~0.75 → ~4500)
+      revCruise: eng.revCruise,
     });
 
     // Cruise = slow follow (GPS speed wobble); pull/shift a bit snappier

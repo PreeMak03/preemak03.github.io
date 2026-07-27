@@ -33,6 +33,7 @@ export const CLASSIC_LIMITS = {
     revLo: [0.05, 0.5],
     revHi: [0.2, 1.0],
     revPull: [0.5, 1.1],
+    revCruise: [0.15, 1.0],
   },
   tone: {
     // body/volume floors stop silent/clipping cards — still authorable range
@@ -198,6 +199,7 @@ export function validateClassicProfile(doc) {
     checkRange(errors, 'engine.revLo', eng.revLo, L.revLo);
     checkRange(errors, 'engine.revHi', eng.revHi, L.revHi);
     checkRange(errors, 'engine.revPull', eng.revPull, L.revPull);
+    checkRange(errors, 'engine.revCruise', eng.revCruise, L.revCruise);
     if (isNum(eng.idleRpm) && isNum(eng.redlineRpm) && eng.redlineRpm <= eng.idleRpm + 200) {
       errors.push('engine.redlineRpm: must be > idleRpm + 200');
     }
