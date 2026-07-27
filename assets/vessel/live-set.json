@@ -1,23 +1,26 @@
 {
   "schema": "tas-live-set/1",
-  "updatedAt": "2026-07-27T04:20:59.354Z",
+  "updatedAt": "2026-07-27T04:36:30.406Z",
   "source": "command-room",
   "status": "online",
-  "message": "Deployed · 1 Online · live ~1 min on https://preemak03.github.io/",
+  "message": "Deployed · 2 Online · live ~1 min on https://preemak03.github.io/",
   "site": "https://preemak03.github.io/",
   "live": [
-    "classic-muscle"
+    "classic-muscle",
+    "s85-v10"
   ],
   "versions": {
-    "classic-muscle": "tone-current"
+    "classic-muscle": "tone-current",
+    "s85-v10": "tone-current"
   },
   "deployPick": [
-    "classic-muscle"
+    "classic-muscle",
+    "s85-v10"
   ],
   "lastPush": {
-    "at": "2026-07-27T04:20:59.354Z",
+    "at": "2026-07-27T04:36:30.406Z",
     "ok": true,
     "action": "deploy",
-    "commit": "95e4810"
+    "commit": null
   }
 }
