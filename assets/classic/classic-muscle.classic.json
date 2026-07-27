@@ -11,8 +11,14 @@
     "type": "ice",
     "cylinders": 8,
     "idleRpm": 650,
-    "redlineRpm": 5800,
-    "gears": [3.2, 2, 1.4, 1.05, 0.85],
+    "redlineRpm": 7000,
+    "gears": [
+      3.2,
+      2,
+      1.4,
+      1.05,
+      0.85
+    ],
     "rpmCurve": 0.8,
     "revLo": 0.15,
     "revHi": 0.82,
@@ -20,7 +26,18 @@
     "revCruise": 0.75
   },
   "tone": {
-    "harmonics": [0, 1, 1, 0.35, 0.8, 0.25, 0.55, 0.18, 0.4, 0.12],
+    "harmonics": [
+      0,
+      1,
+      1,
+      0.35,
+      0.8,
+      0.25,
+      0.55,
+      0.18,
+      0.4,
+      0.12
+    ],
     "body": 1,
     "mid": 0.42,
     "high": 0.22,
@@ -43,26 +60,56 @@
     "volume": 1.05,
     "idlePresence": 0.9,
     "characterMid": 0.55,
-    "waveguide": 0
+    "waveguide": 0,
+    "whoosh": null,
+    "whine": null
   },
   "mix": {
-    "master": 72,
-    "bass": 82,
-    "edge": 10
+    "master": 85,
+    "bass": 100,
+    "edge": 5
   },
   "dynamics": {
-    "curve": [
-      [650, 0.62],
-      [1200, 0.74],
-      [2200, 0.9],
-      [3600, 1.0],
-      [5200, 0.94],
-      [5800, 0.88]
-    ],
-    "loadBoost": 0.22,
+    "dynDb": 14,
     "dynCeiling": 0.88,
-    "dynDb": 14
+    "loadBoost": 0.22,
+    "shiftDuck": 0.9,
+    "overrunDuck": 0.9,
+    "floorBias": 1,
+    "gearScale": [
+      0.94,
+      0.97,
+      1,
+      0.98,
+      0.96
+    ],
+    "curve": [
+      [
+        734,
+        0.631
+      ],
+      [
+        1317,
+        0.881
+      ],
+      [
+        2105,
+        1.006
+      ],
+      [
+        3445,
+        1.092
+      ],
+      [
+        5380,
+        1.186
+      ],
+      [
+        7000,
+        1.25
+      ]
+    ]
   },
-  "updatedAt": "2026-07-27T06:00:00.000Z",
+  "updatedAt": "2026-07-27T16:30:34.371Z",
   "_restore": "Restored from 5f62469 / 09ff1e1 — before wrong S85-envelope retune"
 }
