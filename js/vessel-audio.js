@@ -190,6 +190,18 @@ export class VesselAudio {
     const rh = rig.vsl?.aux?.transient?.revHang;
     if (rh != null) this._revHang = rh;
     if (this._profile?.tone?.idlePresence != null) this._idlePresence = this._profile.tone.idlePresence;
+    // CommandRoom override: control.json cars[id] wins over the rig, so per-car
+    // vehicle/dynamics/cabin/synth can be tuned centrally WITHOUT rebuilding the .vsl.
+    try {
+      const m = await import('./profiles.js');
+      const ov = m.getCarOverride?.(this._profileId);
+      if (ov) {
+        if (ov.vehicle) this._veh = { ...this._veh, ...ov.vehicle };
+        if (ov.dynamics) this._dyn = { ...this._dyn, ...ov.dynamics };
+        if (ov.cabin) this._cabin = { ...this._cabin, ...ov.cabin };
+        if (ov.synth) this._synth = { ...this._synth, ...ov.synth };
+      }
+    } catch (_) {}
     this._layerInfo = {
       engine: rig.compiledFrom || 'Engine DNA (compiled .vsl)',
       cabin: 'cabin{} + synthesis{} in rig',
@@ -259,7 +271,16 @@ export class VesselAudio {
 
   async start() {
     if (this.running) return;
-    this.ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+    // Perf tier comes from CommandRoom (control.global.perf: auto|lite|full) — the ONE
+    // place the MCU2/Tesla budget is controlled. lite = big audio buffers + slower
+    // telemetry tick (fixes GPS-follow lag on weak cores). Never force a low sampleRate
+    // (a filter emitted NaN → silence).
+    let perf = 'auto';
+    try { const m = await import('./profiles.js'); perf = (m.getGlobalControl?.() || {}).perf || 'auto'; } catch (_) {}
+    this._lite = this._resolveLite(perf);
+    const AC = window.AudioContext || window.webkitAudioContext;
+    try { this.ctx = new AC({ latencyHint: this._lite ? 'playback' : 'interactive' }); }
+    catch (_) { this.ctx = new AC(); }
     await this.ctx.audioWorklet.addModule(vesselWorkletUrl());
     this.node = new AudioWorkletNode(this.ctx, 'vessel-runtime', { numberOfOutputs: 1, outputChannelCount: [1] });
     await this._loadRig();
@@ -272,13 +293,23 @@ export class VesselAudio {
       this.node.parameters.get('gear').setValueAtTime(this._gear || 1, this.ctx.currentTime);
     }
     this.running = true;
-    this._timer = setInterval(() => this._tick(0.02), 20);
+    const tickMs = this._lite ? 33 : 20;
+    this._timer = setInterval(() => this._tick(tickMs / 1000), tickMs);
   }
 
   stop() {
     this.running = false;
     if (this._timer) clearInterval(this._timer);
     if (this.ctx) { this.ctx.close(); this.ctx = null; this.node = null; }
+  }
+
+  /** perf tier (control.global.perf): auto → lite on Tesla/weak cores, else full. */
+  _resolveLite(perf) {
+    if (perf === 'lite') return true;
+    if (perf === 'full') return false;
+    const ua = (typeof navigator !== 'undefined' ? navigator.userAgent : '').toLowerCase();
+    const cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 8;
+    return ua.includes('tesla') || cores <= 4;
   }
 
   /**
@@ -289,7 +320,7 @@ export class VesselAudio {
   _buildGraph() {
     const ac = this.ctx, N = this.node, c = this._cabin;
     const drive = ac.createWaveShaper();
-    drive.curve = this._driveCurve(c.drive); drive.oversample = '2x';
+    drive.curve = this._driveCurve(c.drive); drive.oversample = 'none';
 
     // ~40–80 Hz cabin boom (structure / cabin volume mode)
     const boom = ac.createBiquadFilter();
@@ -352,9 +383,12 @@ export class VesselAudio {
     dR.delayTime.value = c.width;
     dyn.connect(merger, 0, 0); dyn.connect(dR); dR.connect(merger, 0, 1);
 
+    // Brick-wall SAFETY limiter only (high threshold, hard knee) — must NOT act as
+    // an AGC. A low-threshold/12:1 compressor here flattens the cruise↔pull dynamic
+    // volume (the coast-ducks / rpm-rises behaviour). Keep it catching clip peaks only.
     const lim = ac.createDynamicsCompressor();
-    lim.threshold.value = -4; lim.ratio.value = 12; lim.knee.value = 6;
-    lim.attack.value = 0.003; lim.release.value = 0.12;
+    lim.threshold.value = -1.5; lim.ratio.value = 20; lim.knee.value = 1;
+    lim.attack.value = 0.002; lim.release.value = 0.1;
 
     const master = ac.createGain();
     master.gain.value = this._masterOverride ?? c.master;

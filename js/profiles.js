@@ -929,6 +929,22 @@ export function getLiveSetMeta() {
 }
 
 /**
+ * The SINGLE control object CommandRoom emits (assets/vessel/control.json a.k.a.
+ * live-set.json). The whole app reads runtime config from here — nothing tunable
+ * should live as a constant in code. Returns {} until loadLiveSet() has run.
+ * Shape: { live[], versions{}, global:{perf,masterTrim}, cars:{ id:{vehicle,dynamics,cabin,synth} } }
+ */
+export function getControl() {
+  return _liveSetMeta || {};
+}
+export function getCarOverride(id) {
+  return (_liveSetMeta && _liveSetMeta.cars && _liveSetMeta.cars[id]) || null;
+}
+export function getGlobalControl() {
+  return (_liveSetMeta && _liveSetMeta.global) || {};
+}
+
+/**
  * Load Online carousel set for EVERY host (GitHub Pages + localhost).
  * Source of truth: assets/vessel/live-set.json (CommandRoom Apply Online / Deploy).
  * @returns {Promise<boolean>}
