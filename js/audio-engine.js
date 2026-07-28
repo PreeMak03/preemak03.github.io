@@ -118,6 +118,9 @@ export class AudioEngine {
     this._overrunLatch = false;
     /** Hard rev ceiling (rpm) — above this the top end turns to "ซ่า" on Tesla speakers. */
     this._rpmCeiling = 4800;
+    /** ± natural swing at the ceiling so it breathes instead of flat-lining. */
+    this._rpmCeilSwing = 80;
+    this._capHuntPhase = 0;
     /** Cruise duck — Dynamic Volume eases DOWN at truly steady speed (anti-หนวกหู). */
     this._cruiseDuck = 1;
   }
@@ -1341,12 +1344,20 @@ export class AudioEngine {
     const tone = this.profile.tone;
     const isEv = eng.type === 'electric' || tone.electric > 0.8;
     const idle = eng.idleRpm || 800;
-    // Hard rev ceiling — above ~4800 the high harmonics turn to "ซ่า" (untuned-TV
-    // hiss / aliasing) on Tesla drivers. Cap rpm (and the smoother, so it doesn't
-    // wind up) to keep the top of the range clean. Tunable via _rpmCeiling.
-    const rpmCeil = Math.min(eng.redlineRpm || 7500, this._rpmCeiling || 4800);
-    if (this._rpm > rpmCeil) this._rpm = rpmCeil;
-    if (this._rpmSmooth > rpmCeil) this._rpmSmooth = rpmCeil;
+    // Rev ceiling with a natural "breathe": above ~4800 the high harmonics turn to
+    // "ซ่า" (untuned-TV hiss/aliasing) on Tesla drivers, but a dead-flat clamp sounds
+    // digital. When pushed to the top let revs HUNT ±~swing like a governor (a slow,
+    // slightly irregular fluctuation), with a hard cap just above so it never runs
+    // into the ซ่า band. Only engages near the ceiling; normal driving is untouched.
+    const softCap = Math.min(eng.redlineRpm || 7500, this._rpmCeiling || 4800);
+    const swing = this._rpmCeilSwing || 80;
+    if (this._rpm > softCap - swing) {
+      this._capHuntPhase = (this._capHuntPhase || 0) + dt * 6.2832 * 2.4; // ~2.4 Hz
+      const p = this._capHuntPhase;
+      const hunt = swing * (0.6 * Math.sin(p) + 0.4 * Math.sin(p * 2.3)); // ±swing, irregular
+      this._rpm = clamp(softCap - swing * 0.5 + hunt, softCap - swing * 1.25, softCap + swing * 0.5);
+      this._rpmSmooth = this._rpm;
+    }
     const redline = eng.redlineRpm || 7500;
     const rpmNorm = clamp((this._rpm - idle) / Math.max(1, redline - idle), 0, 1.1);
     // Pure read from resolved profile (validate-at-save guarantees ranges)
