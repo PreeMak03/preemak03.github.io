@@ -125,10 +125,12 @@
     <div class="sheet-backdrop" id="sheet-backdrop"></div>
     <div class="tune-sheet" id="tune-sheet" role="dialog" aria-label="Sound tuning" aria-hidden="true">
       <div class="sheet-head">
-        <span class="sheet-title">Tuning</span>
+        <span class="sheet-title" id="sheet-title" title="Sound">Sound
+          <span class="dev-badge dev-only" aria-hidden="true">DEV</span>
+        </span>
         <span class="profile-chip" id="active-profile-name">Camaro</span>
       </div>
-      <div class="scope-chip-row">
+      <div class="scope-chip-row dev-only">
         <span class="scope-chip" id="engine-scope-chip" title="Which synthesis engine is live">Classic tone</span>
         <span class="scope-hint" id="tune-scope-hint">Bass/Edge = this card · Master/GPS = app</span>
       </div>
@@ -136,11 +138,11 @@
       <!-- SOUND PROFILE — follows the selected car card -->
       <div class="tune-section" data-scope="sound">
         <div class="tune-section-head">
-          <span class="tune-section-label">Sound Profile</span>
-          <span class="tune-section-tag">this car</span>
+          <span class="tune-section-label">Sound</span>
+          <span class="tune-section-tag dev-only">this car</span>
         </div>
-        <p class="tune-section-note" id="sound-profile-note">
-          Cabin body &amp; edge for the active card. Engine DNA is edited in VESSEL bench / .engine.json.
+        <p class="tune-section-note dev-only" id="sound-profile-note">
+          Cabin body &amp; edge for the active card.
         </p>
 
         <div class="slider-group">
@@ -169,10 +171,9 @@
       <!-- APP SYSTEM — global webapp, not a car profile -->
       <div class="tune-section" data-scope="app">
         <div class="tune-section-head">
-          <span class="tune-section-label">App System</span>
-          <span class="tune-section-tag tune-section-tag--app">global</span>
+          <span class="tune-section-label">Volume</span>
+          <span class="tune-section-tag tune-section-tag--app dev-only">global</span>
         </div>
-        <p class="tune-section-note">Master volume, GPS behaviour, sim — same for every profile.</p>
 
         <div class="slider-group">
           <label class="slider-label" for="vol-master">
@@ -185,30 +186,33 @@
           </div>
         </div>
 
-        <div class="toggle-row">
-          <button type="button" class="toggle-btn is-on" id="btn-reactive" aria-pressed="true">
-            <span class="toggle-knob"></span>
-            <span>Speed Reactive</span>
-          </button>
-          <button type="button" class="toggle-btn is-on" id="btn-smooth" aria-pressed="true">
-            <span class="toggle-knob"></span>
-            <span>Smooth Filter</span>
-          </button>
-        </div>
+        <!-- Developer / simulation controls — revealed by long-press on the sheet title -->
+        <div class="dev-only dev-block">
+          <div class="toggle-row">
+            <button type="button" class="toggle-btn is-on" id="btn-reactive" aria-pressed="true">
+              <span class="toggle-knob"></span>
+              <span>Speed Reactive</span>
+            </button>
+            <button type="button" class="toggle-btn is-on" id="btn-smooth" aria-pressed="true">
+              <span class="toggle-knob"></span>
+              <span>Smooth Filter</span>
+            </button>
+          </div>
 
-        <div class="slider-group sim-group" id="sim-group">
-          <label class="slider-label" for="sim-speed">
-            <span>Sim Speed · Demand</span>
-            <span class="slider-readout" id="sim-speed-val">0 km/h</span>
-          </label>
-          <div class="h-slider" data-slider="sim">
-            <input type="range" id="sim-speed" min="0" max="200" value="0" />
-            <div class="h-slider-track"><div class="h-slider-fill" id="sim-speed-fill"></div></div>
+          <div class="slider-group sim-group" id="sim-group">
+            <label class="slider-label" for="sim-speed">
+              <span>Sim Speed · Demand</span>
+              <span class="slider-readout" id="sim-speed-val">0 km/h</span>
+            </label>
+            <div class="h-slider" data-slider="sim">
+              <input type="range" id="sim-speed" min="0" max="200" value="0" />
+              <div class="h-slider-track"><div class="h-slider-fill" id="sim-speed-fill"></div></div>
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="sheet-meta">
+      <div class="sheet-meta dev-only">
         <span>GPS Accuracy</span>
         <span id="tele-accuracy">—</span>
       </div>

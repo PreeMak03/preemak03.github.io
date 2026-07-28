@@ -4,7 +4,7 @@
  */
 
 import { ticker, waapi, clamp } from './animations.js';
-import { getProfileById, loadLiveSet, loadClassicStandards, getLiveProfileIds } from './profiles.js';
+import { getProfileById, loadLiveSet, loadClassicStandards, getLiveProfileIds, getGlobalControl } from './profiles.js';
 import { AudioEngine } from './audio-engine.js';
 // hasRig is tiny; VesselAudio itself is dynamic-imported only for VESSEL cards
 import { hasRig } from './vessel-rigs.js';
@@ -255,8 +255,11 @@ function applyProfileMix(profile) {
     el.value = v;
     el.dispatchEvent(new Event('input'));
   };
-  // Master is APP SYSTEM — only apply if profile explicitly sets it as a starting default
-  set('vol-master', mix.master);
+  // Master is APP SYSTEM — only apply if profile explicitly sets it as a starting default.
+  // control.global.masterTrim (CommandRoom System tab) scales every profile's starting master.
+  const masterTrim = Number(getGlobalControl().masterTrim);
+  const trim = Number.isFinite(masterTrim) && masterTrim > 0 ? masterTrim : 1;
+  set('vol-master', mix.master == null ? null : Math.round(Math.min(100, mix.master * trim)));
   // Bass/Edge are SOUND PROFILE (cabin for VESSEL, tone for classic)
   set('vol-bass', mix.bass);
   set('vol-edge', mix.edge);
@@ -402,6 +405,33 @@ async function init() {
     setTuneOpen(!tuneSheet?.classList.contains('is-open'));
   });
   tuneBackdrop?.addEventListener('click', () => setTuneOpen(false));
+
+  // Developer mode: normal users get a clean sheet (Sound + Master). Hold the sheet
+  // title for 5s to reveal sim / GPS / behaviour controls. Persisted per browser.
+  const DEV_KEY = 'tas-dev-mode';
+  if (localStorage.getItem(DEV_KEY) === '1') document.body.classList.add('dev-mode');
+  const sheetTitle = $('#sheet-title');
+  if (sheetTitle) {
+    let holdTimer = null;
+    const cancelHold = () => {
+      clearTimeout(holdTimer);
+      holdTimer = null;
+      sheetTitle.classList.remove('is-pressing');
+    };
+    sheetTitle.addEventListener('pointerdown', () => {
+      cancelHold();
+      sheetTitle.classList.add('is-pressing');
+      holdTimer = setTimeout(() => {
+        sheetTitle.classList.remove('is-pressing');
+        const on = document.body.classList.toggle('dev-mode');
+        localStorage.setItem(DEV_KEY, on ? '1' : '0');
+        showToast(on ? 'Developer mode ON' : 'Developer mode OFF');
+      }, 5000);
+    });
+    sheetTitle.addEventListener('pointerup', cancelHold);
+    sheetTitle.addEventListener('pointerleave', cancelHold);
+    sheetTitle.addEventListener('pointercancel', cancelHold);
+  }
 
   bindSliders({
     master: (v) => audio.setMasterVolume(v),

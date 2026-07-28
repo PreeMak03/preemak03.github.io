@@ -533,6 +533,10 @@ class VesselRuntime extends AudioWorkletProcessor {
     this.loadParamSmoothed = null;
     this.globalMaxLpf = GLOBAL_MAX_LPF;
     this.subHpfHz = SUB_HPF_HZ;
+    /** Perf self-throttle: cap active partials (0 = uncapped/full; e.g. 16 on Tesla/lite).
+     *  Set by host from control.global.perf via processorOptions/port — CPU only, no NaN risk
+     *  (never touches sampleRate). Fewer partials on the per-sample Chebyshev bank = big MCU2 win. */
+    this.perfMaxPartials = 0;
     /** Anti-static / anti-alias radio swish (default ON with hybridStability) */
     this.antiStatic = true;
     this._pulseCutSm = null;
@@ -617,6 +621,13 @@ class VesselRuntime extends AudioWorkletProcessor {
     if (o.globalMaxLpf != null) this.globalMaxLpf = Math.max(400, +o.globalMaxLpf);
     if (o.subHpfHz != null) this.subHpfHz = Math.max(10, +o.subHpfHz);
     if (o.antiStatic != null) this.antiStatic = !!o.antiStatic;
+    if (o.perfMaxPartials != null) this.perfMaxPartials = Math.max(0, o.perfMaxPartials | 0);
+  }
+
+  /** Active partial count = profile N, capped by perf tier (lite). */
+  _effectiveN() {
+    const cap = this.perfMaxPartials;
+    return cap > 0 && cap < this.N ? cap : this.N;
   }
 
   _buildModTable() {
@@ -724,7 +735,7 @@ class VesselRuntime extends AudioWorkletProcessor {
   }
 
   _interpolate(rpm, loadEff) {
-    const s = this.profile.synth, N = this.N, K = this.K, J = this.J;
+    const s = this.profile.synth, N = this._effectiveN(), K = this.K, J = this.J;
     const bp = s.rpmBreakpoints, lv = s.loadLevels, cs = s.coefSin, cc = s.coefCos;
     let k0 = 0; while (k0 < K - 2 && rpm > bp[k0 + 1]) k0++;
     const k1 = Math.min(K - 1, k0 + 1);
@@ -899,6 +910,56 @@ class VesselRuntime extends AudioWorkletProcessor {
     return this._hpfY;
   }
 
+  _rebuildWaveguideFromProfile(p) {
+    const aux = (p && p.aux) || {};
+    const src = aux.source || {};
+    const pipe = aux.pipe || aux.geometry || {};
+    let offsets = null;
+    if (this.fireAngles && this.fireAngles.length) {
+      offsets = Array.from(this.fireAngles).map((a) => (((a % 720) + 720) % 720) / 720);
+    }
+    const nCyl = offsets && offsets.length
+      ? offsets.length
+      : (this.firesPerRev ? this.firesPerRev * 2 : 8);
+    this.wgOpts = Object.assign({
+      enabled: this.waveguideEnabled,
+      cylinders: Math.min(12, Math.max(4, nCyl)),
+      crankOffsets: offsets,
+      intakeLenM: pipe.intakeLenM != null ? pipe.intakeLenM : 0.4,
+      exhaustLenM: pipe.exhaustLenM != null ? pipe.exhaustLenM : 0.6,
+      extractorLenM: pipe.extractorLenM != null ? pipe.extractorLenM : 0.45,
+      straightPipeLenM: pipe.tailpipeLenM != null
+        ? pipe.tailpipeLenM
+        : (pipe.straightPipeLenM != null ? pipe.straightPipeLenM : 1.0),
+      mufflerAction: pipe.mufflerAction != null ? pipe.mufflerAction : 0.14,
+      ignitionTime: this.pulseSharpness != null ? 0.04 + this.pulseSharpness * 0.08 : 0.06,
+      pistonMotionFactor: 2.1,
+      ignitionFactor: 4.2,
+      intakeVolume: 0,
+      exhaustVolume: 0.65,
+      engineVibrationsVolume: 0.03,
+      intakeNoiseFactor: 0,
+      crankshaftFluctuation: Math.min(0.35, (this.combustionRand || 0.03) * 6),
+      exhaustLpfHz: 1280,
+      master: 0.4,
+    }, this.wgOpts || {});
+    this._rebuildWaveguide();
+  }
+
+  _rebuildWaveguide() {
+    if (typeof CompactWaveguideEngine === 'undefined') {
+      this.wg = null;
+      return;
+    }
+    if (!this.waveguideEnabled) {
+      this.wg = null;
+      return;
+    }
+    const opts = Object.assign({}, this.wgOpts || {}, { enabled: true });
+    this.wg = new CompactWaveguideEngine(opts, sampleRate);
+    this.wg.reset();
+  }
+
   // ─── BUS 1: Sub & Body — locked sine, floor 30 Hz, HPF anti-rumble (B) ─
   _processSubBus(rpm, load) {
     const floorHz = this.subHpfHz != null ? this.subHpfHz : SUB_HPF_HZ;
@@ -949,7 +1010,7 @@ class VesselRuntime extends AudioWorkletProcessor {
 
     const n = out.length;
     const sr = sampleRate;
-    const N = this.N;
+    const N = this._effectiveN();
     const rpmRaw = params.rpm[0];
     const loadRaw = params.load[0];
     const gearIndex = params.gear && params.gear.length ? params.gear[0] : 1;

@@ -885,11 +885,59 @@ button {
 }
 
 .sheet-title {
+  position: relative;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-muted);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+}
+
+/* Long-press affordance: an accent underline fills over 5s while holding the title. */
+.sheet-title::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -3px;
+  height: 2px;
+  width: 0;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0s;
+}
+.sheet-title.is-pressing::after {
+  width: 100%;
+  transition: width 5s linear;
+}
+.sheet-title.is-pressing {
+  color: var(--accent);
+}
+
+/* Developer / simulation controls: hidden from normal users. Revealed (with natural
+ * display of each element) once the body gains .dev-mode via the 5s long-press. */
+body:not(.dev-mode) .dev-only {
+  display: none !important;
+}
+.dev-badge {
+  margin-left: 8px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  padding: 2px 6px;
+  border-radius: 6px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--border-accent);
+  vertical-align: middle;
+}
+.dev-block {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border-accent);
 }
 
 .profile-chip {

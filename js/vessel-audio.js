@@ -122,6 +122,9 @@ export class VesselAudio {
     /** Gear-shift flash */
     this._shifting = false;
     this._shiftTimer = 0;
+    this._shiftUp = false;      // direction of the current shift (up vs down)
+    this._postShift = 0;        // seconds left of the post-upshift "catch" punch
+    this._liftHold = 0;         // GPS lift-off (throttle release) engine-braking hold
     this._prevGear = 1;
     this._gearBias = gearToneBias(1);
     /** Classic-parity dynamics */
@@ -258,6 +261,9 @@ export class VesselAudio {
       hybridStability: s.hybridStability !== false,
       antiStatic: s.antiStatic !== false,
       globalMaxLpf: s.globalMaxLpf != null ? s.globalMaxLpf : 1800,
+      // Perf self-throttle (control.global.perf → lite): cap the per-sample partial bank.
+      // CPU-only; never touches sampleRate (a low SR made a filter emit NaN → silence).
+      perfMaxPartials: this._lite ? 16 : 0,
       combustionRand: combRand != null ? combRand : 0.03,
       loadLag: s.loadLag != null ? s.loadLag : 0.12,
       timingJitterDeg: s.timingJitterDeg != null ? s.timingJitterDeg : 0.35,
@@ -486,8 +492,13 @@ export class VesselAudio {
 
       if (this._shifting) {
         this._shiftTimer -= dt;
-        if (this._shiftTimer <= 0) this._shifting = false;
+        if (this._shiftTimer <= 0) {
+          this._shifting = false;
+          // Post-upshift "catch": clutch re-engages → a short torque re-punch you can hear.
+          if (this._shiftUp && accelLoad > 0.18) this._postShift = 0.14;
+        }
       }
+      if (this._postShift > 0) this._postShift -= dt;
 
       if (speed < 1.5 && accelLoad < 0.1) {
         load = 0.05; this._gear = 1; this._driveState = 'idle';
@@ -508,6 +519,7 @@ export class VesselAudio {
           this._gear = nextGear;
           this._sinceShift = 0;
           this._shifting = true;
+          this._shiftUp = up;
           this._shiftTimer = up ? 0.12 : 0.09;
           this._gearBias = gearToneBias(this._gear);
           this._fireShiftClick(!up);
@@ -544,12 +556,18 @@ export class VesselAudio {
         load = clamp(accelLoad * 0.85 + decelLoad * 0.25 + (speed > 5 ? 0.08 : 0), 0, 1);
         const gPos = gearProgress(speed, this._gear);
         if (accelLoad > 0.3 && gPos > 0.75) load = clamp(load + 0.15, 0, 1);
-        if (this._shifting) load = clamp(load * 0.22 + 0.08, 0, 1);
+        // Torque interruption: upshift cuts deeper/faster than a downshift blip.
+        if (this._shifting) load = clamp(load * (this._shiftUp ? 0.12 : 0.28) + 0.05, 0, 1);
+        // The re-engagement punch right after an upshift (short catch).
+        else if (this._postShift > 0) load = clamp(load + 0.2 * (this._postShift / 0.14), 0, 1);
 
         if (this._shifting) this._driveState = 'shift';
         else if (decelLoad > 0.28) this._driveState = 'overrun';
         else if (accelLoad > 0.22) this._driveState = 'pull';
         else this._driveState = 'cruise';
+        // Lift-off (throttle release at speed) → engine-braking overrun that TRAILS off,
+        // not an instant cut. Refresh the hold while decelerating above walking pace.
+        if (decelLoad > 0.2 && speed > 12) this._liftHold = 0.38;
       }
     }
 
@@ -604,6 +622,17 @@ export class VesselAudio {
     // Normal tip-in from load delta; Launch Rev overlays scripted bus cues
     let tipTarget = clamp(dLoad * 8, 0, 1);
     let overTarget = clamp(-dLoad * 6, 0, 1) * (this._driveState === 'overrun' ? 1 : 0.55);
+    // Lift-off engine-braking: keep a trailing overrun burble after the pedal is released,
+    // and add a re-punch tip-in on the post-upshift catch — the two "feel" moments on GPS.
+    if (this._liftHold > 0) {
+      this._liftHold -= dt;
+      overTarget = Math.max(overTarget, 0.32 + decelLoad * 0.4);
+    }
+    if (this._postShift > 0) tipTarget = Math.max(tipTarget, 0.35 * (this._postShift / 0.14));
+    // Sustained hard pull → steady bite (not only on the load-delta edge) = revving feel.
+    if (this._driveState === 'pull' && accelLoad > 0.5) {
+      tipTarget = Math.max(tipTarget, 0.18 + (accelLoad - 0.5) * 0.4);
+    }
     if (launchActive) {
       tipTarget = Math.max(tipTarget, this._revTipIn || 0);
       overTarget = Math.max(overTarget, this._revOverrun || 0);
