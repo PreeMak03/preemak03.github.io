@@ -413,18 +413,26 @@ async function init() {
     showToast(on ? 'Developer mode ON' : 'Developer mode OFF');
   };
 
+  // Debounce the sheet-open: a tap only toggles the sheet ~300ms AFTER the last tap of
+  // a burst, so a rapid triple-tap never opens the sheet mid-sequence (which would slide
+  // up and cover the button, blocking taps 2-3). Reaching 3 taps fires dev immediately.
   let devTaps = [];
+  let settleTimer = null;
   tuneBtn?.addEventListener('click', () => {
     const now = Date.now();
-    devTaps = devTaps.filter((t) => now - t < 700);
+    devTaps = devTaps.filter((t) => now - t < 750);
     devTaps.push(now);
+    clearTimeout(settleTimer);
     if (devTaps.length >= 3) {
       devTaps = [];
       toggleDev();
       setTuneOpen(true); // reveal the sheet so the (un)locked controls are visible
       return;
     }
-    setTuneOpen(!tuneSheet?.classList.contains('is-open'));
+    settleTimer = setTimeout(() => {
+      devTaps = [];
+      setTuneOpen(!tuneSheet?.classList.contains('is-open'));
+    }, 300);
   });
   tuneBackdrop?.addEventListener('click', () => setTuneOpen(false));
 
