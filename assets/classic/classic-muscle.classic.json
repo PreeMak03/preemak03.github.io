@@ -40,11 +40,11 @@
     ],
     "body": 1,
     "mid": 0.42,
-    "high": 0.22,
-    "sub": 0.95,
-    "noise": 0.14,
-    "metallic": 0.1,
-    "scream": 0.18,
+    "high": 0.15,
+    "sub": 1,
+    "noise": 0.1,
+    "metallic": 0.06,
+    "scream": 0.12,
     "turbo": 0,
     "turboLag": 0,
     "crackle": 0.12,
@@ -54,9 +54,9 @@
     "electric": 0,
     "exhaustPulse": 0.95,
     "drive": 0.4,
-    "filterIdle": 280,
-    "filterRedline": 2600,
-    "resonance": 0.5,
+    "filterIdle": 240,
+    "filterRedline": 2150,
+    "resonance": 0.4,
     "volume": 1.05,
     "idlePresence": 0.9,
     "characterMid": 0.55,
@@ -110,6 +110,6 @@
       ]
     ]
   },
-  "updatedAt": "2026-07-27T16:30:34.371Z",
+  "updatedAt": "2026-07-28T12:06:07.760Z",
   "_restore": "Restored from 5f62469 / 09ff1e1 — before wrong S85-envelope retune"
 }

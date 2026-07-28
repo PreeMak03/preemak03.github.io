@@ -1619,9 +1619,13 @@ export class AudioEngine {
         idleWobble *
         (0.8 + this.bassPresence * 0.45) *
         procDuck;
-      // TEST: mute the low pulse layer above 900 rpm to isolate the "บึบๆ" source.
-      const lowTestGate = this._rpm > 900 ? 0 : 1;
-      this._layers.low.gain.gain.setTargetAtTime(lowG * 0.75 * lowTestGate, t, rotIdle ? 0.03 : 0.05);
+      // The low pulse-buffer layer aliases into "บึบๆ / ปะปะปุปุ" once it is rate-stretched
+      // at speed (right as an exhaust thump at low rpm, wrong up high). Crossfade it out as
+      // revs rise and let the CLEAN sub oscillator carry the body (see subLift below). This
+      // is the general fix for every profile — same buffer mechanism, same artifact.
+      const lowFade = clamp(1 - (this._rpm - 1200) / 1600, 0.14, 1); // full ≤1200 → 0.14 by ~2800
+      this._lowFade = lowFade;
+      this._layers.low.gain.gain.setTargetAtTime(lowG * 0.75 * lowFade, t, rotIdle ? 0.03 : 0.05);
       // Cap low-layer LPF open (~1.5 kHz) — less alias when rate-stretched
       this._layers.low.filter.frequency.setTargetAtTime(
         Math.min(
@@ -1735,12 +1739,16 @@ export class AudioEngine {
         t,
         tau
       );
+      // Sub picks up the body the low pulse layer drops at high rpm — keeps it ทุ้ม/full
+      // and clean (oscillator = no alias). Lift grows as the low layer fades out.
+      const subLift = 1 + (1 - (this._lowFade ?? 1)) * 1.6;
       this._layers.sub.gain.gain.setTargetAtTime(
         tone.sub *
           (0.06 + (1 - rpmNorm) * 0.06 + throttle * 0.04 + tunnel * 0.08) *
           (0.5 + this.bassPresence) *
           vol *
-          pulseBoost,
+          pulseBoost *
+          subLift,
         t,
         tau
       );
