@@ -401,52 +401,32 @@ async function init() {
     tuneBtn?.setAttribute('aria-expanded', open ? 'true' : 'false');
     tuneSheet?.setAttribute('aria-hidden', open ? 'false' : 'true');
   };
-  // Developer mode: normal users get a clean sheet (Sound + Master). Hold the SETTINGS
-  // button (or the sheet title) for 5s to reveal sim / GPS / behaviour controls.
-  // Short tap on the button just opens the sheet. Persisted per browser.
+  // Developer mode: normal users get a clean sheet (Sound + Master). TRIPLE-TAP the
+  // settings button (3 quick taps within 700ms) to reveal sim / GPS / behaviour
+  // controls; a single tap just opens the sheet. Uses plain `click` so it survives the
+  // Tesla browser (no pointer/contextmenu gesture to fight). Persisted per browser.
   const DEV_KEY = 'tas-dev-mode';
   if (localStorage.getItem(DEV_KEY) === '1') document.body.classList.add('dev-mode');
-  let devLongFired = false; // swallow the click that follows a long-press on the FAB
   const toggleDev = () => {
     const on = document.body.classList.toggle('dev-mode');
     localStorage.setItem(DEV_KEY, on ? '1' : '0');
     showToast(on ? 'Developer mode ON' : 'Developer mode OFF');
   };
-  const attachDevHold = (el, onFire) => {
-    if (!el) return;
-    let t = null;
-    const start = () => {
-      clearTimeout(t);
-      el.classList.add('is-pressing');
-      t = setTimeout(() => { el.classList.remove('is-pressing'); onFire(); }, 5000);
-    };
-    const cancel = () => { clearTimeout(t); t = null; el.classList.remove('is-pressing'); };
-    // Tesla browser fires contextmenu / pointercancel ~0.5s into a touch-hold (native
-    // long-press = context menu / text callout), which would kill the 5s timer. Stop
-    // that native gesture and DON'T treat pointercancel as a cancel; end only on a real
-    // release (pointerup / touchend). Touch fallback for engines without PointerEvent.
-    el.addEventListener('contextmenu', (e) => e.preventDefault());
-    if (window.PointerEvent) {
-      el.addEventListener('pointerdown', start);
-      el.addEventListener('pointerup', cancel);
-      el.addEventListener('pointerleave', cancel);
-    } else {
-      el.addEventListener('touchstart', start, { passive: true });
-      el.addEventListener('touchend', cancel);
-      el.addEventListener('mousedown', start);
-      el.addEventListener('mouseup', cancel);
-      el.addEventListener('mouseleave', cancel);
-    }
-  };
 
+  let devTaps = [];
   tuneBtn?.addEventListener('click', () => {
-    if (devLongFired) { devLongFired = false; return; } // long-press already handled
+    const now = Date.now();
+    devTaps = devTaps.filter((t) => now - t < 700);
+    devTaps.push(now);
+    if (devTaps.length >= 3) {
+      devTaps = [];
+      toggleDev();
+      setTuneOpen(true); // reveal the sheet so the (un)locked controls are visible
+      return;
+    }
     setTuneOpen(!tuneSheet?.classList.contains('is-open'));
   });
   tuneBackdrop?.addEventListener('click', () => setTuneOpen(false));
-
-  attachDevHold(tuneBtn, () => { devLongFired = true; toggleDev(); });
-  attachDevHold($('#sheet-title'), toggleDev);
 
   bindSliders({
     master: (v) => audio.setMasterVolume(v),

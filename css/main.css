@@ -885,56 +885,15 @@ button {
 }
 
 .sheet-title {
-  position: relative;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--text-muted);
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: none;
-}
-
-/* Long-press affordance: an accent underline fills over 5s while holding the title. */
-.sheet-title::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  bottom: -3px;
-  height: 2px;
-  width: 0;
-  background: var(--accent);
-  border-radius: 2px;
-  transition: width 0s;
-}
-.sheet-title.is-pressing::after {
-  width: 100%;
-  transition: width 5s linear;
-}
-.sheet-title.is-pressing {
-  color: var(--accent);
-}
-
-/* Settings FAB long-press affordance — a halo that grows over the 5s hold. */
-.tune-fab {
-  transition: box-shadow 0.15s ease, transform 0.15s ease;
-  /* Keep a touch-hold a clean pointer sequence on the Tesla browser: no pan/zoom
-     takeover, no text-callout, no selection — so the 5s dev-mode timer survives. */
-  touch-action: none;
-  -webkit-touch-callout: none;
-  -webkit-user-select: none;
-  user-select: none;
-}
-.tune-fab.is-pressing {
-  box-shadow: 0 0 0 9px var(--accent-soft), 0 0 26px var(--accent-glow);
-  transform: scale(0.93);
-  transition: box-shadow 5s linear, transform 0.15s ease;
 }
 
 /* Developer / simulation controls: hidden from normal users. Revealed (with natural
- * display of each element) once the body gains .dev-mode via the 5s long-press. */
+ * display of each element) once the body gains .dev-mode via the triple-tap gesture. */
 body:not(.dev-mode) .dev-only {
   display: none !important;
 }
