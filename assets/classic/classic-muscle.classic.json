@@ -65,7 +65,7 @@
     "whine": null
   },
   "mix": {
-    "master": 50,
+    "master": 90,
     "bass": 95,
     "edge": 5
   },
@@ -110,6 +110,6 @@
       ]
     ]
   },
-  "updatedAt": "2026-07-28T12:56:02.801Z",
+  "updatedAt": "2026-07-28T13:00:36.679Z",
   "_restore": "Restored from 5f62469 / 09ff1e1 — before wrong S85-envelope retune"
 }

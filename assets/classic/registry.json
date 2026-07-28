@@ -1,6 +1,6 @@
 {
   "schema": "tas-classic-registry/1",
-  "updatedAt": "2026-07-28T12:56:02.801Z",
+  "updatedAt": "2026-07-28T13:00:36.679Z",
   "note": "Classic AudioEngine standard — editable via vessel/tools/classic-tool.mjs + CommandRoom Classic tab. Vessel profiles are sealed separately under vessel/standards/.",
   "standard": "classic-audioengine/1",
   "profiles": [
