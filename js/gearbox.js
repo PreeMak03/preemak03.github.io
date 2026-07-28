@@ -15,12 +15,14 @@
 
 import { clamp } from './animations.js';
 
-export const GEAR_VMAX = [26, 52, 73, 94, 200];
+// Spec bands: G1 1–25 · G2 26–50 · G3 51–70 · G4 71–90 · G5 90+
+export const GEAR_VMAX = [26, 51, 71, 91, 200];
 export const GEAR_COUNT = 5;
 
 // Wide hysteresis (~10–14 km/h gap) so Tesla GPS ±2–4 km/h never thrash gears.
 // Thrashing gear = RPM jumps = the main "กระตุก" left after dyn soft-fix.
-const UP_AT = [26, 52, 73, 94, 999];
+// UP_AT[g-1] = leave gear g upward at this speed (26/51/71/91 per spec).
+const UP_AT = [26, 51, 71, 91, 999];
 /** DOWN_AT[i] = leave gear i+2 below this speed */
 const DOWN_AT = [12, 34, 54, 74];
 
@@ -85,31 +87,19 @@ export function rpmInGear({
   pull = REV_DEFAULT.pull,
   revCruise,
 }) {
-  const pos = gearProgress(speedKmh, gear); // 0 at gear floor → 1 at shift point
   const span = redline - idle;
-
-  // OFF-throttle the engine coasts LOW (quiet cruise) — not up at the shift
-  // point. This is why a real car goes near-silent holding speed after a pull.
-  const cruiseTop = revCruise != null ? revCruise : revLo + (revHi - revLo) * 0.38;
-  const cruiseN = revLo + pos * (cruiseTop - revLo);
-  // Under throttle, climb faster and higher toward the pull ceiling
-  const pullN = revLo + Math.pow(pos, 0.82) * (pull - revLo);
-  let n = cruiseN + accelLoad * (pullN - cruiseN);
-
-  // Lift-off eases revs (engine-braking feel)
-  n -= decelLoad * 0.08;
-
-  // Anti-stuck: under throttle the engine must ALWAYS rev — even caught low in a
-  // tall gear (pos≈0), where the pull term above vanishes (pos^0.82→0). Without this
-  // floor, flooring it near a gear's floor (e.g. 15 km/h in G2 after a downshift)
-  // pins revs low until speed climbs into the band → "เหยียบแล้วรอบไม่ขึ้น".
-  if (accelLoad > 0.2) {
-    const gearEase = gear === 1 ? 1 : 0.72; // tall gears a touch calmer, still alive
-    n = Math.max(n, revLo + accelLoad * (pull - revLo) * (0.34 + pos * 0.5) * gearEase);
-  }
-
-  n = clamp(n, revLo * 0.8, 1.02);
-  return idle + span * n;
+  // RPM tracks ACCELERATION, not speed. At steady speed (no accel) revs settle to a
+  // low cruise floor that STEPS UP with the gear (faster cruise = higher steady hum);
+  // acceleration lifts revs from that floor toward the pull ceiling; lift-off/braking
+  // eases them below it (engine-braking). Speed only picks the GEAR (see resolveGear),
+  // so holding any speed lets the revs fall — it no longer pins rpm to road speed.
+  const g = clamp(gear, 1, GEAR_COUNT);
+  const gt = (g - 1) / Math.max(1, GEAR_COUNT - 1);       // 0..1 across the gears
+  const floorTop = revLo + 0.55 * (revHi - revLo);         // top-gear cruise level
+  const cruiseFloor = revLo + gt * (floorTop - revLo);     // G1=revLo … G5=floorTop
+  let n = cruiseFloor + accelLoad * (pull - cruiseFloor);  // throttle climbs to pull
+  n -= decelLoad * 0.12;                                    // engine-braking dip
+  return idle + span * clamp(n, revLo * 0.7, 1.02);
 }
 
 /**
