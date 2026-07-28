@@ -76,30 +76,29 @@ export function shiftLandingRpm(gear, idle, redline, revLo = REV_DEFAULT.lo) {
  * whole thing up toward `pull` (the redline ceiling for this profile).
  */
 export function rpmInGear({
-  speedKmh,
   gear,
+  gearCount = GEAR_COUNT,
   idle,
   redline,
   accelLoad = 0,
   decelLoad = 0,
   revLo = REV_DEFAULT.lo,
-  revHi = REV_DEFAULT.hi,
   pull = REV_DEFAULT.pull,
-  gearRatio = 1,      // actual ratio of the current gear (profile.engine.gears)
-  gearScale = 0.0048, // speed(km/h) × ratio → rev fraction — tunable cruise pitch
+  floorLo = 1300, // per-gear standing rpm: G1 base
+  floorHi = 1800, // per-gear standing rpm: top gear base
 }) {
   const span = redline - idle;
-  // Physics cruise floor: a real engine at steady speed turns rpm ∝ road speed ×
-  // gear ratio — higher gear = lower rpm at the same speed, and an upshift DROPS
-  // revs (ratio drops). This is the level revs SETTLE to at constant speed; then
-  // ACCELERATION lifts them above it toward the pull ceiling, and lift-off/braking
-  // eases below it (engine-braking). So holding a speed lets revs fall to the geared
-  // idle for that gear — real behaviour — instead of tracking road speed 1:1.
-  const geared = Math.max(0, speedKmh) * gearRatio * gearScale;
-  const cruiseFloor = clamp(geared, revLo, revHi);         // capped at the shift level
-  let n = cruiseFloor + accelLoad * (pull - cruiseFloor);  // throttle climbs to pull
-  n -= decelLoad * 0.12;                                    // engine-braking dip
-  return idle + span * clamp(n, revLo * 0.7, 1.02);
+  // Each gear STANDS at a low base rpm that steps up with the gear (floorLo … floorHi,
+  // e.g. G1 1300 → G5 1800). At steady speed / low load revs settle to that base;
+  // ACCELERATION lifts them from there toward the pull ceiling, and after an upshift
+  // revs land back near the (higher-gear) base — the "coming down" between gears.
+  const g = clamp(gear, 1, gearCount);
+  const gt = (g - 1) / Math.max(1, gearCount - 1);
+  const floorRpm = floorLo + gt * (floorHi - floorLo);      // 1300 … 1800
+  const floorN = clamp((floorRpm - idle) / span, revLo * 0.4, 1);
+  let n = floorN + accelLoad * (pull - floorN);             // throttle climbs to pull
+  n -= decelLoad * 0.12;                                     // engine-braking dip
+  return idle + span * clamp(n, revLo * 0.4, 1.02);
 }
 
 /**

@@ -1252,11 +1252,9 @@ export class AudioEngine {
       // Under the accel-driven model a soft blend was swamped by the pull target.
       if (up) {
         const land = rpmInGear({
-          speedKmh: speed, gear: this._gear, idle, redline,
-          accelLoad: 0.12, decelLoad: 0,
-          revLo: eng.revLo, revHi: eng.revHi, pull: eng.revPull,
-          gearRatio: (eng.gears && eng.gears[this._gear - 1]) || 1,
-          gearScale: eng.gearRpmScale,
+          gear: this._gear, gearCount: this._gearCount, idle, redline,
+          accelLoad: 0, decelLoad: 0, revLo: eng.revLo, pull: eng.revPull,
+          floorLo: eng.gearFloorLo, floorHi: eng.gearFloorHi,
         });
         this._rpmSmooth = Math.min(this._rpmSmooth, land); // only drops, never raises
         this._rpm = this._rpmSmooth;
@@ -1278,18 +1276,17 @@ export class AudioEngine {
     const rpmAccel = accelLoad > 0.12 ? accelLoad : 0;
     const rpmDecel = decelLoad > 0.15 ? decelLoad : 0;
     let targetRpm = rpmInGear({
-      speedKmh: speed,
       gear: this._gear,
+      gearCount: this._gearCount,
       idle,
       redline,
       accelLoad: rpmAccel,
       decelLoad: rpmDecel,
       revLo: eng.revLo,
-      revHi: eng.revHi,
       pull: eng.revPull,
-      // Physics cruise floor: rpm ∝ speed × actual gear ratio (real gearbox).
-      gearRatio: (eng.gears && eng.gears[(this._gear || 1) - 1]) || 1,
-      gearScale: eng.gearRpmScale,
+      // Per-gear standing rpm: G1 ≈ floorLo … top gear ≈ floorHi (default 1300 → 1800).
+      floorLo: eng.gearFloorLo,
+      floorHi: eng.gearFloorHi,
     });
 
     // Cruise = slow follow (GPS speed wobble); pull/shift a bit snappier
