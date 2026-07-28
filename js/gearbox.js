@@ -85,18 +85,18 @@ export function rpmInGear({
   revLo = REV_DEFAULT.lo,
   revHi = REV_DEFAULT.hi,
   pull = REV_DEFAULT.pull,
-  revCruise,
+  gearRatio = 1,      // actual ratio of the current gear (profile.engine.gears)
+  gearScale = 0.0048, // speed(km/h) × ratio → rev fraction — tunable cruise pitch
 }) {
   const span = redline - idle;
-  // RPM tracks ACCELERATION, not speed. At steady speed (no accel) revs settle to a
-  // low cruise floor that STEPS UP with the gear (faster cruise = higher steady hum);
-  // acceleration lifts revs from that floor toward the pull ceiling; lift-off/braking
-  // eases them below it (engine-braking). Speed only picks the GEAR (see resolveGear),
-  // so holding any speed lets the revs fall — it no longer pins rpm to road speed.
-  const g = clamp(gear, 1, GEAR_COUNT);
-  const gt = (g - 1) / Math.max(1, GEAR_COUNT - 1);       // 0..1 across the gears
-  const floorTop = revLo + 0.55 * (revHi - revLo);         // top-gear cruise level
-  const cruiseFloor = revLo + gt * (floorTop - revLo);     // G1=revLo … G5=floorTop
+  // Physics cruise floor: a real engine at steady speed turns rpm ∝ road speed ×
+  // gear ratio — higher gear = lower rpm at the same speed, and an upshift DROPS
+  // revs (ratio drops). This is the level revs SETTLE to at constant speed; then
+  // ACCELERATION lifts them above it toward the pull ceiling, and lift-off/braking
+  // eases below it (engine-braking). So holding a speed lets revs fall to the geared
+  // idle for that gear — real behaviour — instead of tracking road speed 1:1.
+  const geared = Math.max(0, speedKmh) * gearRatio * gearScale;
+  const cruiseFloor = clamp(geared, revLo, revHi);         // capped at the shift level
   let n = cruiseFloor + accelLoad * (pull - cruiseFloor);  // throttle climbs to pull
   n -= decelLoad * 0.12;                                    // engine-braking dip
   return idle + span * clamp(n, revLo * 0.7, 1.02);

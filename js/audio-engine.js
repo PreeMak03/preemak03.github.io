@@ -118,6 +118,8 @@ export class AudioEngine {
     this._overrunLatch = false;
     /** Hard rev ceiling (rpm) — above this the top end turns to "ซ่า" on Tesla speakers. */
     this._rpmCeiling = 4800;
+    /** Cruise duck — Dynamic Volume eases DOWN at truly steady speed (anti-หนวกหู). */
+    this._cruiseDuck = 1;
   }
 
   /**
@@ -1272,8 +1274,9 @@ export class AudioEngine {
       revLo: eng.revLo,
       revHi: eng.revHi,
       pull: eng.revPull,
-      // Optional: cruise ceiling as fraction of idle→redline (Muscle ~0.75 → ~4500)
-      revCruise: eng.revCruise,
+      // Physics cruise floor: rpm ∝ speed × actual gear ratio (real gearbox).
+      gearRatio: (eng.gears && eng.gears[(this._gear || 1) - 1]) || 1,
+      gearScale: eng.gearRpmScale,
     });
 
     // Cruise = slow follow (GPS speed wobble); pull/shift a bit snappier
@@ -1415,7 +1418,15 @@ export class AudioEngine {
       shiftDuck,
       overrunDuck: dynCfg.overrunDuck,
     });
-    this._dynVolSmooth = damp(this._dynVolSmooth ?? dyn.dynVol, dyn.dynVol, 4.5, dt);
+    // Cruise duck — THE point of Dynamic Volume: at truly steady speed (|Δspeed| ≤
+    // 2 km/h/s) go QUIET so a held cruise isn't หนวกหู/อื้อหู. Ease down slowly as
+    // cruise settles; release FAST the moment you accelerate (loud on demand).
+    const steadyCruise = Math.abs(this._accelSmooth) <= 2 && speed > 3;
+    const duckFloor = dynCfg.cruiseDuck != null ? +dynCfg.cruiseDuck : 0.55;
+    const duckTarget = steadyCruise ? duckFloor : 1;
+    this._cruiseDuck = damp(this._cruiseDuck ?? 1, duckTarget, steadyCruise ? 1.1 : 7, dt);
+    const dynTarget = dyn.dynVol * this._cruiseDuck;
+    this._dynVolSmooth = damp(this._dynVolSmooth ?? dynTarget, dynTarget, 4.5, dt);
     if (this.dynGain) {
       this.dynGain.gain.setTargetAtTime(this._dynVolSmooth, this.ctx.currentTime, 0.18);
     }
