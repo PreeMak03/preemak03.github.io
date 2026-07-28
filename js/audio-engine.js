@@ -1619,7 +1619,9 @@ export class AudioEngine {
         idleWobble *
         (0.8 + this.bassPresence * 0.45) *
         procDuck;
-      this._layers.low.gain.gain.setTargetAtTime(lowG * 0.75, t, rotIdle ? 0.03 : tau);
+      // TEST: mute the low pulse layer above 900 rpm to isolate the "บึบๆ" source.
+      const lowTestGate = this._rpm > 900 ? 0 : 1;
+      this._layers.low.gain.gain.setTargetAtTime(lowG * 0.75 * lowTestGate, t, rotIdle ? 0.03 : 0.05);
       // Cap low-layer LPF open (~1.5 kHz) — less alias when rate-stretched
       this._layers.low.filter.frequency.setTargetAtTime(
         Math.min(
