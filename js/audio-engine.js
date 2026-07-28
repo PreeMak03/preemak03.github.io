@@ -179,12 +179,24 @@ export class AudioEngine {
     this.safety.oversample = 'none';
     this.safety.curve = AudioEngine._buildCeilingCurve(0.82, 0.985);
 
+    // De-harsh — a single peaking cut ~3 kHz whose depth tracks RPM. At low revs
+    // it is flat (0 dB); as revs climb it scoops the 2–4 kHz presence band where the
+    // synth turns "แหบ/แพ๊ดๆ/แบร๊ด" (rasp) on Tesla's small drivers. One native biquad,
+    // gain automated in update() — ~zero CPU. Tunable via _deharshMaxCutDb.
+    this.deharsh = this.ctx.createBiquadFilter();
+    this.deharsh.type = 'peaking';
+    this.deharsh.frequency.value = 3000;
+    this.deharsh.Q.value = 1.1;
+    this.deharsh.gain.value = 0;
+    this._deharshMaxCutDb = 5.0; // max cut at redline (dB)
+
     // Small analyser — no live waveform UI; keep light for compressor tap only
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 256;
     this.analyser.smoothingTimeConstant = 0.8;
 
-    this.master.connect(this.compressor);
+    this.master.connect(this.deharsh);
+    this.deharsh.connect(this.compressor);
     this.compressor.connect(this.dynGain);
     this.dynGain.connect(this.limiter);
     this.limiter.connect(this.safety);
@@ -1339,6 +1351,15 @@ export class AudioEngine {
     const aNorm = clamp(accelForLoad / this.accelRefKmhps, -1.4, 1.4);
     const accelLoad = clamp(aNorm, 0, 1);
     const decelLoad = clamp(-aNorm, 0, 1);
+
+    // De-harsh depth tracks revs (the 2–4 kHz rasp emerges high in the range),
+    // nudged deeper under throttle since it's worst on acceleration. Flat below
+    // ~45% revs so low-rpm body is untouched. Smoothed → no zipper.
+    if (this.deharsh) {
+      const revCut = clamp((rpmNorm - 0.45) / 0.55, 0, 1);
+      const cutDb = -(this._deharshMaxCutDb || 5) * revCut * (0.75 + 0.25 * accelLoad);
+      this.deharsh.gain.setTargetAtTime(cutDb, this.ctx.currentTime, 0.08);
+    }
 
     // Effort: slow attack + long hold so GPS flutter doesn't pump dyn
     const effTarget = this._revUntil || this._holdRpm != null ? 1 : accelLoad;
