@@ -123,6 +123,8 @@ export class AudioEngine {
     this._capHuntPhase = 0;
     /** Cruise duck — Dynamic Volume eases DOWN at truly steady speed (anti-หนวกหู). */
     this._cruiseDuck = 1;
+    /** Accel loudness boost — a hard pull gets LOUDER, not just brighter. */
+    this._accelBoost = 1;
   }
 
   /**
@@ -1436,7 +1438,15 @@ export class AudioEngine {
     const duckFloor = dynCfg.cruiseDuck != null ? +dynCfg.cruiseDuck : 0.55;
     const duckTarget = steadyCruise ? duckFloor : 1;
     this._cruiseDuck = damp(this._cruiseDuck ?? 1, duckTarget, steadyCruise ? 1.1 : 7, dt);
-    const dynTarget = dyn.dynVol * this._cruiseDuck;
+    // Accel loudness — a hard pull must get LOUDER, not just brighter (dyn.dynVol alone
+    // saturates at the softCeiling → "โรลลุ่มนิ่ง" on accel). Boost above the ceiling with
+    // drive; fast attack, slower release. The limiter/safety catch the peaks. Together with
+    // the cruise duck this makes the cruise↔pull swing wide and real.
+    const drive = Math.max(accelLoad, this._effort ?? 0);
+    const boostTarget = 1 + drive * (dynCfg.accelGain != null ? +dynCfg.accelGain : 0.5);
+    const boostRising = boostTarget > (this._accelBoost ?? 1);
+    this._accelBoost = damp(this._accelBoost ?? 1, boostTarget, boostRising ? 7 : 3, dt);
+    const dynTarget = dyn.dynVol * this._cruiseDuck * this._accelBoost;
     this._dynVolSmooth = damp(this._dynVolSmooth ?? dynTarget, dynTarget, 4.5, dt);
     if (this.dynGain) {
       this.dynGain.gain.setTargetAtTime(this._dynVolSmooth, this.ctx.currentTime, 0.18);
