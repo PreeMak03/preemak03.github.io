@@ -1623,7 +1623,7 @@ export class AudioEngine {
       // at speed (right as an exhaust thump at low rpm, wrong up high). Crossfade it out as
       // revs rise and let the CLEAN sub oscillator carry the body (see subLift below). This
       // is the general fix for every profile — same buffer mechanism, same artifact.
-      const lowFade = clamp(1 - (this._rpm - 1200) / 1600, 0.14, 1); // full ≤1200 → 0.14 by ~2800
+      const lowFade = clamp(1 - (this._rpm - 650) / 200, 0, 1); // full at idle → 0 (disabled) by 850 rpm
       this._lowFade = lowFade;
       this._layers.low.gain.gain.setTargetAtTime(lowG * 0.75 * lowFade, t, rotIdle ? 0.03 : 0.05);
       // Cap low-layer LPF open (~1.5 kHz) — less alias when rate-stretched
