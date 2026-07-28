@@ -116,6 +116,8 @@ export class AudioEngine {
     this._effortHold = 0;
     /** Overrun hysteresis (avoid cruise↔overrun flutter) */
     this._overrunLatch = false;
+    /** Hard rev ceiling (rpm) — above this the top end turns to "ซ่า" on Tesla speakers. */
+    this._rpmCeiling = 4800;
   }
 
   /**
@@ -1336,6 +1338,12 @@ export class AudioEngine {
     const tone = this.profile.tone;
     const isEv = eng.type === 'electric' || tone.electric > 0.8;
     const idle = eng.idleRpm || 800;
+    // Hard rev ceiling — above ~4800 the high harmonics turn to "ซ่า" (untuned-TV
+    // hiss / aliasing) on Tesla drivers. Cap rpm (and the smoother, so it doesn't
+    // wind up) to keep the top of the range clean. Tunable via _rpmCeiling.
+    const rpmCeil = Math.min(eng.redlineRpm || 7500, this._rpmCeiling || 4800);
+    if (this._rpm > rpmCeil) this._rpm = rpmCeil;
+    if (this._rpmSmooth > rpmCeil) this._rpmSmooth = rpmCeil;
     const redline = eng.redlineRpm || 7500;
     const rpmNorm = clamp((this._rpm - idle) / Math.max(1, redline - idle), 0, 1.1);
     // Pure read from resolved profile (validate-at-save guarantees ranges)
@@ -1361,15 +1369,17 @@ export class AudioEngine {
       this.deharsh.gain.setTargetAtTime(cutDb, this.ctx.currentTime, 0.08);
     }
 
-    // Effort: slow attack + long hold so GPS flutter doesn't pump dyn
+    // Effort: quick attack, SHORT hold + fast decay so lift-off follows almost
+    // immediately (EV speed dynamics change fast — a long rev-hang felt laggy).
+    // A tiny 0.35s hold still absorbs GPS ±speed flutter without pumping.
     const effTarget = this._revUntil || this._holdRpm != null ? 1 : accelLoad;
     const prevEff = this._effort ?? 0;
     if (effTarget > prevEff) {
       this._effort = damp(prevEff, effTarget, 5.5, dt);
-      this._effortHold = 1.6;
+      this._effortHold = 0.35;
     } else {
       this._effortHold = (this._effortHold || 0) - dt;
-      this._effort = this._effortHold > 0 ? prevEff : damp(prevEff, effTarget, 1.4, dt);
+      this._effort = this._effortHold > 0 ? prevEff : damp(prevEff, effTarget, 3.8, dt);
     }
 
     // --- DynamicVolume: pure profile.dynamics (smoothing = audio glue only) ---
