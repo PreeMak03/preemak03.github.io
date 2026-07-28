@@ -593,14 +593,20 @@ export class AudioEngine {
       }
     }
 
-    // Soft one-pole LPF on buffer (~1.8 kHz) — post anti-alias for rate-stretch
+    // Steep band-limit (3× one-pole ≈ -18 dB/oct @ ~2.6 kHz) — the sharp pulse HF must
+    // roll off hard so it can't ALIAS when the buffer is played up to ~2.8× at high rpm.
+    // A single gentle pole left ~-20 dB at 8.6 kHz, which folded down into the passband
+    // as "ปะ ปะ ปุ ปุ / TV static" that got denser + harsher with revs. 3× crushes it to
+    // ~-33 dB while keeping low/mid (≈ the exhaust tone) almost unchanged.
     {
-      const fc = 1800;
+      const fc = 2600;
       const a = Math.exp((-2 * Math.PI * fc) / sr);
-      let y = 0;
-      for (let i = 0; i < n; i++) {
-        y = data[i] + a * (y - data[i]);
-        data[i] = y;
+      for (let pass = 0; pass < 3; pass++) {
+        let y = data[0];
+        for (let i = 0; i < n; i++) {
+          y = data[i] + a * (y - data[i]);
+          data[i] = y;
+        }
       }
     }
 
