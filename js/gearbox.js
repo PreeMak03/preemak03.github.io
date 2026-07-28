@@ -99,9 +99,13 @@ export function rpmInGear({
   // Lift-off eases revs (engine-braking feel)
   n -= decelLoad * 0.08;
 
-  // Launch in first gear can dig deeper and rev harder
-  if (gear === 1 && accelLoad > 0.3) {
-    n = Math.max(n, revLo + accelLoad * (pull - revLo) * (0.35 + pos * 0.5));
+  // Anti-stuck: under throttle the engine must ALWAYS rev — even caught low in a
+  // tall gear (pos≈0), where the pull term above vanishes (pos^0.82→0). Without this
+  // floor, flooring it near a gear's floor (e.g. 15 km/h in G2 after a downshift)
+  // pins revs low until speed climbs into the band → "เหยียบแล้วรอบไม่ขึ้น".
+  if (accelLoad > 0.2) {
+    const gearEase = gear === 1 ? 1 : 0.72; // tall gears a touch calmer, still alive
+    n = Math.max(n, revLo + accelLoad * (pull - revLo) * (0.34 + pos * 0.5) * gearEase);
   }
 
   n = clamp(n, revLo * 0.8, 1.02);

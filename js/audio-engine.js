@@ -118,6 +118,26 @@ export class AudioEngine {
     this._overrunLatch = false;
   }
 
+  /**
+   * Build a WaveShaper curve that is linear (transparent) up to `knee`, then a
+   * soft-knee tanh asymptote to `ceil` — so |output| can never exceed `ceil`.
+   * Input beyond ±1 clamps to the table ends, so even a runaway sum is capped.
+   * @param {number} knee  transparent below this |x| (e.g. 0.82)
+   * @param {number} ceil  absolute output ceiling < 1.0 (e.g. 0.985)
+   */
+  static _buildCeilingCurve(knee = 0.82, ceil = 0.985) {
+    const n = 2048;
+    const curve = new Float32Array(n);
+    const span = Math.max(1e-4, ceil - knee);
+    for (let i = 0; i < n; i++) {
+      const x = (i / (n - 1)) * 2 - 1; // -1..1
+      const a = Math.abs(x);
+      const y = a <= knee ? a : knee + span * Math.tanh((a - knee) / span);
+      curve[i] = Math.sign(x) * Math.min(ceil, y);
+    }
+    return curve;
+  }
+
   async init() {
     if (this.ctx) return;
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -149,6 +169,16 @@ export class AudioEngine {
     this.limiter.attack.value = 0.003;
     this.limiter.release.value = 0.12;
 
+    // Guaranteed speaker-safe ceiling (WaveShaper) — a native, ~zero-CPU final
+    // brickwall after the limiter. Transparent below the knee, then a soft-knee
+    // asymptote so output can NEVER exceed CEIL (< 0dBFS): kills the transient
+    // overshoot a ratio-12 limiter still lets slip, protecting Tesla speakers
+    // from clipping / over-excursion for certain. Table built once; oversample
+    // 'none' keeps it free (it only ever shapes rare peaks).
+    this.safety = this.ctx.createWaveShaper();
+    this.safety.oversample = 'none';
+    this.safety.curve = AudioEngine._buildCeilingCurve(0.82, 0.985);
+
     // Small analyser — no live waveform UI; keep light for compressor tap only
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 256;
@@ -157,7 +187,8 @@ export class AudioEngine {
     this.master.connect(this.compressor);
     this.compressor.connect(this.dynGain);
     this.dynGain.connect(this.limiter);
-    this.limiter.connect(this.analyser);
+    this.limiter.connect(this.safety);
+    this.safety.connect(this.analyser);
     this.analyser.connect(this.ctx.destination);
 
     this._packLoader = new SamplePackLoader(this.ctx);
