@@ -401,37 +401,39 @@ async function init() {
     tuneBtn?.setAttribute('aria-expanded', open ? 'true' : 'false');
     tuneSheet?.setAttribute('aria-hidden', open ? 'false' : 'true');
   };
+  // Developer mode: normal users get a clean sheet (Sound + Master). Hold the SETTINGS
+  // button (or the sheet title) for 5s to reveal sim / GPS / behaviour controls.
+  // Short tap on the button just opens the sheet. Persisted per browser.
+  const DEV_KEY = 'tas-dev-mode';
+  if (localStorage.getItem(DEV_KEY) === '1') document.body.classList.add('dev-mode');
+  let devLongFired = false; // swallow the click that follows a long-press on the FAB
+  const toggleDev = () => {
+    const on = document.body.classList.toggle('dev-mode');
+    localStorage.setItem(DEV_KEY, on ? '1' : '0');
+    showToast(on ? 'Developer mode ON' : 'Developer mode OFF');
+  };
+  const attachDevHold = (el, onFire) => {
+    if (!el) return;
+    let t = null;
+    const cancel = () => { clearTimeout(t); t = null; el.classList.remove('is-pressing'); };
+    el.addEventListener('pointerdown', () => {
+      cancel();
+      el.classList.add('is-pressing');
+      t = setTimeout(() => { el.classList.remove('is-pressing'); onFire(); }, 5000);
+    });
+    el.addEventListener('pointerup', cancel);
+    el.addEventListener('pointerleave', cancel);
+    el.addEventListener('pointercancel', cancel);
+  };
+
   tuneBtn?.addEventListener('click', () => {
+    if (devLongFired) { devLongFired = false; return; } // long-press already handled
     setTuneOpen(!tuneSheet?.classList.contains('is-open'));
   });
   tuneBackdrop?.addEventListener('click', () => setTuneOpen(false));
 
-  // Developer mode: normal users get a clean sheet (Sound + Master). Hold the sheet
-  // title for 5s to reveal sim / GPS / behaviour controls. Persisted per browser.
-  const DEV_KEY = 'tas-dev-mode';
-  if (localStorage.getItem(DEV_KEY) === '1') document.body.classList.add('dev-mode');
-  const sheetTitle = $('#sheet-title');
-  if (sheetTitle) {
-    let holdTimer = null;
-    const cancelHold = () => {
-      clearTimeout(holdTimer);
-      holdTimer = null;
-      sheetTitle.classList.remove('is-pressing');
-    };
-    sheetTitle.addEventListener('pointerdown', () => {
-      cancelHold();
-      sheetTitle.classList.add('is-pressing');
-      holdTimer = setTimeout(() => {
-        sheetTitle.classList.remove('is-pressing');
-        const on = document.body.classList.toggle('dev-mode');
-        localStorage.setItem(DEV_KEY, on ? '1' : '0');
-        showToast(on ? 'Developer mode ON' : 'Developer mode OFF');
-      }, 5000);
-    });
-    sheetTitle.addEventListener('pointerup', cancelHold);
-    sheetTitle.addEventListener('pointerleave', cancelHold);
-    sheetTitle.addEventListener('pointercancel', cancelHold);
-  }
+  attachDevHold(tuneBtn, () => { devLongFired = true; toggleDev(); });
+  attachDevHold($('#sheet-title'), toggleDev);
 
   bindSliders({
     master: (v) => audio.setMasterVolume(v),

@@ -917,6 +917,16 @@ button {
   color: var(--accent);
 }
 
+/* Settings FAB long-press affordance — a halo that grows over the 5s hold. */
+.tune-fab {
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+.tune-fab.is-pressing {
+  box-shadow: 0 0 0 9px var(--accent-soft), 0 0 26px var(--accent-glow);
+  transform: scale(0.93);
+  transition: box-shadow 5s linear, transform 0.15s ease;
+}
+
 /* Developer / simulation controls: hidden from normal users. Revealed (with natural
  * display of each element) once the body gains .dev-mode via the 5s long-press. */
 body:not(.dev-mode) .dev-only {
