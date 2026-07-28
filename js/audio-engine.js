@@ -1247,10 +1247,18 @@ export class AudioEngine {
       this._gearBias = gearToneBias(this._gear);
       // Very soft tick — loud click was read as "กระตุก" on cabin speakers
       this._fireShiftClick(!up);
-      // Upshift: gentle glide toward landing (small blend; damp does the rest)
+      // Upshift: FIRM drop to the new gear's geared rpm (a real upshift dip you hear
+      // even under full throttle), then acceleration climbs it back — the "row" feel.
+      // Under the accel-driven model a soft blend was swamped by the pull target.
       if (up) {
-        const land = shiftLandingRpm(this._gear, idle, redline, eng.revLo);
-        this._rpmSmooth = this._rpmSmooth * 0.72 + land * 0.28;
+        const land = rpmInGear({
+          speedKmh: speed, gear: this._gear, idle, redline,
+          accelLoad: 0.12, decelLoad: 0,
+          revLo: eng.revLo, revHi: eng.revHi, pull: eng.revPull,
+          gearRatio: (eng.gears && eng.gears[this._gear - 1]) || 1,
+          gearScale: eng.gearRpmScale,
+        });
+        this._rpmSmooth = Math.min(this._rpmSmooth, land); // only drops, never raises
         this._rpm = this._rpmSmooth;
       } else if (accelLoad > 0.55) {
         // Downshift blip only on clear pull
@@ -1446,8 +1454,11 @@ export class AudioEngine {
     const boostTarget = 1 + drive * (dynCfg.accelGain != null ? +dynCfg.accelGain : 0.5);
     const boostRising = boostTarget > (this._accelBoost ?? 1);
     this._accelBoost = damp(this._accelBoost ?? 1, boostTarget, boostRising ? 7 : 3, dt);
-    const dynTarget = dyn.dynVol * this._cruiseDuck * this._accelBoost;
-    this._dynVolSmooth = damp(this._dynVolSmooth ?? dynTarget, dynTarget, 4.5, dt);
+    let dynTarget = dyn.dynVol * this._cruiseDuck * this._accelBoost;
+    // Gear-change torque cut — a brief audible dip THROUGH the accel boost, so the shift
+    // is felt even at full throttle (the internal shiftDuck alone was swamped by accel).
+    if (this._shifting) dynTarget *= 0.5;
+    this._dynVolSmooth = damp(this._dynVolSmooth ?? dynTarget, dynTarget, this._shifting ? 9 : 4.5, dt);
     if (this.dynGain) {
       this.dynGain.gain.setTargetAtTime(this._dynVolSmooth, this.ctx.currentTime, 0.18);
     }
