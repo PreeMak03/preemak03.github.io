@@ -415,15 +415,28 @@ async function init() {
   const attachDevHold = (el, onFire) => {
     if (!el) return;
     let t = null;
-    const cancel = () => { clearTimeout(t); t = null; el.classList.remove('is-pressing'); };
-    el.addEventListener('pointerdown', () => {
-      cancel();
+    const start = () => {
+      clearTimeout(t);
       el.classList.add('is-pressing');
       t = setTimeout(() => { el.classList.remove('is-pressing'); onFire(); }, 5000);
-    });
-    el.addEventListener('pointerup', cancel);
-    el.addEventListener('pointerleave', cancel);
-    el.addEventListener('pointercancel', cancel);
+    };
+    const cancel = () => { clearTimeout(t); t = null; el.classList.remove('is-pressing'); };
+    // Tesla browser fires contextmenu / pointercancel ~0.5s into a touch-hold (native
+    // long-press = context menu / text callout), which would kill the 5s timer. Stop
+    // that native gesture and DON'T treat pointercancel as a cancel; end only on a real
+    // release (pointerup / touchend). Touch fallback for engines without PointerEvent.
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
+    if (window.PointerEvent) {
+      el.addEventListener('pointerdown', start);
+      el.addEventListener('pointerup', cancel);
+      el.addEventListener('pointerleave', cancel);
+    } else {
+      el.addEventListener('touchstart', start, { passive: true });
+      el.addEventListener('touchend', cancel);
+      el.addEventListener('mousedown', start);
+      el.addEventListener('mouseup', cancel);
+      el.addEventListener('mouseleave', cancel);
+    }
   };
 
   tuneBtn?.addEventListener('click', () => {

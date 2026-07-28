@@ -920,6 +920,12 @@ button {
 /* Settings FAB long-press affordance — a halo that grows over the 5s hold. */
 .tune-fab {
   transition: box-shadow 0.15s ease, transform 0.15s ease;
+  /* Keep a touch-hold a clean pointer sequence on the Tesla browser: no pan/zoom
+     takeover, no text-callout, no selection — so the 5s dev-mode timer survives. */
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 .tune-fab.is-pressing {
   box-shadow: 0 0 0 9px var(--accent-soft), 0 0 26px var(--accent-glow);
