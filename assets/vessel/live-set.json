@@ -1,9 +1,9 @@
 {
   "schema": "tas-live-set/1",
-  "updatedAt": "2026-07-28T12:41:21.095Z",
+  "updatedAt": "2026-07-28T12:44:05.134Z",
   "source": "command-room",
   "status": "online",
-  "message": "Deployed · 1 Online · live ~1 min on https://preemak03.github.io/",
+  "message": "Online applied · classic-muscle · live ~1 min on https://preemak03.github.io/",
   "site": "https://preemak03.github.io/",
   "live": [
     "classic-muscle"
@@ -29,9 +29,9 @@
     "classic-muscle"
   ],
   "lastPush": {
-    "at": "2026-07-28T12:41:21.095Z",
+    "at": "2026-07-28T12:44:05.134Z",
     "ok": true,
-    "action": "deploy",
-    "commit": "7a84b4f"
+    "action": "apply-online",
+    "commit": null
   }
 }
