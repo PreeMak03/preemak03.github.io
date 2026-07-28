@@ -413,28 +413,45 @@ async function init() {
     showToast(on ? 'Developer mode ON' : 'Developer mode OFF');
   };
 
-  // Debounce the sheet-open: a tap only toggles the sheet ~300ms AFTER the last tap of
-  // a burst, so a rapid triple-tap never opens the sheet mid-sequence (which would slide
-  // up and cover the button, blocking taps 2-3). Reaching 3 taps fires dev immediately.
+  // Debounce the sheet-open by 1s with a spinner ring around the button, so it reads as
+  // a deliberate "opening…" for normal users (not lag) — AND a rapid triple-tap never
+  // opens the sheet mid-sequence (which would slide up and cover the button, blocking
+  // taps 2-3). Reaching 3 taps within the window fires dev immediately.
   let devTaps = [];
   let settleTimer = null;
   tuneBtn?.addEventListener('click', () => {
     const now = Date.now();
-    devTaps = devTaps.filter((t) => now - t < 750);
+    devTaps = devTaps.filter((t) => now - t < 1000);
     devTaps.push(now);
     clearTimeout(settleTimer);
+    tuneBtn.classList.add('is-waiting'); // spinner ring during the 1s wait
     if (devTaps.length >= 3) {
       devTaps = [];
+      tuneBtn.classList.remove('is-waiting');
       toggleDev();
       setTuneOpen(true); // reveal the sheet so the (un)locked controls are visible
       return;
     }
     settleTimer = setTimeout(() => {
       devTaps = [];
+      tuneBtn.classList.remove('is-waiting');
       setTuneOpen(!tuneSheet?.classList.contains('is-open'));
-    }, 300);
+    }, 1000);
   });
   tuneBackdrop?.addEventListener('click', () => setTuneOpen(false));
+
+  // App version badge (top-left) — from assets/version.json, stamped at each deploy so
+  // a refresh clearly shows which build loaded. Silent if the file is missing.
+  (async () => {
+    const el = $('#app-ver');
+    if (!el) return;
+    try {
+      const r = await fetch('assets/version.json', { cache: 'no-store' });
+      if (!r.ok) return;
+      const v = await r.json();
+      if (v && v.v) el.textContent = 'v' + v.v;
+    } catch (_) {}
+  })();
 
   bindSliders({
     master: (v) => audio.setMasterVolume(v),

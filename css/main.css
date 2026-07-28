@@ -915,6 +915,37 @@ body:not(.dev-mode) .dev-only {
   border-top: 1px dashed var(--border-accent);
 }
 
+/* Settings FAB — a 1s "opening…" spinner ring (also the triple-tap dev window),
+ * so the deliberate delay reads as a loading animation, not lag. */
+.tune-fab {
+  position: relative;
+}
+.tune-fab.is-waiting::before {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: var(--accent);
+  border-right-color: var(--accent);
+  animation: fab-spin 0.8s linear infinite;
+  pointer-events: none;
+}
+@keyframes fab-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Small, muted app-version badge after the brand name (top-left). */
+.brand-ver {
+  margin-left: 6px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  opacity: 0.6;
+  vertical-align: middle;
+}
+
 .profile-chip {
   font-size: 12px;
   font-weight: 500;
