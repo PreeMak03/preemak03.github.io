@@ -11,7 +11,7 @@
     "type": "ice",
     "cylinders": 8,
     "idleRpm": 650,
-    "redlineRpm": 7000,
+    "redlineRpm": 4500,
     "gears": [
       3.2,
       2,
@@ -38,13 +38,13 @@
       0.4,
       0.12
     ],
-    "body": 1,
+    "body": 0.5,
     "mid": 0.42,
-    "high": 0.15,
-    "sub": 1,
-    "noise": 0.1,
-    "metallic": 0.06,
-    "scream": 0.12,
+    "high": 0.5,
+    "sub": 0.8,
+    "noise": 0,
+    "metallic": 0.03,
+    "scream": 0.05,
     "turbo": 0,
     "turboLag": 0,
     "crackle": 0.12,
@@ -52,21 +52,21 @@
     "boxer": 0,
     "rotary": 0,
     "electric": 0,
-    "exhaustPulse": 0.95,
-    "drive": 0.4,
-    "filterIdle": 240,
-    "filterRedline": 2150,
-    "resonance": 0.4,
-    "volume": 1.05,
+    "exhaustPulse": 0,
+    "drive": 0,
+    "filterIdle": 80,
+    "filterRedline": 4500,
+    "resonance": 0.95,
+    "volume": 0.5,
     "idlePresence": 0.9,
     "characterMid": 0.55,
-    "waveguide": 0,
+    "waveguide": 0.28,
     "whoosh": null,
     "whine": null
   },
   "mix": {
-    "master": 85,
-    "bass": 100,
+    "master": 50,
+    "bass": 95,
     "edge": 5
   },
   "dynamics": {
@@ -85,31 +85,31 @@
     ],
     "curve": [
       [
-        734,
-        0.631
+        783,
+        0.483
       ],
       [
-        1317,
-        0.881
+        1094,
+        0.592
       ],
       [
-        2105,
-        1.006
+        1769,
+        0.686
       ],
       [
-        3445,
-        1.092
+        3117,
+        0.795
       ],
       [
-        5380,
-        1.186
+        4724,
+        0.904
       ],
       [
-        7000,
-        1.25
+        6367,
+        0.959
       ]
     ]
   },
-  "updatedAt": "2026-07-28T12:06:07.760Z",
+  "updatedAt": "2026-07-28T12:56:02.801Z",
   "_restore": "Restored from 5f62469 / 09ff1e1 — before wrong S85-envelope retune"
 }
