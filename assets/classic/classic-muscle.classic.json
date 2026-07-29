@@ -60,7 +60,7 @@
     "volume": 0.5,
     "idlePresence": 0.9,
     "characterMid": 0.55,
-    "waveguide": 0.28,
+    "waveguide": 0,
     "whoosh": null,
     "whine": null
   },
@@ -110,6 +110,6 @@
       ]
     ]
   },
-  "updatedAt": "2026-07-28T13:00:36.679Z",
+  "updatedAt": "2026-07-29T04:07:31.255Z",
   "_restore": "Restored from 5f62469 / 09ff1e1 — before wrong S85-envelope retune"
 }
