@@ -205,10 +205,18 @@ export class AudioEngine {
     this.analyser.fftSize = 256;
     this.analyser.smoothingTimeConstant = 0.8;
 
+    // Loudness makeup — the mix is conservative (~10 dB of headroom), so the app was too
+    // quiet (needed 60-70% car volume vs 20-30% for music). Boost 2x BEFORE the limiter so
+    // cruise gets louder cleanly (uses the headroom) and only peaks touch the limiter/safety.
+    // Placed after dynGain so it doesn't change the compressor/dynamics tuning. Tunable.
+    this.makeup = this.ctx.createGain();
+    this.makeup.gain.value = 2.0;
+
     this.master.connect(this.deharsh);
     this.deharsh.connect(this.compressor);
     this.compressor.connect(this.dynGain);
-    this.dynGain.connect(this.limiter);
+    this.dynGain.connect(this.makeup);
+    this.makeup.connect(this.limiter);
     this.limiter.connect(this.safety);
     this.safety.connect(this.analyser);
     this.analyser.connect(this.ctx.destination);
