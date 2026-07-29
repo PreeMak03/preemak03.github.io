@@ -164,8 +164,12 @@ export class AudioEngine {
     const forced = typeof location !== 'undefined' && /[?&]lite=1/.test(location.search);
     this._lite =
       forced || ua.includes('tesla') || ua.includes('qtcar') || noHover || cores <= 6 || mem <= 4;
+    // Full real-time everywhere: small 'interactive' buffer (lowest output latency) — the
+    // driving feel depends on it most. The MCU headroom now comes from the FREE load cuts
+    // (lean chain, pruned layers, half-rate EQ) that don't touch responsiveness, so we no
+    // longer trade latency for it. If a marginal unit stutters, the levers are still here.
     try {
-      this.ctx = new AC({ latencyHint: this._lite ? 'playback' : 'interactive' });
+      this.ctx = new AC({ latencyHint: 'interactive' });
     } catch (_) {
       this.ctx = new AC();
     }
@@ -370,7 +374,7 @@ export class AudioEngine {
       this._lastUpdateWall = now;
       if (!(dt > 0) || dt > 0.25) dt = 0.02;
       this.update(dt);
-    }, this._lite ? 33 : 20); // 30 Hz on weak MCU (Tesla), 50 Hz on desktop
+    }, 20); // 50 Hz everywhere — full real-time; headroom comes from the free load cuts
   }
 
   _stopUpdateLoop() {
