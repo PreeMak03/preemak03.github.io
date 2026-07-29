@@ -66,10 +66,11 @@ export class AudioEngine {
     /** Longitudinal accel in km/h per second (+accel / −decel) */
     this._accelKmhps = 0;
     this._accelSmooth = 0;
-    /** Full-load reference for audio (tube scale ±40; sim rate ±33 sits under full) */
-    // Lower ref = the virtual engine has to WORK to match Tesla-grade accel,
-    // so normal hard acceleration already revs it hard (real-physics feel).
-    this.accelRefKmhps = 26;
+    /** Full-load reference for audio — accelLoad = accel / this. Real GPS accel is
+     * heavily smoothed upstream (geolocation EMA → app EMA → engine damp), so 26 left
+     * accelLoad tiny in normal driving = the engine barely reacted to acceleration.
+     * 16 makes everyday acceleration actually rev + swell it (the accel system feel). */
+    this.accelRefKmhps = 16;
 
     // Engine state (Ioniq-style)
     this._rpm = 900;
@@ -1258,7 +1259,7 @@ export class AudioEngine {
       // Under the accel-driven model a soft blend was swamped by the pull target.
       if (up) {
         const land = rpmInGear({
-          speedKmh: speed, gear: this._gear, gearCount: this._gearCount, idle, redline,
+          gear: this._gear, gearCount: this._gearCount, idle, redline,
           accelLoad: 0, decelLoad: 0, revLo: eng.revLo, pull: eng.revPull,
           floorLo: eng.gearFloorLo, floorHi: eng.gearFloorHi,
         });
@@ -1282,7 +1283,6 @@ export class AudioEngine {
     const rpmAccel = accelLoad > 0.12 ? accelLoad : 0;
     const rpmDecel = decelLoad > 0.15 ? decelLoad : 0;
     let targetRpm = rpmInGear({
-      speedKmh: speed,
       gear: this._gear,
       gearCount: this._gearCount,
       idle,
@@ -1504,10 +1504,17 @@ export class AudioEngine {
     // WG only if node exists (lazily created); never keep a silent worklet warm
     if (this._wgReady) this._pushWaveguideParams(t, tau);
 
-    // Very mild jitter (was grainy when applied to playbackRate @ 50 Hz)
+    // Very mild combustion jitter (grain)
     const jAmt = isEv ? 0.0006 : 0.0012 + (1 - rpmNorm) * 0.002 + accelLoad * 0.0008;
     this._jitter = damp(this._jitter, (Math.random() * 2 - 1) * jAmt, 2.4, dt);
-    const rateJ = 1 + this._jitter;
+    // Natural engine BREATHE — real revs never sit dead-flat. A slow lope hunt swings the
+    // rate at ALL times (not just idle), stronger at low rpm (idle-hunt character bleeding
+    // into cruise) and lighter up high. This is the "หายใจ" while driving. EV stays steady.
+    this._breathePhase = (this._breathePhase || 0) + dt;
+    const bp = this._breathePhase;
+    const bDepth = isEv ? 0 : 0.006 + (1 - Math.min(1, rpmNorm)) * 0.014; // ±0.6–2.0%
+    const breathe = bDepth * (0.6 * Math.sin(bp * 10.7) + 0.4 * Math.sin(bp * 21.3)); // ~1.7 + 3.4 Hz
+    const rateJ = 1 + this._jitter + breathe;
 
     // Playback rate from RPM — sample + procedural
     const refRpm = this._samplePack?.refRpm || REF_RPM;
