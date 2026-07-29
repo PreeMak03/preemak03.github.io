@@ -152,9 +152,18 @@ export class AudioEngine {
     const AC = window.AudioContext || window.webkitAudioContext;
     // Weak-device (Tesla MCU) tier: bigger audio buffer + slower param clock so the
     // main thread isn't overloaded (was 50 Hz interactive → underruns = กระตุก + delay).
-    const ua = (typeof navigator !== 'undefined' ? navigator.userAgent : '').toLowerCase();
-    const cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 8;
-    this._lite = ua.includes('tesla') || ua.includes('qtcar') || cores <= 4;
+    const nav = typeof navigator !== 'undefined' ? navigator : {};
+    const ua = (nav.userAgent || '').toLowerCase();
+    const cores = nav.hardwareConcurrency || 8;
+    const mem = nav.deviceMemory || 8;
+    // A hover-capable pointer = a desktop with a mouse (bench/CommandRoom). Everything
+    // else — Tesla touchscreen, phone, tablet — is the weak tier. Broad on purpose so the
+    // car reliably gets the light path even if its UA doesn't say "Tesla".
+    let noHover = false;
+    try { noHover = typeof matchMedia === 'function' && !matchMedia('(hover: hover)').matches; } catch (_) {}
+    const forced = typeof location !== 'undefined' && /[?&]lite=1/.test(location.search);
+    this._lite =
+      forced || ua.includes('tesla') || ua.includes('qtcar') || noHover || cores <= 6 || mem <= 4;
     try {
       this.ctx = new AC({ latencyHint: this._lite ? 'playback' : 'interactive' });
     } catch (_) {
