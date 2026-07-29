@@ -852,6 +852,19 @@ export class AudioEngine {
     this._layers.scream = { src: scream, filter: screamF, gain: screamG };
     this._layers.sub = { src: sub, filter: null, gain: subG };
     this._pack = pack;
+
+    // Prune layers this profile never uses — a silent buffer source + filter still
+    // costs the MCU every sample. Disconnecting the gain removes the whole layer from
+    // the render graph (Web Audio only renders nodes that reach the destination). The
+    // objects stay, so the per-frame gain/rate writes are just harmless no-ops.
+    const tn = this.profile?.tone || {};
+    const isEvProfile = this.profile?.engine?.type === 'electric' || (tn.electric || 0) > 0.8;
+    const prune = (layer, unused) => {
+      if (layer && unused) { try { layer.gain.disconnect(); } catch (_) {} layer._pruned = true; }
+    };
+    prune(this._layers.turbo, (tn.turbo || 0) === 0);        // no turbo → no turbo/BOV layer
+    prune(this._layers.whoosh, tn.whoosh == null && !isEvProfile); // whoosh is an EV-only layer
+    prune(this._layers.scream, (tn.scream || 0) < 0.12 && !isEvProfile); // near-silent scream osc
   }
 
   async resume() {
