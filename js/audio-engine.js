@@ -1510,20 +1510,22 @@ export class AudioEngine {
     // Natural rpm "dance" — even holding a gear floor, real revs WANDER (idle-hunt / lope
     // character), never frozen at one number. Wander ±(lope-scaled) rpm around the target
     // (e.g. muscle G1 floor 1300 → ~1220-1380), stronger at low rpm, tapering up high. Same
-    // hunt shape as idle. Applied to the audio pitch only (this._rpm stays clean for gear/UI).
+    // hunt shape as idle. Written into this._rpm so BOTH the RPM readout and the pitch dance
+    // (gear is chosen from SPEED so it's unaffected; the clean value is this._rpmSmooth).
     this._breathePhase = (this._breathePhase || 0) + dt;
     const bp = this._breathePhase;
     const lopeCh = isEv ? 0 : (tone.lope || 0.2);
     const wanderAmp = (18 + lopeCh * 62) * (1.15 - Math.min(1, rpmNorm) * 0.65); // ±rpm
     const wander =
       wanderAmp * (0.5 * Math.sin(bp * 2.1) + 0.3 * Math.sin(bp * 5.3) + 0.2 * Math.sin(bp * (3.5 + lopeCh * 4)));
-    const rpmDance = this._rpm + wander;
+    // Driving only — at idle (<2 km/h) the idle branch already hunts, so don't double it.
+    this._rpm = this._rpmSmooth + (speed > 2 ? wander : 0); // dance the actual rpm (display + audio)
     const rateJ = 1 + this._jitter;
 
-    // Playback rate from the DANCING rpm — sample + procedural
+    // Playback rate from the dancing rpm — sample + procedural
     const refRpm = this._samplePack?.refRpm || REF_RPM;
-    const rate = clamp(rpmDance / refRpm, 0.18, 2.8) * rateJ;
-    const rateHi = clamp(rpmDance / (refRpm * 0.85), 0.2, 3.0) * rateJ;
+    const rate = clamp(this._rpm / refRpm, 0.18, 2.8) * rateJ;
+    const rateHi = clamp(this._rpm / (refRpm * 0.85), 0.2, 3.0) * rateJ;
 
     // Push AudioParams at ~25 Hz with epsilon — halves automation load, less zipper
     this._paramTick = (this._paramTick || 0) + 1;
