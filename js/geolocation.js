@@ -55,12 +55,8 @@ export class GeolocationService {
       (pos) => this._onPosition(pos),
       (err) => this._onError(err),
       {
-        // High accuracy hammers the GPS subsystem on the Tesla MCU — a constant
-        // background load that starves the audio thread → stutter in GPS mode (sim mode,
-        // no GPS, is smooth). We only need SPEED, not cm-precise position, so keep it off
-        // and let coords.speed / the position-delta estimate drive it. Lighter = smooth.
-        enableHighAccuracy: false,
-        maximumAge: 1000,
+        enableHighAccuracy: true,
+        maximumAge: 500,
         timeout: 12000,
       }
     );

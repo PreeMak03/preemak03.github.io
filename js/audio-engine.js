@@ -150,29 +150,7 @@ export class AudioEngine {
   async init() {
     if (this.ctx) return;
     const AC = window.AudioContext || window.webkitAudioContext;
-    // Weak-device (Tesla MCU) tier: bigger audio buffer + slower param clock so the
-    // main thread isn't overloaded (was 50 Hz interactive → underruns = กระตุก + delay).
-    const nav = typeof navigator !== 'undefined' ? navigator : {};
-    const ua = (nav.userAgent || '').toLowerCase();
-    const cores = nav.hardwareConcurrency || 8;
-    const mem = nav.deviceMemory || 8;
-    // A hover-capable pointer = a desktop with a mouse (bench/CommandRoom). Everything
-    // else — Tesla touchscreen, phone, tablet — is the weak tier. Broad on purpose so the
-    // car reliably gets the light path even if its UA doesn't say "Tesla".
-    let noHover = false;
-    try { noHover = typeof matchMedia === 'function' && !matchMedia('(hover: hover)').matches; } catch (_) {}
-    const forced = typeof location !== 'undefined' && /[?&]lite=1/.test(location.search);
-    this._lite =
-      forced || ua.includes('tesla') || ua.includes('qtcar') || noHover || cores <= 6 || mem <= 4;
-    // Full real-time everywhere: small 'interactive' buffer (lowest output latency) — the
-    // driving feel depends on it most. The MCU headroom now comes from the FREE load cuts
-    // (lean chain, pruned layers, half-rate EQ) that don't touch responsiveness, so we no
-    // longer trade latency for it. If a marginal unit stutters, the levers are still here.
-    try {
-      this.ctx = new AC({ latencyHint: 'interactive' });
-    } catch (_) {
-      this.ctx = new AC();
-    }
+    this.ctx = new AC({ latencyHint: 'interactive' });
 
     this.master = this.ctx.createGain();
     this.master.gain.value = 0;
@@ -200,40 +178,38 @@ export class AudioEngine {
     this.limiter.attack.value = 0.003;
     this.limiter.release.value = 0.12;
 
+    // Guaranteed speaker-safe ceiling (WaveShaper) — a native, ~zero-CPU final
+    // brickwall after the limiter. Transparent below the knee, then a soft-knee
+    // asymptote so output can NEVER exceed CEIL (< 0dBFS): kills the transient
+    // overshoot a ratio-12 limiter still lets slip, protecting Tesla speakers
+    // from clipping / over-excursion for certain. Table built once; oversample
+    // 'none' keeps it free (it only ever shapes rare peaks).
+    this.safety = this.ctx.createWaveShaper();
+    this.safety.oversample = 'none';
+    this.safety.curve = AudioEngine._buildCeilingCurve(0.82, 0.985);
+
+    // De-harsh — a single peaking cut ~3 kHz whose depth tracks RPM. At low revs
+    // it is flat (0 dB); as revs climb it scoops the 2–4 kHz presence band where the
+    // synth turns "แหบ/แพ๊ดๆ/แบร๊ด" (rasp) on Tesla's small drivers. One native biquad,
+    // gain automated in update() — ~zero CPU. Tunable via _deharshMaxCutDb.
+    this.deharsh = this.ctx.createBiquadFilter();
+    this.deharsh.type = 'peaking';
+    this.deharsh.frequency.value = 3000;
+    this.deharsh.Q.value = 1.1;
+    this.deharsh.gain.value = 0;
+    this._deharshMaxCutDb = 5.0; // max cut at redline (dB)
+
     // Small analyser — no live waveform UI; keep light for compressor tap only
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 256;
     this.analyser.smoothingTimeConstant = 0.8;
 
-    // On the weak tier (Tesla) run the LEAN master chain — master → compressor →
-    // dynGain → limiter → analyser — so we don't process extra per-sample nodes on
-    // the MCU audio thread (that was the stutter regression). On desktop/bench add
-    // two quality nodes: a de-harsh peaking cut (2–4 kHz rasp, rpm-tracked) and a
-    // WaveShaper speaker-safe ceiling. Both null on lite; update()/graph guard on them.
-    this.deharsh = null;
-    this.safety = null;
-    this._deharshMaxCutDb = 5.0;
-    if (this._lite) {
-      this.master.connect(this.compressor);
-      this.compressor.connect(this.dynGain);
-      this.dynGain.connect(this.limiter);
-      this.limiter.connect(this.analyser);
-    } else {
-      this.deharsh = this.ctx.createBiquadFilter();
-      this.deharsh.type = 'peaking';
-      this.deharsh.frequency.value = 3000;
-      this.deharsh.Q.value = 1.1;
-      this.deharsh.gain.value = 0;
-      this.safety = this.ctx.createWaveShaper();
-      this.safety.oversample = 'none';
-      this.safety.curve = AudioEngine._buildCeilingCurve(0.82, 0.985);
-      this.master.connect(this.deharsh);
-      this.deharsh.connect(this.compressor);
-      this.compressor.connect(this.dynGain);
-      this.dynGain.connect(this.limiter);
-      this.limiter.connect(this.safety);
-      this.safety.connect(this.analyser);
-    }
+    this.master.connect(this.deharsh);
+    this.deharsh.connect(this.compressor);
+    this.compressor.connect(this.dynGain);
+    this.dynGain.connect(this.limiter);
+    this.limiter.connect(this.safety);
+    this.safety.connect(this.analyser);
     this.analyser.connect(this.ctx.destination);
 
     this._packLoader = new SamplePackLoader(this.ctx);
@@ -374,7 +350,7 @@ export class AudioEngine {
       this._lastUpdateWall = now;
       if (!(dt > 0) || dt > 0.25) dt = 0.02;
       this.update(dt);
-    }, 20); // 50 Hz everywhere — full real-time; headroom comes from the free load cuts
+    }, 20);
   }
 
   _stopUpdateLoop() {
@@ -392,24 +368,8 @@ export class AudioEngine {
     this.bus.gain.value = 1;
 
     this.drive = ctx.createWaveShaper();
-    this._driveCurveBuf = new Float32Array(512); // reused every rebuild — no per-0.55s alloc
-    this.drive.curve = makeDriveCurve(0.4, this._driveCurveBuf);
-    this.drive.oversample = this._lite ? 'none' : '2x'; // 2x = double audio-thread cost
-
-    // Persistent shift-click voice — retriggered by envelope, never re-allocated, so rapid
-    // up/down shifting (เร่งสลับลด) no longer churns oscillator/gain/filter nodes → no GC spike.
-    this._clickOsc = ctx.createOscillator();
-    this._clickOsc.type = 'triangle';
-    this._clickOsc.frequency.value = 200;
-    this._clickFilter = ctx.createBiquadFilter();
-    this._clickFilter.type = 'lowpass';
-    this._clickFilter.frequency.value = 560;
-    this._clickGain = ctx.createGain();
-    this._clickGain.gain.value = 0;
-    this._clickOsc.connect(this._clickFilter);
-    this._clickFilter.connect(this._clickGain);
-    this._clickGain.connect(this.master);
-    try { this._clickOsc.start(); } catch (_) {}
+    this.drive.curve = makeDriveCurve(0.4);
+    this.drive.oversample = '2x';
 
     this.lp = ctx.createBiquadFilter();
     this.lp.type = 'lowpass';
@@ -872,19 +832,6 @@ export class AudioEngine {
     this._layers.scream = { src: scream, filter: screamF, gain: screamG };
     this._layers.sub = { src: sub, filter: null, gain: subG };
     this._pack = pack;
-
-    // Prune layers this profile never uses — a silent buffer source + filter still
-    // costs the MCU every sample. Disconnecting the gain removes the whole layer from
-    // the render graph (Web Audio only renders nodes that reach the destination). The
-    // objects stay, so the per-frame gain/rate writes are just harmless no-ops.
-    const tn = this.profile?.tone || {};
-    const isEvProfile = this.profile?.engine?.type === 'electric' || (tn.electric || 0) > 0.8;
-    const prune = (layer, unused) => {
-      if (layer && unused) { try { layer.gain.disconnect(); } catch (_) {} layer._pruned = true; }
-    };
-    prune(this._layers.turbo, (tn.turbo || 0) === 0);        // no turbo → no turbo/BOV layer
-    prune(this._layers.whoosh, tn.whoosh == null && !isEvProfile); // whoosh is an EV-only layer
-    prune(this._layers.scream, (tn.scream || 0) < 0.12 && !isEvProfile); // near-silent scream osc
   }
 
   async resume() {
@@ -1373,15 +1320,24 @@ export class AudioEngine {
   }
 
   _fireShiftClick(down = false) {
-    if (!this.ctx || !this.running || !this._clickGain) return;
-    const t = this.ctx.currentTime;
-    // Retrigger the persistent click voice — no node creation (see init).
-    this._clickOsc.frequency.setValueAtTime(down ? 140 : 200, t);
-    this._clickFilter.frequency.setValueAtTime(down ? 420 : 560, t);
-    const g = this._clickGain.gain;
-    g.cancelScheduledValues(t);
-    g.setValueAtTime(0.012, t);
-    g.exponentialRampToValueAtTime(0.0005, t + 0.04); // tail stays inaudible
+    if (!this.ctx || !this.running || !this.master) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = down ? 140 : 200;
+    const g = ctx.createGain();
+    // Quieter than before — still tactile, not a cabin "tick stutter"
+    g.gain.setValueAtTime(0.012, t);
+    g.gain.exponentialRampToValueAtTime(0.0005, t + 0.04);
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = down ? 420 : 560;
+    osc.connect(f);
+    f.connect(g);
+    g.connect(this.master);
+    osc.start(t);
+    osc.stop(t + 0.045);
   }
 
   update(dt) {
@@ -1798,30 +1754,29 @@ export class AudioEngine {
       );
     }
 
-    // Secondary EQ / spatial params change slowly and setTargetAtTime smooths them, so
-    // on the weak tier (Tesla) push them every OTHER update (~15 Hz) to free the main
-    // thread for rAF/GPS — the audio-update setInterval and the speed display share it.
-    if (!this._lite || pushAudio) {
-      // Cabin space: a touch more wet at speed, drier under hard pull for clarity
-      this.reverbWet.gain.setTargetAtTime(0.06 + rpmNorm * 0.05 - accelLoad * 0.03, t, tau);
+    // Cabin space: a touch more wet at speed, drier under hard pull for clarity
+    this.reverbWet.gain.setTargetAtTime(
+      0.06 + rpmNorm * 0.05 - accelLoad * 0.03,
+      t,
+      tau
+    );
 
-      // Zone staging: overrun pushes the exhaust rearward, pull leans front
-      this.rearGain.gain.setTargetAtTime(1.0 + decelLoad * 0.45 + this._load * 0.1, t, tau);
-      this.frontGain.gain.setTargetAtTime(1.1 + accelLoad * 0.2, t, tau);
+    // Zone staging: overrun pushes the exhaust rearward, pull leans front
+    this.rearGain.gain.setTargetAtTime(1.0 + decelLoad * 0.45 + this._load * 0.1, t, tau);
+    this.frontGain.gain.setTargetAtTime(1.1 + accelLoad * 0.2, t, tau);
 
-      // Bus EQ — filterIdle / filterRedline from profile as authored
-      const filtIdle = +tone.filterIdle || 600;
-      const filtRed = +tone.filterRedline || 3200;
-      const lpHz =
-        filtIdle +
-        (filtRed - filtIdle) * Math.pow(rpmNorm, 0.9) * (0.45 + this.edge * 0.5);
-      this.lp.frequency.setTargetAtTime(Math.max(80, lpHz), t, fTau);
-      const subAmt = +tone.sub || 0;
-      this.subBoost.gain.setTargetAtTime(-1 + this.bassPresence * 5.5 + subAmt * 1.8, t, tau);
-      // High shelf tamed (less edge hiss)
-      this.hi.gain.setTargetAtTime(-3 + this.edge * 4.5 + highAmt * 2 * rpmNorm, t, tau);
-      this.presence.gain.setTargetAtTime(1 + midAmt * 3.0 + accelLoad * 1.6, t, tau);
-    }
+    // Bus EQ — filterIdle / filterRedline from profile as authored
+    const filtIdle = +tone.filterIdle || 600;
+    const filtRed = +tone.filterRedline || 3200;
+    const lpHz =
+      filtIdle +
+      (filtRed - filtIdle) * Math.pow(rpmNorm, 0.9) * (0.45 + this.edge * 0.5);
+    this.lp.frequency.setTargetAtTime(Math.max(80, lpHz), t, fTau);
+    const subAmt = +tone.sub || 0;
+    this.subBoost.gain.setTargetAtTime(-1 + this.bassPresence * 5.5 + subAmt * 1.8, t, tau);
+    // High shelf tamed (less edge hiss)
+    this.hi.gain.setTargetAtTime(-3 + this.edge * 4.5 + highAmt * 2 * rpmNorm, t, tau);
+    this.presence.gain.setTargetAtTime(1 + midAmt * 3.0 + accelLoad * 1.6, t, tau);
 
     // Drive amount — rebuild less often (waveshaper curve swap = zipper risk)
     if ((this._driveTick = (this._driveTick || 0) + dt) > 0.55) {
@@ -1831,8 +1786,7 @@ export class AudioEngine {
           (tone.drive || 0.4) * (0.3 + rpmNorm * 0.35 + accelLoad * 0.3),
           0.1,
           0.78
-        ),
-        this._driveCurveBuf // reuse buffer — no Float32Array alloc per rebuild
+        )
       );
     }
 
@@ -1938,9 +1892,9 @@ function idleWobbleSafe(engine) {
   );
 }
 
-function makeDriveCurve(amount, out) {
+function makeDriveCurve(amount) {
   const n = 512;
-  const curve = out && out.length === n ? out : new Float32Array(n);
+  const curve = new Float32Array(n);
   const k = Math.max(0.01, amount) * 80;
   for (let i = 0; i < n; i++) {
     const x = (i * 2) / n - 1;
