@@ -196,38 +196,40 @@ export class AudioEngine {
     this.limiter.attack.value = 0.003;
     this.limiter.release.value = 0.12;
 
-    // Guaranteed speaker-safe ceiling (WaveShaper) — a native, ~zero-CPU final
-    // brickwall after the limiter. Transparent below the knee, then a soft-knee
-    // asymptote so output can NEVER exceed CEIL (< 0dBFS): kills the transient
-    // overshoot a ratio-12 limiter still lets slip, protecting Tesla speakers
-    // from clipping / over-excursion for certain. Table built once; oversample
-    // 'none' keeps it free (it only ever shapes rare peaks).
-    this.safety = this.ctx.createWaveShaper();
-    this.safety.oversample = 'none';
-    this.safety.curve = AudioEngine._buildCeilingCurve(0.82, 0.985);
-
-    // De-harsh — a single peaking cut ~3 kHz whose depth tracks RPM. At low revs
-    // it is flat (0 dB); as revs climb it scoops the 2–4 kHz presence band where the
-    // synth turns "แหบ/แพ๊ดๆ/แบร๊ด" (rasp) on Tesla's small drivers. One native biquad,
-    // gain automated in update() — ~zero CPU. Tunable via _deharshMaxCutDb.
-    this.deharsh = this.ctx.createBiquadFilter();
-    this.deharsh.type = 'peaking';
-    this.deharsh.frequency.value = 3000;
-    this.deharsh.Q.value = 1.1;
-    this.deharsh.gain.value = 0;
-    this._deharshMaxCutDb = 5.0; // max cut at redline (dB)
-
     // Small analyser — no live waveform UI; keep light for compressor tap only
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 256;
     this.analyser.smoothingTimeConstant = 0.8;
 
-    this.master.connect(this.deharsh);
-    this.deharsh.connect(this.compressor);
-    this.compressor.connect(this.dynGain);
-    this.dynGain.connect(this.limiter);
-    this.limiter.connect(this.safety);
-    this.safety.connect(this.analyser);
+    // On the weak tier (Tesla) run the LEAN master chain — master → compressor →
+    // dynGain → limiter → analyser — so we don't process extra per-sample nodes on
+    // the MCU audio thread (that was the stutter regression). On desktop/bench add
+    // two quality nodes: a de-harsh peaking cut (2–4 kHz rasp, rpm-tracked) and a
+    // WaveShaper speaker-safe ceiling. Both null on lite; update()/graph guard on them.
+    this.deharsh = null;
+    this.safety = null;
+    this._deharshMaxCutDb = 5.0;
+    if (this._lite) {
+      this.master.connect(this.compressor);
+      this.compressor.connect(this.dynGain);
+      this.dynGain.connect(this.limiter);
+      this.limiter.connect(this.analyser);
+    } else {
+      this.deharsh = this.ctx.createBiquadFilter();
+      this.deharsh.type = 'peaking';
+      this.deharsh.frequency.value = 3000;
+      this.deharsh.Q.value = 1.1;
+      this.deharsh.gain.value = 0;
+      this.safety = this.ctx.createWaveShaper();
+      this.safety.oversample = 'none';
+      this.safety.curve = AudioEngine._buildCeilingCurve(0.82, 0.985);
+      this.master.connect(this.deharsh);
+      this.deharsh.connect(this.compressor);
+      this.compressor.connect(this.dynGain);
+      this.dynGain.connect(this.limiter);
+      this.limiter.connect(this.safety);
+      this.safety.connect(this.analyser);
+    }
     this.analyser.connect(this.ctx.destination);
 
     this._packLoader = new SamplePackLoader(this.ctx);
