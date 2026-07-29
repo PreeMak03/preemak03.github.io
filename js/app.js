@@ -572,10 +572,14 @@ function tick(dt) {
     state.brake = p.brake;
   }
 
+  // Real GPS acceleration (~3–8 km/h/s) is far below the sim's ramp scale (up to ±33),
+  // so in the accel-driven engine it barely revved in GPS mode while sim revved hard.
+  // Amplify the GPS-derived accel to the sim's dynamic range so real driving revs like sim.
+  const engineAccel = state.mode === 'geo' ? state.accelKmhps * 3 : state.accelKmhps;
   audio.setSpeed(state.activeSpeed, {
     throttle: state.throttle,
     brake: state.brake,
-    accelKmhps: state.accelKmhps,
+    accelKmhps: engineAccel,
   });
   // Audio params update on the engine's own 50 Hz clock (see AudioEngine),
   // so sound stays smooth even when Tesla Browser rAF drops to 20–30 fps.
