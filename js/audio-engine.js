@@ -1442,13 +1442,13 @@ export class AudioEngine {
       shiftDuck,
       overrunDuck: dynCfg.overrunDuck,
     });
-    // Cruise duck — THE point of Dynamic Volume: at truly steady speed (|Δspeed| ≤
-    // 2 km/h/s) go QUIET so a held cruise isn't หนวกหู/อื้อหู. Ease down slowly as
-    // cruise settles; release FAST the moment you accelerate (loud on demand).
-    const steadyCruise = Math.abs(this._accelSmooth) <= 2 && speed > 3;
+    // Cruise duck — no hard "steady" threshold: the target follows acceleration demand
+    // CONTINUOUSLY. Not accelerating (constant speed) → ease DOWN to the floor (0.55) so
+    // a held cruise isn't หนวกหู; throttle lifts it back to 1.0. Ease-down ~0.5 s; snap up.
     const duckFloor = dynCfg.cruiseDuck != null ? +dynCfg.cruiseDuck : 0.55;
-    const duckTarget = steadyCruise ? duckFloor : 1;
-    this._cruiseDuck = damp(this._cruiseDuck ?? 1, duckTarget, steadyCruise ? 1.1 : 7, dt);
+    const duckTarget = speed > 3 ? duckFloor + (1 - duckFloor) * clamp(accelLoad, 0, 1) : 1;
+    const duckLambda = duckTarget < (this._cruiseDuck ?? 1) ? 6 : 12; // down ≈0.5s, up fast
+    this._cruiseDuck = damp(this._cruiseDuck ?? 1, duckTarget, duckLambda, dt);
     // Accel loudness — a hard pull must get LOUDER, not just brighter (dyn.dynVol alone
     // saturates at the softCeiling → "โรลลุ่มนิ่ง" on accel). Boost above the ceiling with
     // drive; fast attack, slower release. The limiter/safety catch the peaks. Together with
