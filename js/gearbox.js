@@ -76,6 +76,7 @@ export function shiftLandingRpm(gear, idle, redline, revLo = REV_DEFAULT.lo) {
  * whole thing up toward `pull` (the redline ceiling for this profile).
  */
 export function rpmInGear({
+  speedKmh = 0,
   gear,
   gearCount = GEAR_COUNT,
   idle,
@@ -84,7 +85,7 @@ export function rpmInGear({
   decelLoad = 0,
   revLo = REV_DEFAULT.lo,
   pull = REV_DEFAULT.pull,
-  floorLo = 1300, // per-gear standing rpm: G1 base
+  floorLo = 1300, // per-gear standing rpm: G1 base (bottom of the gear)
   floorHi = 1800, // per-gear standing rpm: top gear base
 }) {
   const span = redline - idle;
@@ -94,10 +95,15 @@ export function rpmInGear({
   // revs land back near the (higher-gear) base — the "coming down" between gears.
   const g = clamp(gear, 1, gearCount);
   const gt = (g - 1) / Math.max(1, gearCount - 1);
-  const floorRpm = floorLo + gt * (floorHi - floorLo);      // 1300 … 1800
-  const floorN = clamp((floorRpm - idle) / span, revLo * 0.4, 1);
-  let n = floorN + accelLoad * (pull - floorN);             // throttle climbs to pull
-  n -= decelLoad * 0.12;                                     // engine-braking dip
+  const floorRpm = floorLo + gt * (floorHi - floorLo);      // gear base (bottom of gear)
+  const baseN = clamp((floorRpm - idle) / span, revLo * 0.4, 1);
+  // Revs RISE with speed across the gear's band (reset on upshift) so a constant cruise
+  // isn't a flat "stuck" floor — RPM tracks how fast you're going even off-throttle.
+  // Acceleration then lifts on top toward the pull ceiling.
+  const pos = gearProgress(speedKmh, gear);                 // 0 at gear floor → 1 at shift
+  const sweptN = baseN + pos * 0.24;                        // +24% span swept across a gear
+  let n = sweptN + accelLoad * (pull - sweptN);            // throttle climbs to pull
+  n -= decelLoad * 0.12;                                    // engine-braking dip
   return idle + span * clamp(n, revLo * 0.4, 1.02);
 }
 

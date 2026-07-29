@@ -1258,7 +1258,7 @@ export class AudioEngine {
       // Under the accel-driven model a soft blend was swamped by the pull target.
       if (up) {
         const land = rpmInGear({
-          gear: this._gear, gearCount: this._gearCount, idle, redline,
+          speedKmh: speed, gear: this._gear, gearCount: this._gearCount, idle, redline,
           accelLoad: 0, decelLoad: 0, revLo: eng.revLo, pull: eng.revPull,
           floorLo: eng.gearFloorLo, floorHi: eng.gearFloorHi,
         });
@@ -1282,6 +1282,7 @@ export class AudioEngine {
     const rpmAccel = accelLoad > 0.12 ? accelLoad : 0;
     const rpmDecel = decelLoad > 0.15 ? decelLoad : 0;
     let targetRpm = rpmInGear({
+      speedKmh: speed,
       gear: this._gear,
       gearCount: this._gearCount,
       idle,
