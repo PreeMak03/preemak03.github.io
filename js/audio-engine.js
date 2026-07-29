@@ -150,7 +150,16 @@ export class AudioEngine {
   async init() {
     if (this.ctx) return;
     const AC = window.AudioContext || window.webkitAudioContext;
-    this.ctx = new AC({ latencyHint: 'interactive' });
+    // Weak-device (Tesla MCU) tier: bigger audio buffer + slower param clock so the
+    // main thread isn't overloaded (was 50 Hz interactive → underruns = กระตุก + delay).
+    const ua = (typeof navigator !== 'undefined' ? navigator.userAgent : '').toLowerCase();
+    const cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 8;
+    this._lite = ua.includes('tesla') || ua.includes('qtcar') || cores <= 4;
+    try {
+      this.ctx = new AC({ latencyHint: this._lite ? 'playback' : 'interactive' });
+    } catch (_) {
+      this.ctx = new AC();
+    }
 
     this.master = this.ctx.createGain();
     this.master.gain.value = 0;
@@ -350,7 +359,7 @@ export class AudioEngine {
       this._lastUpdateWall = now;
       if (!(dt > 0) || dt > 0.25) dt = 0.02;
       this.update(dt);
-    }, 20);
+    }, this._lite ? 33 : 20); // 30 Hz on weak MCU (Tesla), 50 Hz on desktop
   }
 
   _stopUpdateLoop() {
