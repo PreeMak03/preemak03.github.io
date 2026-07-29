@@ -1763,29 +1763,30 @@ export class AudioEngine {
       );
     }
 
-    // Cabin space: a touch more wet at speed, drier under hard pull for clarity
-    this.reverbWet.gain.setTargetAtTime(
-      0.06 + rpmNorm * 0.05 - accelLoad * 0.03,
-      t,
-      tau
-    );
+    // Secondary EQ / spatial params change slowly and setTargetAtTime smooths them, so
+    // on the weak tier (Tesla) push them every OTHER update (~15 Hz) to free the main
+    // thread for rAF/GPS — the audio-update setInterval and the speed display share it.
+    if (!this._lite || pushAudio) {
+      // Cabin space: a touch more wet at speed, drier under hard pull for clarity
+      this.reverbWet.gain.setTargetAtTime(0.06 + rpmNorm * 0.05 - accelLoad * 0.03, t, tau);
 
-    // Zone staging: overrun pushes the exhaust rearward, pull leans front
-    this.rearGain.gain.setTargetAtTime(1.0 + decelLoad * 0.45 + this._load * 0.1, t, tau);
-    this.frontGain.gain.setTargetAtTime(1.1 + accelLoad * 0.2, t, tau);
+      // Zone staging: overrun pushes the exhaust rearward, pull leans front
+      this.rearGain.gain.setTargetAtTime(1.0 + decelLoad * 0.45 + this._load * 0.1, t, tau);
+      this.frontGain.gain.setTargetAtTime(1.1 + accelLoad * 0.2, t, tau);
 
-    // Bus EQ — filterIdle / filterRedline from profile as authored
-    const filtIdle = +tone.filterIdle || 600;
-    const filtRed = +tone.filterRedline || 3200;
-    const lpHz =
-      filtIdle +
-      (filtRed - filtIdle) * Math.pow(rpmNorm, 0.9) * (0.45 + this.edge * 0.5);
-    this.lp.frequency.setTargetAtTime(Math.max(80, lpHz), t, fTau);
-    const subAmt = +tone.sub || 0;
-    this.subBoost.gain.setTargetAtTime(-1 + this.bassPresence * 5.5 + subAmt * 1.8, t, tau);
-    // High shelf tamed (less edge hiss)
-    this.hi.gain.setTargetAtTime(-3 + this.edge * 4.5 + highAmt * 2 * rpmNorm, t, tau);
-    this.presence.gain.setTargetAtTime(1 + midAmt * 3.0 + accelLoad * 1.6, t, tau);
+      // Bus EQ — filterIdle / filterRedline from profile as authored
+      const filtIdle = +tone.filterIdle || 600;
+      const filtRed = +tone.filterRedline || 3200;
+      const lpHz =
+        filtIdle +
+        (filtRed - filtIdle) * Math.pow(rpmNorm, 0.9) * (0.45 + this.edge * 0.5);
+      this.lp.frequency.setTargetAtTime(Math.max(80, lpHz), t, fTau);
+      const subAmt = +tone.sub || 0;
+      this.subBoost.gain.setTargetAtTime(-1 + this.bassPresence * 5.5 + subAmt * 1.8, t, tau);
+      // High shelf tamed (less edge hiss)
+      this.hi.gain.setTargetAtTime(-3 + this.edge * 4.5 + highAmt * 2 * rpmNorm, t, tau);
+      this.presence.gain.setTargetAtTime(1 + midAmt * 3.0 + accelLoad * 1.6, t, tau);
+    }
 
     // Drive amount — rebuild less often (waveshaper curve swap = zipper risk)
     if ((this._driveTick = (this._driveTick || 0) + dt) > 0.55) {
