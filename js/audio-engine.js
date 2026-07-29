@@ -392,8 +392,24 @@ export class AudioEngine {
     this.bus.gain.value = 1;
 
     this.drive = ctx.createWaveShaper();
-    this.drive.curve = makeDriveCurve(0.4);
-    this.drive.oversample = '2x';
+    this._driveCurveBuf = new Float32Array(512); // reused every rebuild — no per-0.55s alloc
+    this.drive.curve = makeDriveCurve(0.4, this._driveCurveBuf);
+    this.drive.oversample = this._lite ? 'none' : '2x'; // 2x = double audio-thread cost
+
+    // Persistent shift-click voice — retriggered by envelope, never re-allocated, so rapid
+    // up/down shifting (เร่งสลับลด) no longer churns oscillator/gain/filter nodes → no GC spike.
+    this._clickOsc = ctx.createOscillator();
+    this._clickOsc.type = 'triangle';
+    this._clickOsc.frequency.value = 200;
+    this._clickFilter = ctx.createBiquadFilter();
+    this._clickFilter.type = 'lowpass';
+    this._clickFilter.frequency.value = 560;
+    this._clickGain = ctx.createGain();
+    this._clickGain.gain.value = 0;
+    this._clickOsc.connect(this._clickFilter);
+    this._clickFilter.connect(this._clickGain);
+    this._clickGain.connect(this.master);
+    try { this._clickOsc.start(); } catch (_) {}
 
     this.lp = ctx.createBiquadFilter();
     this.lp.type = 'lowpass';
@@ -1357,24 +1373,15 @@ export class AudioEngine {
   }
 
   _fireShiftClick(down = false) {
-    if (!this.ctx || !this.running || !this.master) return;
-    const ctx = this.ctx;
-    const t = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    osc.type = 'triangle';
-    osc.frequency.value = down ? 140 : 200;
-    const g = ctx.createGain();
-    // Quieter than before — still tactile, not a cabin "tick stutter"
-    g.gain.setValueAtTime(0.012, t);
-    g.gain.exponentialRampToValueAtTime(0.0005, t + 0.04);
-    const f = ctx.createBiquadFilter();
-    f.type = 'lowpass';
-    f.frequency.value = down ? 420 : 560;
-    osc.connect(f);
-    f.connect(g);
-    g.connect(this.master);
-    osc.start(t);
-    osc.stop(t + 0.045);
+    if (!this.ctx || !this.running || !this._clickGain) return;
+    const t = this.ctx.currentTime;
+    // Retrigger the persistent click voice — no node creation (see init).
+    this._clickOsc.frequency.setValueAtTime(down ? 140 : 200, t);
+    this._clickFilter.frequency.setValueAtTime(down ? 420 : 560, t);
+    const g = this._clickGain.gain;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(0.012, t);
+    g.exponentialRampToValueAtTime(0.0005, t + 0.04); // tail stays inaudible
   }
 
   update(dt) {
@@ -1824,7 +1831,8 @@ export class AudioEngine {
           (tone.drive || 0.4) * (0.3 + rpmNorm * 0.35 + accelLoad * 0.3),
           0.1,
           0.78
-        )
+        ),
+        this._driveCurveBuf // reuse buffer — no Float32Array alloc per rebuild
       );
     }
 
@@ -1930,9 +1938,9 @@ function idleWobbleSafe(engine) {
   );
 }
 
-function makeDriveCurve(amount) {
+function makeDriveCurve(amount, out) {
   const n = 512;
-  const curve = new Float32Array(n);
+  const curve = out && out.length === n ? out : new Float32Array(n);
   const k = Math.max(0.01, amount) * 80;
   for (let i = 0; i < n; i++) {
     const x = (i * 2) / n - 1;
