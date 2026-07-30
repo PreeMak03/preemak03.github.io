@@ -1372,12 +1372,14 @@ export class AudioEngine {
     const tone = this.profile.tone;
     const isEv = eng.type === 'electric' || tone.electric > 0.8;
     const idle = eng.idleRpm || 800;
-    // Rev ceiling with a natural "breathe": above ~4800 the high harmonics turn to
-    // "ซ่า" (untuned-TV hiss/aliasing) on Tesla drivers, but a dead-flat clamp sounds
-    // digital. When pushed to the top let revs HUNT ±~swing like a governor (a slow,
-    // slightly irregular fluctuation), with a hard cap just above so it never runs
-    // into the ซ่า band. Only engages near the ceiling; normal driving is untouched.
-    const softCap = Math.min(eng.redlineRpm || 7500, this._rpmCeiling || 4800);
+    // Rev ceiling with a natural "breathe": near redline let revs HUNT ±~swing like a
+    // governor (a slow, slightly irregular fluctuation) instead of a dead-flat digital
+    // clamp. DISPLAY revs reach the profile's OWN redline (so rpmNorm/scream/timbre and
+    // the on-screen number use the authentic range) — the ซ่า/aliasing guard is handled
+    // downstream by `pitchRpm`, which scales the SYNTH pitch so redline maps onto muscle's
+    // proven safe ~4800 firing band. High-rev engines therefore show 8900 on screen while
+    // the синт never leaves the safe band. Only engages near the ceiling.
+    const softCap = eng.redlineRpm || 4800;
     const swing = this._rpmCeilSwing || 80;
     if (this._rpm > softCap - swing) {
       this._capHuntPhase = (this._capHuntPhase || 0) + dt * 6.2832 * 2.4; // ~2.4 Hz
@@ -1536,10 +1538,19 @@ export class AudioEngine {
     this._rpm = this._rpmSmooth + (speed > 2 ? wander : 0); // dance the actual rpm (display + audio)
     const rateJ = 1 + this._jitter;
 
+    // Pitch scale — map this engine's idle→redline onto muscle's proven safe pitch
+    // envelope (idle→min(redline, ceiling)). The on-screen rpm and all rpmNorm-based
+    // timbre stay authentic (this._rpm reaches the real redline), but everything that
+    // sets an absolute PLAYED frequency (buffer playbackRate + firing-order oscillators)
+    // runs on pitchRpm, so a 8900-rpm V12 never pushes the синт past the ~4800 firing
+    // band where Tesla drivers go "ซ่า". Muscle: pitchTop == redline → pitchRpm == this._rpm.
+    const pitchTop = Math.min(redline, this._rpmCeiling || 4800);
+    const pitchRpm = idle + ((this._rpm - idle) * (pitchTop - idle)) / Math.max(1, redline - idle);
+
     // Playback rate from the dancing rpm — sample + procedural
     const refRpm = this._samplePack?.refRpm || REF_RPM;
-    const rate = clamp(this._rpm / refRpm, 0.18, 2.8) * rateJ;
-    const rateHi = clamp(this._rpm / (refRpm * 0.85), 0.2, 3.0) * rateJ;
+    const rate = clamp(pitchRpm / refRpm, 0.18, 2.8) * rateJ;
+    const rateHi = clamp(pitchRpm / (refRpm * 0.85), 0.2, 3.0) * rateJ;
 
     // Push AudioParams at ~25 Hz with epsilon — halves automation load, less zipper
     this._paramTick = (this._paramTick || 0) + 1;
@@ -1738,7 +1749,7 @@ export class AudioEngine {
         // Rotary brap signature swells with revs
         (1 + (tone.boxer || 0) * 0.15 + (tone.rotary || 0) * rpmNorm * 0.6);
       this._layers.scream.gain.gain.setTargetAtTime(sc, t, tau);
-      const fire = (this._rpm / 60) * ((eng.cylinders || 6) / 2);
+      const fire = (pitchRpm / 60) * ((eng.cylinders || 6) / 2);
 
       // Formant tracks 2nd firing order — capped ≤1.8 kHz (anti-static)
       this.formant.frequency.setTargetAtTime(clamp(fire * 2, 220, 1800), t, fTau);
@@ -1763,7 +1774,7 @@ export class AudioEngine {
       // Exhaust pulse / sub — stronger in mid for flat-6 character
       const pulseBoost = 1 + tunnel * 0.8 * (tone.exhaustPulse || 0.4);
       this._layers.sub.src.frequency.setTargetAtTime(
-        Math.max(30, (this._rpm / 60) * (eng.cylinders >= 8 ? 1 : 0.5) + 28),
+        Math.max(30, (pitchRpm / 60) * (eng.cylinders >= 8 ? 1 : 0.5) + 28),
         t,
         tau
       );

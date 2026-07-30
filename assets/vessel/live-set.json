@@ -1,12 +1,16 @@
 {
   "schema": "tas-live-set/1",
-  "updatedAt": "2026-07-28T13:00:50.629Z",
-  "source": "command-room",
+  "updatedAt": "2026-07-30T09:41:10.706Z",
+  "source": "manual-lineup",
   "status": "online",
-  "message": "Deployed · 1 Online · live ~1 min on https://preemak03.github.io/",
+  "message": "5 Online · classic lineup (muscle · V12 · V10 · flat-6 · 2JZ)",
   "site": "https://preemak03.github.io/",
   "live": [
-    "classic-muscle"
+    "classic-muscle",
+    "na-v12",
+    "s85-v10",
+    "flat6-911",
+    "2jz"
   ],
   "versions": {
     "camaro-vessel": "v1.1-fp-cabin",
@@ -26,7 +30,11 @@
     "gentle-vessel": "v1.0-gentle"
   },
   "deployPick": [
-    "classic-muscle"
+    "classic-muscle",
+    "na-v12",
+    "s85-v10",
+    "flat6-911",
+    "2jz"
   ],
   "lastPush": {
     "at": "2026-07-28T13:00:50.629Z",

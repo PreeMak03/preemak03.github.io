@@ -56,11 +56,54 @@
     "resonance": 0.85,
     "volume": 1.05,
     "idlePresence": 0.75,
-    "characterMid": 1
+    "characterMid": 1,
+    "waveguide": 0
   },
   "mix": {
-    "master": 70,
-    "bass": 55,
-    "edge": 35
-  }
+    "master": 84,
+    "bass": 56,
+    "edge": 32
+  },
+  "dynamics": {
+    "dynDb": 15,
+    "dynCeiling": 0.9,
+    "loadBoost": 0.24,
+    "shiftDuck": 0.9,
+    "overrunDuck": 0.9,
+    "floorBias": 1,
+    "gearScale": [
+      0.94,
+      0.97,
+      1,
+      0.98,
+      0.96
+    ],
+    "curve": [
+      [
+        1566,
+        0.483
+      ],
+      [
+        2187,
+        0.592
+      ],
+      [
+        3537,
+        0.686
+      ],
+      [
+        6237,
+        0.795
+      ],
+      [
+        9450,
+        0.904
+      ],
+      [
+        12735,
+        0.959
+      ]
+    ]
+  },
+  "updatedAt": "2026-07-30T09:40:06.361Z"
 }

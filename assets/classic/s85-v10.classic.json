@@ -12,14 +12,34 @@
     "cylinders": 10,
     "idleRpm": 700,
     "redlineRpm": 8250,
-    "gears": [3.7, 2.4, 1.75, 1.35, 1.05, 0.85],
+    "gears": [
+      3.7,
+      2.4,
+      1.75,
+      1.35,
+      1.05,
+      0.85
+    ],
     "rpmCurve": 1,
     "revLo": 0.14,
     "revHi": 0.5,
     "revPull": 0.96
   },
   "tone": {
-    "harmonics": [0, 1, 0.7, 0.52, 0.42, 0.36, 0.3, 0.26, 0.22, 0.18, 0.15, 0.12],
+    "harmonics": [
+      0,
+      1,
+      0.7,
+      0.52,
+      0.42,
+      0.36,
+      0.3,
+      0.26,
+      0.22,
+      0.18,
+      0.15,
+      0.12
+    ],
     "body": 0.6,
     "mid": 0.62,
     "high": 0.92,
@@ -41,13 +61,55 @@
     "resonance": 0.6,
     "volume": 1.02,
     "idlePresence": 0.58,
-    "characterMid": 0.62
+    "characterMid": 0.62,
+    "waveguide": 0
   },
   "mix": {
-    "master": 70,
-    "bass": 55,
-    "edge": 35
+    "master": 84,
+    "bass": 52,
+    "edge": 28
   },
-  "updatedAt": "2026-07-27T06:00:00.000Z",
-  "_restore": "Restored original S85 ship (pre forced dynamics retune)"
+  "updatedAt": "2026-07-30T09:40:06.361Z",
+  "_restore": "Restored original S85 ship (pre forced dynamics retune)",
+  "dynamics": {
+    "dynDb": 15,
+    "dynCeiling": 0.9,
+    "loadBoost": 0.24,
+    "shiftDuck": 0.9,
+    "overrunDuck": 0.9,
+    "floorBias": 1,
+    "gearScale": [
+      0.94,
+      0.97,
+      1,
+      0.98,
+      0.96
+    ],
+    "curve": [
+      [
+        1436,
+        0.483
+      ],
+      [
+        2005,
+        0.592
+      ],
+      [
+        3242,
+        0.686
+      ],
+      [
+        5717,
+        0.795
+      ],
+      [
+        8663,
+        0.904
+      ],
+      [
+        11674,
+        0.959
+      ]
+    ]
+  }
 }
