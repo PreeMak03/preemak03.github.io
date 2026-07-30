@@ -1,9 +1,9 @@
 {
   "schema": "tas-live-set/1",
-  "updatedAt": "2026-07-30T09:41:10.706Z",
+  "updatedAt": "2026-07-30T09:53:37.849Z",
   "source": "manual-lineup",
   "status": "online",
-  "message": "5 Online · classic lineup (muscle · V12 · V10 · flat-6 · 2JZ)",
+  "message": "5 Online (4 dev-only) · public: classic-muscle",
   "site": "https://preemak03.github.io/",
   "live": [
     "classic-muscle",
@@ -41,5 +41,8 @@
     "ok": true,
     "action": "deploy",
     "commit": "50226a5"
-  }
+  },
+  "public": [
+    "classic-muscle"
+  ]
 }

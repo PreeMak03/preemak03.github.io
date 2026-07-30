@@ -1013,12 +1013,29 @@ export function invalidateClassicStandards() {
   _classicLoaded = false;
 }
 
-/** Profiles shown in the carousel. */
+/**
+ * Public-released subset shown to normal users (non-dev). Source of truth:
+ * live-set.json `public` array. Empty/missing → no restriction (everyone sees the
+ * full Online set, i.e. legacy behaviour). Newly added / not-yet-vetted profiles are
+ * kept OUT of `public` so they only appear under Dev mode.
+ */
+export function getPublicProfileIds() {
+  const pub = _liveSetMeta && Array.isArray(_liveSetMeta.public) ? _liveSetMeta.public : null;
+  if (!pub || !pub.length) return [];
+  const known = new Set(SOUND_PROFILES.map((p) => p.id));
+  return pub.filter((id) => known.has(id));
+}
+
+/** Profiles shown in the carousel. Dev mode reveals the full Online set; normal users
+ *  see only the public-released subset (getPublicProfileIds). */
 export function getVisibleProfiles() {
   const order = getLiveProfileIds();
-  const set = new Set(order);
+  const devOn = typeof document !== 'undefined' && !!document.body?.classList?.contains('dev-mode');
+  const pub = getPublicProfileIds();
+  const shown = devOn || !pub.length ? order : order.filter((id) => pub.includes(id));
+  const set = new Set(shown);
   const list = SOUND_PROFILES.filter((p) => set.has(p.id));
-  list.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+  list.sort((a, b) => shown.indexOf(a.id) - shown.indexOf(b.id));
   return list.length ? list : SOUND_PROFILES.filter((p) => SHIP_ACTIVE_IDS.includes(p.id));
 }
 

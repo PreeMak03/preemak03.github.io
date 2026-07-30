@@ -4,7 +4,7 @@
  */
 
 import { ticker, waapi, clamp } from './animations.js';
-import { getProfileById, loadLiveSet, loadClassicStandards, getLiveProfileIds, getGlobalControl } from './profiles.js';
+import { getProfileById, loadLiveSet, loadClassicStandards, getLiveProfileIds, getGlobalControl, getVisibleProfiles } from './profiles.js';
 import { AudioEngine } from './audio-engine.js';
 // hasRig is tiny; VesselAudio itself is dynamic-imported only for VESSEL cards
 import { hasRig } from './vessel-rigs.js';
@@ -346,8 +346,14 @@ async function init() {
     }
   });
 
+  // Restore persisted Dev mode BEFORE the first carousel render so dev-only profiles
+  // (the not-yet-released lineup) appear immediately for a returning dev — and stay
+  // hidden for normal users. getVisibleProfiles() keys off the body.dev-mode class.
+  if (localStorage.getItem('tas-dev-mode') === '1') document.body.classList.add('dev-mode');
+
   const scroller = $('#profile-scroller');
-  if (scroller) {
+  const renderCarousel = () => {
+    if (!scroller) return;
     renderProfiles(scroller, state.profileId, async (profile) => {
       await selectProfile(profile.id);
       showToast(
@@ -356,7 +362,8 @@ async function init() {
           : `${profile.name} · ${profile.car || profile.tag}`
       );
     });
-  }
+  };
+  renderCarousel();
 
   // GPS chip toggles between real GPS speed (geo) and the sim fader
   $('#btn-gps')?.addEventListener('click', () => {
@@ -411,6 +418,12 @@ async function init() {
     const on = document.body.classList.toggle('dev-mode');
     localStorage.setItem(DEV_KEY, on ? '1' : '0');
     showToast(on ? 'Developer mode ON' : 'Developer mode OFF');
+    // Leaving dev while parked on a not-yet-released profile → fall back to a public one.
+    if (!on) {
+      const vis = getVisibleProfiles();
+      if (vis.length && !vis.some((p) => p.id === state.profileId)) selectProfile(vis[0].id);
+    }
+    renderCarousel(); // dev-only cards appear / disappear immediately
   };
 
   // Debounce the sheet-open by 1s with a spinner ring around the button, so it reads as
