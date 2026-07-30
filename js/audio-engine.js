@@ -1273,6 +1273,7 @@ export class AudioEngine {
         });
         this._rpmSmooth = Math.min(this._rpmSmooth, land); // only drops, never raises
         this._rpm = this._rpmSmooth;
+        this._shiftRecover = 0.7; // climb back from the dip GRADUALLY (the "row" rev-up)
       } else if (accelLoad > 0.55) {
         // Downshift blip only on clear pull
         const revHi = eng.revHi ?? 0.7;
@@ -1311,6 +1312,11 @@ export class AudioEngine {
     if (this._shifting) {
       rpmLambda = 8;
       targetRpm = this._rpm * 0.9 + targetRpm * 0.1;
+    } else if (this._shiftRecover > 0) {
+      // Just upshifted — climb back from the dip GRADUALLY so revs sweep up through the
+      // new gear (the "row" feel) instead of snapping to mid-gear in ~0.3s.
+      this._shiftRecover -= dt;
+      rpmLambda = Math.min(rpmLambda, 2.4);
     }
 
     this._rpmSmooth = damp(
