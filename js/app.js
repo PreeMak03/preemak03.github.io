@@ -30,6 +30,13 @@ const ACCEL_TUBE_MAX = SIM_RATE.maxDeltaKmhPerSec;
 /** Coffee link (Ko-fi / Buy Me a Coffee / PromptPay page). Empty = hidden. */
 const DONATE_URL = '';
 
+/**
+ * Feedback → developer email via Web3Forms (no backend, hides the address behind the key).
+ * Get a free key at https://web3forms.com (enter markchsr@gmail.com → key is emailed).
+ * Empty = the Feedback link stays hidden (nothing half-working ships).
+ */
+const FEEDBACK_ACCESS_KEY = '';
+
 const hud = {
   rpmEl: null,
   fillPos: null,
@@ -510,6 +517,104 @@ async function init() {
   if (donate && DONATE_URL) {
     donate.href = DONATE_URL;
     donate.hidden = false;
+  }
+
+  // Donate — coffee chip opens a PromptPay QR sheet (backdrop / ✕ / Esc close it).
+  {
+    const back = $('#donate-backdrop');
+    const sheet = $('#donate-sheet');
+    const setDonate = (open) => {
+      for (const el of [back, sheet]) {
+        if (!el) continue;
+        if (open) {
+          el.hidden = false;
+          requestAnimationFrame(() => el.classList.add('is-open'));
+        } else {
+          el.classList.remove('is-open');
+          window.setTimeout(() => { el.hidden = true; }, 300);
+        }
+      }
+      sheet?.setAttribute('aria-hidden', open ? 'false' : 'true');
+    };
+    $('#btn-donate')?.addEventListener('click', () => setDonate(true));
+    $('#donate-x')?.addEventListener('click', () => setDonate(false));
+    back?.addEventListener('click', () => setDonate(false));
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && sheet && !sheet.hidden) setDonate(false);
+    });
+    // Graceful state until the QR image is added at assets/donate-qr.png
+    const qr = $('#donate-qr-img');
+    qr?.addEventListener('error', () => {
+      qr.hidden = true;
+      const fb = $('#donate-qr-fallback');
+      if (fb) fb.hidden = false;
+    });
+  }
+
+  // Feedback — in-app form → Web3Forms → developer email. Entry point stays hidden until
+  // a key is configured, so nothing half-working ships.
+  if (FEEDBACK_ACCESS_KEY) {
+    const link = $('#btn-feedback');
+    const back = $('#fb-backdrop');
+    const sheet = $('#fb-sheet');
+    const form = $('#fb-form');
+    const statusEl = $('#fb-status');
+    const submit = $('#fb-submit');
+    if (link) link.hidden = false;
+    const setFb = (open) => {
+      for (const el of [back, sheet]) {
+        if (!el) continue;
+        if (open) {
+          el.hidden = false;
+          requestAnimationFrame(() => el.classList.add('is-open'));
+        } else {
+          el.classList.remove('is-open');
+          window.setTimeout(() => { el.hidden = true; }, 300);
+        }
+      }
+      sheet?.setAttribute('aria-hidden', open ? 'false' : 'true');
+      if (open) window.setTimeout(() => $('#fb-msg')?.focus(), 80);
+    };
+    link?.addEventListener('click', () => setFb(true));
+    $('#fb-x')?.addEventListener('click', () => setFb(false));
+    back?.addEventListener('click', () => setFb(false));
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && sheet && !sheet.hidden) setFb(false);
+    });
+    form?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const msg = $('#fb-msg')?.value.trim();
+      if (!msg) return;
+      const contact = $('#fb-contact')?.value.trim() || '';
+      submit.disabled = true;
+      statusEl.className = 'fb-status';
+      statusEl.textContent = 'กำลังส่ง…';
+      try {
+        const res = await fetch('https://api.web3forms.com/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({
+            access_key: FEEDBACK_ACCESS_KEY,
+            subject: 'Tesla Active Sound — Feedback',
+            from_name: 'Tesla Active Sound',
+            message: msg,
+            contact,
+            app_version: $('#app-ver')?.textContent || '',
+            profile: state.profileId,
+          }),
+        });
+        if (!res.ok) throw new Error(String(res.status));
+        statusEl.className = 'fb-status ok';
+        statusEl.textContent = 'ส่งแล้ว ขอบคุณครับ 🙏';
+        form.reset();
+        window.setTimeout(() => setFb(false), 1500);
+      } catch (_) {
+        statusEl.className = 'fb-status err';
+        statusEl.textContent = 'ส่งไม่สำเร็จ · ลองใหม่อีกครั้ง';
+      } finally {
+        submit.disabled = false;
+      }
+    });
   }
 
   ticker.add((dt) => tick(dt));

@@ -245,6 +245,211 @@ button {
   background: var(--text-muted);
 }
 
+/* Donate — coffee chip (top bar, left of GPS): in the chip family but a warm amber tint
+   so it reads as its own thing without shouting. Icon-only = compact / unobtrusive. */
+.donate-chip {
+  padding: 11px 13px;
+  gap: 0;
+  color: #d9a066;
+}
+[data-theme="bright"] .donate-chip {
+  color: #b26a2e;
+}
+.donate-chip svg {
+  width: 19px;
+  height: 19px;
+  display: block;
+}
+.donate-chip:hover,
+.donate-chip:focus-visible {
+  color: #e6b072;
+  border-color: rgba(217, 160, 102, 0.4);
+  background: rgba(217, 160, 102, 0.12);
+}
+[data-theme="bright"] .donate-chip:hover,
+[data-theme="bright"] .donate-chip:focus-visible {
+  color: #9a5a24;
+}
+
+/* Donate sheet (PromptPay QR) */
+.donate-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(3px);
+  opacity: 0;
+  transition: opacity 0.25s var(--ease-soft);
+}
+.donate-backdrop.is-open {
+  opacity: 1;
+}
+.donate-sheet {
+  position: fixed;
+  z-index: 61;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -46%) scale(0.96);
+  width: min(340px, calc(100vw - 40px));
+  padding: 22px 22px 18px;
+  text-align: center;
+  background: var(--bg-panel-strong);
+  backdrop-filter: blur(var(--blur-glass));
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+  opacity: 0;
+  transition: opacity 0.25s var(--ease-out), transform 0.3s var(--ease-spring);
+}
+.donate-sheet.is-open {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+.donate-x {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border-subtle);
+  background: rgba(127, 127, 127, 0.12);
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1;
+}
+.donate-x:active {
+  transform: scale(0.94);
+}
+.donate-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: #d9a066;
+}
+[data-theme="bright"] .donate-eyebrow {
+  color: #b26a2e;
+}
+.donate-h {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-top: 5px;
+}
+.donate-p {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  margin: 8px 4px 16px;
+}
+.donate-qr-card {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 208px;
+  min-height: 208px;
+  padding: 14px;
+  background: #ffffff;
+  border-radius: var(--radius-md);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+.donate-qr-img {
+  display: block;
+  width: 240px;
+  height: 240px;
+  max-width: 62vw;
+  height: auto;
+  border-radius: 6px;
+}
+.donate-qr-fallback {
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 60px 14px;
+}
+.donate-qr-fallback span {
+  font-size: 11px;
+  opacity: 0.7;
+}
+.donate-badge {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Feedback — link in the sheet footer + form (reuses .donate-sheet shell) */
+.feedback-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.feedback-link:hover,
+.feedback-link:focus-visible {
+  color: var(--text-primary);
+}
+.fb-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 2px;
+  text-align: left;
+}
+.fb-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-glass);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+.fb-input::placeholder {
+  color: var(--text-muted);
+}
+.fb-input:focus {
+  outline: none;
+  border-color: var(--border-accent);
+}
+.fb-submit {
+  margin-top: 2px;
+  padding: 11px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  border: 1px solid var(--border-accent);
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: transform 0.15s, background 0.2s;
+}
+.fb-submit:active {
+  transform: scale(0.98);
+}
+.fb-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.fb-status {
+  min-height: 16px;
+  font-size: 12px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+.fb-status.ok {
+  color: var(--success);
+}
+.fb-status.err {
+  color: var(--danger);
+}
+
 /* --------------------------------------------------------------------------
    Drive stage — fader rail · speed · accel tube
    -------------------------------------------------------------------------- */
