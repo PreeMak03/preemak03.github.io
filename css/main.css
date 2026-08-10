@@ -378,20 +378,67 @@ button {
   color: var(--text-muted);
 }
 
-/* Feedback — link in the sheet footer + form (reuses .donate-sheet shell) */
-.feedback-link {
-  background: none;
-  border: none;
-  padding: 0;
+/* Feedback — small FAB stacked above the settings FAB (bottom-left) + form (reuses .donate-sheet) */
+.left-dock {
+  flex: 0 0 auto;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.fb-fab {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(127, 127, 127, 0.08);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  transition: border-color 0.2s, color 0.2s, background 0.2s, transform 0.15s;
+}
+.fb-fab svg {
+  width: 20px;
+  height: 20px;
+}
+.fb-fab:hover,
+.fb-fab:focus-visible {
+  color: var(--text-secondary);
+  border-color: var(--border-glass);
+}
+.fb-fab:active {
+  transform: scale(0.94);
+}
+.drive-lock .fb-fab {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+/* Feedback categories */
+.fb-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 2px;
+}
+.fb-cat {
+  flex: 1 1 auto;
+  padding: 8px 6px;
+  border-radius: var(--radius-pill);
+  background: rgba(127, 127, 127, 0.08);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
   font: inherit;
   font-size: 12px;
-  color: var(--text-secondary);
+  white-space: nowrap;
   cursor: pointer;
-  transition: color 0.2s;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
 }
-.feedback-link:hover,
-.feedback-link:focus-visible {
+.fb-cat.is-active {
   color: var(--text-primary);
+  border-color: var(--border-accent);
+  background: var(--accent-soft);
 }
 .fb-form {
   display: flex;

@@ -112,6 +112,13 @@
 
     <!-- Bottom row: tune · profile carousel · push-to-start -->
     <footer class="bottom-row">
+      <div class="left-dock">
+        <button type="button" class="fb-fab" id="btn-feedback" aria-haspopup="dialog" aria-label="ส่งความเห็น / Feedback" title="ส่งความเห็น" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9l-4 3v-3H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+            <path d="M8 9.5h8M8 12.5h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+          </svg>
+        </button>
       <button type="button" class="tune-fab" id="btn-tune" aria-expanded="false" aria-controls="tune-sheet" aria-label="Sound tuning">
         <svg viewBox="0 0 24 24" aria-hidden="true" class="tune-icon">
           <path d="M4 7h10M18 7h2M4 12h4M12 12h8M4 17h13M20 17h0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>
@@ -120,6 +127,7 @@
           <circle cx="19" cy="17" r="2.1" fill="none" stroke="currentColor" stroke-width="1.8"/>
         </svg>
       </button>
+      </div>
 
       <div class="profile-dock" aria-label="Sound profiles">
         <div class="profile-carousel" id="profile-scroller" role="listbox" aria-label="Sound profiles">
@@ -242,7 +250,6 @@
 
       <div class="sheet-meta sheet-credit">
         <span>© 2026 PreeMak03 · All rights reserved</span>
-        <button type="button" class="feedback-link" id="btn-feedback" hidden>💬 ส่งความเห็น</button>
         <a class="donate-link" id="donate-link" href="#" target="_blank" rel="noopener" hidden>☕ Donate</a>
       </div>
     </div>
@@ -272,6 +279,11 @@
       <div class="donate-h">บอกเราหน่อย</div>
       <p class="donate-p">เจอบั๊ก อยากได้เสียงเครื่องไหน หรือติชมอะไร พิมพ์มาได้เลย</p>
       <form class="fb-form" id="fb-form">
+        <div class="fb-cats" id="fb-cats" role="radiogroup" aria-label="หมวดความเห็น">
+          <button type="button" class="fb-cat is-active" data-cat="ประสบการณ์ขับขี่" role="radio" aria-checked="true">🚗 ประสบการณ์ขับขี่</button>
+          <button type="button" class="fb-cat" data-cat="แนะนำเพิ่มเติม" role="radio" aria-checked="false">💡 แนะนำเพิ่มเติม</button>
+          <button type="button" class="fb-cat" data-cat="รายงานบัค" role="radio" aria-checked="false">🐞 รายงานบัค</button>
+        </div>
         <textarea class="fb-input" id="fb-msg" rows="4" maxlength="1500" required
           placeholder="ความคิดเห็น / ปัญหาที่เจอ / เสียงที่อยากได้…"></textarea>
         <input class="fb-input" id="fb-contact" type="text" maxlength="120"

@@ -35,7 +35,7 @@ const DONATE_URL = '';
  * Get a free key at https://web3forms.com (enter markchsr@gmail.com → key is emailed).
  * Empty = the Feedback link stays hidden (nothing half-working ships).
  */
-const FEEDBACK_ACCESS_KEY = '';
+const FEEDBACK_ACCESS_KEY = 'b0c38acf-3953-4910-9fbb-290ad09af3a5';
 
 const hud = {
   rpmEl: null,
@@ -581,6 +581,17 @@ async function init() {
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && sheet && !sheet.hidden) setFb(false);
     });
+    // Category chips (single-select) — so feedback can be sorted at a glance in the inbox.
+    let fbCategory = 'ประสบการณ์ขับขี่';
+    const cats = [...(document.querySelectorAll('.fb-cat') || [])];
+    cats.forEach((c) => c.addEventListener('click', () => {
+      fbCategory = c.dataset.cat;
+      cats.forEach((x) => {
+        const on = x === c;
+        x.classList.toggle('is-active', on);
+        x.setAttribute('aria-checked', on ? 'true' : 'false');
+      });
+    }));
     form?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const msg = $('#fb-msg')?.value.trim();
@@ -595,8 +606,9 @@ async function init() {
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           body: JSON.stringify({
             access_key: FEEDBACK_ACCESS_KEY,
-            subject: 'Tesla Active Sound — Feedback',
+            subject: `[${fbCategory}] Tesla Active Sound Feedback`,
             from_name: 'Tesla Active Sound',
+            category: fbCategory,
             message: msg,
             contact,
             app_version: $('#app-ver')?.textContent || '',
