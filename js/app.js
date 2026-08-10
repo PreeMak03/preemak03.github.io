@@ -592,6 +592,10 @@ async function init() {
         x.setAttribute('aria-checked', on ? 'true' : 'false');
       });
     }));
+    // Scanned the in-modal QR on a phone → land straight on the feedback form.
+    if (new URLSearchParams(location.search).get('fb') === '1') {
+      window.setTimeout(() => setFb(true), 1500);
+    }
     form?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const msg = $('#fb-msg')?.value.trim();

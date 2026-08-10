@@ -415,6 +415,32 @@ button {
   pointer-events: none;
 }
 
+/* Feedback QR — scan to open the form on a phone (in-car keyboard is painful) */
+.fb-qr-hint {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  margin-bottom: 12px;
+  background: rgba(127, 127, 127, 0.06);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  text-align: left;
+}
+.fb-qr {
+  flex: 0 0 auto;
+  width: 92px;
+  height: 92px;
+  padding: 6px;
+  background: #ffffff;
+  border-radius: 8px;
+}
+.fb-qr-cap {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
 /* Feedback categories */
 .fb-cats {
   display: flex;
