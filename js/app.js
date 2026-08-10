@@ -37,6 +37,46 @@ const DONATE_URL = '';
  */
 const FEEDBACK_ACCESS_KEY = 'b0c38acf-3953-4910-9fbb-290ad09af3a5';
 
+/* ---- Phone-browser support (Safari iOS / Android Chrome) — the app only needs GPS speed +
+   audio out, so it runs on the user's own phone (paired to the car over Bluetooth). Keep the
+   screen awake while the engine runs, and best-effort unlock audio past the iOS ringer switch. ---- */
+let _wakeLock = null;
+async function acquireWakeLock() {
+  try {
+    if ('wakeLock' in navigator && document.visibilityState === 'visible' && !_wakeLock) {
+      _wakeLock = await navigator.wakeLock.request('screen');
+      _wakeLock.addEventListener?.('release', () => { _wakeLock = null; });
+    }
+  } catch (_) {}
+}
+function releaseWakeLock() {
+  try { _wakeLock?.release(); } catch (_) {}
+  _wakeLock = null;
+}
+
+let _audioUnlocked = false;
+function unlockPhoneAudio() {
+  if (_audioUnlocked) return;
+  _audioUnlocked = true;
+  try {
+    // A muted silent WAV played inside the tap gesture nudges iOS to route WebAudio through the
+    // ringer switch. Harmless elsewhere; best-effort — iPhone on silent may still need the ringer on.
+    const sr = 8000, n = Math.floor(sr * 0.2), buf = new ArrayBuffer(44 + n * 2);
+    const v = new DataView(buf);
+    const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+    w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true);
+    v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+    const el = document.createElement('audio');
+    el.src = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+    el.loop = true;
+    el.volume = 0;
+    el.setAttribute('playsinline', '');
+    el.play().catch(() => {});
+  } catch (_) {}
+}
+
 const hud = {
   rpmEl: null,
   fillPos: null,
@@ -379,6 +419,7 @@ async function init() {
 
   $('#btn-engine')?.addEventListener('click', async () => {
     const btn = $('#btn-engine');
+    unlockPhoneAudio(); // must run inside the tap gesture (iOS audio through the ringer switch)
     btn?.classList.remove('anim-pressed');
     // force reflow so the press animation can replay
     void btn?.offsetWidth;
@@ -391,17 +432,24 @@ async function init() {
         setAudioStatus(true);
         $('#btn-launch')?.classList.add('is-armed');
         showToast('Engine online · idle active at 0 km/h');
+        acquireWakeLock(); // keep the phone screen on while driving
       } else {
         audio.stop();
         state.engineOn = false;
         setAudioStatus(false);
         $('#btn-launch')?.classList.remove('is-armed', 'is-active');
         showToast('Engine offline');
+        releaseWakeLock();
       }
     } catch (err) {
       console.error(err);
       showToast('Audio blocked — tap again after interaction');
     }
+  });
+
+  // Wake Lock releases itself when the tab is backgrounded — re-take it on return if driving.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && state.engineOn) acquireWakeLock();
   });
 
   // Tune sheet open/close
@@ -505,7 +553,7 @@ async function init() {
     state.geoAccuracy = payload.accuracy;
     setGpsStatus(payload.status);
     if (payload.status === 'denied') {
-      showToast('Location permission denied — use Simulation');
+      openGpsHelp();
     }
   });
 
@@ -633,12 +681,46 @@ async function init() {
     });
   }
 
+  // GPS help sheet — opened when the browser DENIES location (in-app browser, or permission off).
+  // The denial is an environment/permission issue, not a bug — so guide the user to fix it.
+  function openGpsHelp() {
+    const back = $('#gps-help-backdrop');
+    const sheet = $('#gps-help-sheet');
+    if (!sheet || !sheet.hidden) return; // already open / missing
+    const ua = navigator.userAgent || '';
+    if (/FBAN|FBAV|Instagram|Line\/|MicroMessenger|; wv\)/i.test(ua)) {
+      const warn = $('#gps-inapp-warn');
+      if (warn) warn.hidden = false;
+    }
+    for (const el of [back, sheet]) {
+      if (!el) continue;
+      el.hidden = false;
+      requestAnimationFrame(() => el.classList.add('is-open'));
+    }
+    sheet.setAttribute('aria-hidden', 'false');
+  }
+  const closeGpsHelp = () => {
+    for (const el of [$('#gps-help-backdrop'), $('#gps-help-sheet')]) {
+      if (!el) continue;
+      el.classList.remove('is-open');
+      window.setTimeout(() => { el.hidden = true; }, 300);
+    }
+    $('#gps-help-sheet')?.setAttribute('aria-hidden', 'true');
+  };
+  $('#gps-help-x')?.addEventListener('click', closeGpsHelp);
+  $('#gps-help-backdrop')?.addEventListener('click', closeGpsHelp);
+  $('#gps-retry')?.addEventListener('click', () => { closeGpsHelp(); geo.start(); });
+
   ticker.add((dt) => tick(dt));
   setMode('sim', { silent: true }); // default sim so idle is easy to hear
   finishBoot();
 
   // First-run coach marks, after the boot overlay clears
-  window.setTimeout(() => startOnboarding(), 1400);
+  // Skip the coach marks when the user arrived via the feedback QR (?fb=1 opens the feedback
+  // sheet instead) — otherwise both fight for the screen.
+  if (new URLSearchParams(location.search).get('fb') !== '1') {
+    window.setTimeout(() => startOnboarding(), 1400);
+  }
 
   // Offline cache — skip on localhost so dev never serves stale files
   if (

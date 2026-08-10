@@ -297,6 +297,27 @@
       </form>
     </div>
 
+    <!-- GPS help — shown when the browser denies location (in-app browser or no permission) -->
+    <div class="donate-backdrop" id="gps-help-backdrop" hidden></div>
+    <div class="donate-sheet gps-help-sheet" id="gps-help-sheet" role="dialog" aria-modal="true" aria-label="เปิด GPS" aria-hidden="true" hidden>
+      <button type="button" class="donate-x" id="gps-help-x" aria-label="ปิด">✕</button>
+      <div class="donate-eyebrow">📍 GPS</div>
+      <div class="donate-h">เปิดตำแหน่งไม่ได้</div>
+      <p class="donate-p">แอปใช้ความเร็ว GPS จากมือถือ — ต้องอนุญาตตำแหน่งก่อน:</p>
+      <ol class="gps-steps">
+        <li>เปิดลิงก์ใน <b>Safari</b> หรือ <b>Chrome</b> จริง ๆ — ถ้าเปิดจากแอปสแกน QR / ไลน์ / เฟซบุ๊ก ให้กด <b>“เปิดในเบราว์เซอร์”</b> ก่อน (in-app browser บล็อกตำแหน่ง)
+          <div class="gps-sub" id="gps-inapp-warn" hidden>⚠️ ตอนนี้ดูเหมือนเปิดใน in-app browser อยู่</div>
+        </li>
+        <li><b>อนุญาตตำแหน่ง</b> เมื่อถูกถาม
+          <div class="gps-sub">iPhone: ตั้งค่า › ความเป็นส่วนตัว › บริการหาตำแหน่ง = เปิด แล้ว Safari = “ขณะใช้แอป”</div>
+          <div class="gps-sub">Android: แตะ 🔒 / ⓘ ข้าง URL › สิทธิ์ › ตำแหน่ง = อนุญาต</div>
+        </li>
+        <li>กลับมากดปุ่ม <b>GPS</b> อีกครั้ง</li>
+      </ol>
+      <button type="button" class="fb-submit" id="gps-retry">ลองเปิด GPS อีกครั้ง</button>
+      <div class="donate-badge">ไม่มี GPS ก็ลองเสียงในโหมด Sim ได้ (เมนูตั้งค่า ⚙️)</div>
+    </div>
+
     <!-- Boot overlay -->
     <div class="boot-overlay" id="boot-overlay">
       <div class="boot-content">

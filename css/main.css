@@ -415,6 +415,33 @@ button {
   pointer-events: none;
 }
 
+/* GPS help — steps list */
+.gps-steps {
+  text-align: left;
+  margin: 2px 0 14px;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.gps-steps li {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.gps-steps b {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.gps-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+#gps-inapp-warn {
+  color: var(--warning);
+}
+
 /* Feedback QR — scan to open the form on a phone (in-car keyboard is painful) */
 .fb-qr-hint {
   display: flex;
