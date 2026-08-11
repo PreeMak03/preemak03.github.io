@@ -519,6 +519,13 @@ async function init() {
     state.geoSpeed = newSpeed;
     state.geoAccuracy = payload.accuracy;
     setGpsStatus(payload.status);
+    // What the receiver actually gives us — the ceiling on how live the readout can be.
+    const srcEl = $('#tele-gps-src');
+    if (srcEl) {
+      srcEl.textContent = `${payload.speedSource || '—'} · ${
+        payload.fixHz ? `${payload.fixHz.toFixed(1)} Hz` : '—'
+      }`;
+    }
     if (payload.status === 'denied') {
       showToast('Location permission denied — use Simulation');
     }

@@ -30,6 +30,8 @@ export class GeolocationService {
       status: this.status,
       error: this.error,
       lastFix: this.lastFix,
+      fixHz: this.fixHz,
+      speedSource: this.speedSource,
     };
     for (const fn of this._listeners) fn(payload);
   }
@@ -63,11 +65,16 @@ export class GeolocationService {
       }
     );
     this.watching = true;
+    this._startBoost();
   }
 
   stop() {
     if (this.watchId != null && this.supported) {
       navigator.geolocation.clearWatch(this.watchId);
+    }
+    if (this._boostTimer) {
+      window.clearTimeout(this._boostTimer);
+      this._boostTimer = null;
     }
     this.watchId = null;
     this.watching = false;
@@ -75,8 +82,52 @@ export class GeolocationService {
     this._emit();
   }
 
+  /**
+   * Ask the receiver for a fix between watchPosition callbacks, to lift the update rate as
+   * high as the hardware will actually go. Self-limiting on purpose: if the watch is already
+   * fast, or the extra calls keep returning the SAME fix (no new data to be had), the poll
+   * backs off — so it can never turn into load that costs more than it buys.
+   * @returns {void}
+   */
+  _startBoost() {
+    let interval = 250;
+    let dupes = 0;
+    const schedule = () => {
+      if (!this.watching) return;
+      this._boostTimer = window.setTimeout(run, interval);
+    };
+    const run = () => {
+      if (!this.watching) return;
+      if ((this.fixHz || 0) >= 4) { interval = 1000; return schedule(); } // already plenty
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          // A novel fix here means the poll beat the watch to it — real latency won, so stay
+          // fast. Otherwise this receiver has nothing more to give and we settle into a slow
+          // probe (~0.5 calls/s) rather than burning the MCU for duplicates.
+          const novel = this._onPosition(pos);
+          if (novel) { dupes = 0; interval = 200; }
+          else if (++dupes >= 6) { interval = Math.min(2000, interval * 1.6); dupes = 0; }
+          schedule();
+        },
+        () => { interval = Math.min(2000, interval * 2); schedule(); },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 900 }
+      );
+    };
+    schedule();
+  }
+
+  /** @returns {boolean} true if this was a NEW fix (not the same one served twice) */
   _onPosition(pos) {
     const { coords, timestamp } = pos;
+    // watchPosition and the booster can hand us the identical fix; only act on new data.
+    if (timestamp === this._lastSeenTs) return false;
+    if (this._lastSeenTs) {
+      const gap = (timestamp - this._lastSeenTs) / 1000;
+      if (gap > 0.005 && gap < 10) {
+        this.fixHz = this.fixHz ? this.fixHz * 0.7 + (1 / gap) * 0.3 : 1 / gap;
+      }
+    }
+    this._lastSeenTs = timestamp;
     this.accuracy = coords.accuracy;
     this.lastFix = timestamp;
     this.status = 'live';
@@ -115,6 +166,7 @@ export class GeolocationService {
     // one (and only that one) still gets a light average.
     this.speedKmh = this.speedSource === 'derived' ? prev * 0.25 + kmh * 0.75 : kmh;
     this._emit();
+    return true;
   }
 
   _estimateSpeed(lat, lon, ts) {
