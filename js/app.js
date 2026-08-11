@@ -27,78 +27,8 @@ import {
 /** Accel tube scale — tied to the real sim rate limit, not a magic number */
 const ACCEL_TUBE_MAX = SIM_RATE.maxDeltaKmhPerSec;
 
-/**
- * How far behind reality a GPS fix already is when it reaches us (receiver + browser
- * pipeline). Used to lead the displayed speed so it runs level with the car's speedometer
- * instead of trailing it. Raise if the app still reads low while accelerating; lower if it
- * overshoots the dash.
- */
-const GPS_FIX_LATENCY_S = 0.45;
-
-/**
- * Lead amount actually in use. 0 = show the raw fix with no compensation at all (honest but
- * always ~1 s behind the dash — that lag belongs to the Geolocation API, not to us).
- * Cycled from the dev sheet so it can be A/B'd against the real speedometer while driving.
- */
-const GPS_LEAD_STEPS = [0.45, 0.7, 0.25, 0];
-let gpsLeadIdx = 0;
-try {
-  // Guard the empty case: Number(null) is 0, which would silently select the "off" step.
-  const raw = localStorage.getItem('tas-gps-lead');
-  if (raw != null && raw !== '') {
-    const i = GPS_LEAD_STEPS.indexOf(Number(raw));
-    if (i >= 0) gpsLeadIdx = i;
-  }
-} catch (_) {}
-const gpsLead = () => GPS_LEAD_STEPS[gpsLeadIdx];
-
 /** Coffee link (Ko-fi / Buy Me a Coffee / PromptPay page). Empty = hidden. */
 const DONATE_URL = '';
-
-/**
- * Feedback → developer email via Web3Forms (no backend, hides the address behind the key).
- * Get a free key at https://web3forms.com (enter markchsr@gmail.com → key is emailed).
- * Empty = the Feedback link stays hidden (nothing half-working ships).
- */
-const FEEDBACK_ACCESS_KEY = 'b0c38acf-3953-4910-9fbb-290ad09af3a5';
-
-/* ---- Phone-browser support (Safari iOS / Android Chrome) — the app only needs GPS speed +
-   audio out, so it runs on the user's own phone (paired to the car over Bluetooth). Keep the
-   screen awake while the engine runs, and best-effort unlock audio past the iOS ringer switch. ---- */
-let _wakeLock = null;
-/** Phone only — the car screen never sleeps while driving, so don't hold a lock on the MCU. */
-const _isPhone = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
-async function acquireWakeLock() {
-  try {
-    if (_isPhone && 'wakeLock' in navigator && document.visibilityState === 'visible' && !_wakeLock) {
-      _wakeLock = await navigator.wakeLock.request('screen');
-      _wakeLock.addEventListener?.('release', () => { _wakeLock = null; });
-    }
-  } catch (_) {}
-}
-function releaseWakeLock() {
-  try { _wakeLock?.release(); } catch (_) {}
-  _wakeLock = null;
-}
-
-let _audioUnlocked = false;
-const _isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent || '') ||
-  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-function unlockPhoneAudio() {
-  // iOS-ONLY and ONE-SHOT. Never add a persistent audio stream on the Tesla MCU (a looping
-  // silent element there stole the audio thread → delay/stutter). A 0-length silent WAV played
-  // once inside the tap gesture is enough to route iOS WebAudio past the ringer switch.
-  if (_audioUnlocked || !_isIOS) return;
-  _audioUnlocked = true;
-  try {
-    const el = document.createElement('audio');
-    el.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA=';
-    el.volume = 0;
-    el.setAttribute('playsinline', '');
-    const p = el.play();
-    if (p) p.then(() => { el.pause(); el.src = ''; }).catch(() => {});
-  } catch (_) {}
-}
 
 const hud = {
   rpmEl: null,
@@ -442,7 +372,6 @@ async function init() {
 
   $('#btn-engine')?.addEventListener('click', async () => {
     const btn = $('#btn-engine');
-    unlockPhoneAudio(); // must run inside the tap gesture (iOS audio through the ringer switch)
     btn?.classList.remove('anim-pressed');
     // force reflow so the press animation can replay
     void btn?.offsetWidth;
@@ -455,43 +384,18 @@ async function init() {
         setAudioStatus(true);
         $('#btn-launch')?.classList.add('is-armed');
         showToast('Engine online · idle active at 0 km/h');
-        acquireWakeLock(); // keep the phone screen on while driving
       } else {
         audio.stop();
         state.engineOn = false;
         setAudioStatus(false);
         $('#btn-launch')?.classList.remove('is-armed', 'is-active');
         showToast('Engine offline');
-        releaseWakeLock();
       }
     } catch (err) {
       console.error(err);
       showToast('Audio blocked — tap again after interaction');
     }
   });
-
-  // Wake Lock releases itself when the tab is backgrounded — re-take it on return if driving.
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && state.engineOn) acquireWakeLock();
-  });
-
-  // Speed-lead cycle (dev sheet): 0.45s → 0.7s → 0.25s → Off(raw fix). Lets the readout be
-  // A/B'd against the real speedometer instead of arguing about it.
-  {
-    const btn = $('#btn-gps-predict');
-    const label = () => {
-      if (!btn) return;
-      const v = gpsLead();
-      btn.textContent = v > 0 ? `On · ${v.toFixed(2)}s` : 'Off · raw fix';
-    };
-    label();
-    btn?.addEventListener('click', () => {
-      gpsLeadIdx = (gpsLeadIdx + 1) % GPS_LEAD_STEPS.length;
-      try { localStorage.setItem('tas-gps-lead', String(gpsLead())); } catch (_) {}
-      label();
-      showToast(gpsLead() > 0 ? `Speed lead ${gpsLead()}s` : 'Speed lead off — raw GPS fix');
-    });
-  }
 
   // Tune sheet open/close
   const tuneSheet = $('#tune-sheet');
@@ -593,13 +497,8 @@ async function init() {
     state.geoSpeed = newSpeed;
     state.geoAccuracy = payload.accuracy;
     setGpsStatus(payload.status);
-    const srcEl = $('#tele-gps-src');
-    if (srcEl) {
-      const hz = payload.fixHz ? `${payload.fixHz.toFixed(1)} Hz` : '—';
-      srcEl.textContent = `${payload.speedSource || '—'} · ${hz}`;
-    }
     if (payload.status === 'denied') {
-      openGpsHelp();
+      showToast('Location permission denied — use Simulation');
     }
   });
 
@@ -613,164 +512,12 @@ async function init() {
     donate.hidden = false;
   }
 
-  // Donate — coffee chip opens a PromptPay QR sheet (backdrop / ✕ / Esc close it).
-  {
-    const back = $('#donate-backdrop');
-    const sheet = $('#donate-sheet');
-    const setDonate = (open) => {
-      for (const el of [back, sheet]) {
-        if (!el) continue;
-        if (open) {
-          el.hidden = false;
-          requestAnimationFrame(() => el.classList.add('is-open'));
-        } else {
-          el.classList.remove('is-open');
-          window.setTimeout(() => { el.hidden = true; }, 300);
-        }
-      }
-      sheet?.setAttribute('aria-hidden', open ? 'false' : 'true');
-    };
-    $('#btn-donate')?.addEventListener('click', () => {
-      const im = $('#donate-qr-img'); // fetch/decode the 153KB QR on demand, never at boot
-      if (im && !im.src && im.dataset.src) im.src = im.dataset.src;
-      setDonate(true);
-    });
-    $('#donate-x')?.addEventListener('click', () => setDonate(false));
-    back?.addEventListener('click', () => setDonate(false));
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && sheet && !sheet.hidden) setDonate(false);
-    });
-    // Graceful state until the QR image is added at assets/donate-qr.png
-    const qr = $('#donate-qr-img');
-    qr?.addEventListener('error', () => {
-      qr.hidden = true;
-      const fb = $('#donate-qr-fallback');
-      if (fb) fb.hidden = false;
-    });
-  }
-
-  // Feedback — in-app form → Web3Forms → developer email. Entry point stays hidden until
-  // a key is configured, so nothing half-working ships.
-  if (FEEDBACK_ACCESS_KEY) {
-    const link = $('#btn-feedback');
-    const back = $('#fb-backdrop');
-    const sheet = $('#fb-sheet');
-    const form = $('#fb-form');
-    const statusEl = $('#fb-status');
-    const submit = $('#fb-submit');
-    if (link) link.hidden = false;
-    const setFb = (open) => {
-      for (const el of [back, sheet]) {
-        if (!el) continue;
-        if (open) {
-          el.hidden = false;
-          requestAnimationFrame(() => el.classList.add('is-open'));
-        } else {
-          el.classList.remove('is-open');
-          window.setTimeout(() => { el.hidden = true; }, 300);
-        }
-      }
-      sheet?.setAttribute('aria-hidden', open ? 'false' : 'true');
-      if (open) window.setTimeout(() => $('#fb-msg')?.focus(), 80);
-    };
-    link?.addEventListener('click', () => setFb(true));
-    $('#fb-x')?.addEventListener('click', () => setFb(false));
-    back?.addEventListener('click', () => setFb(false));
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && sheet && !sheet.hidden) setFb(false);
-    });
-    // Category chips (single-select) — so feedback can be sorted at a glance in the inbox.
-    let fbCategory = 'ประสบการณ์ขับขี่';
-    const cats = [...(document.querySelectorAll('.fb-cat') || [])];
-    cats.forEach((c) => c.addEventListener('click', () => {
-      fbCategory = c.dataset.cat;
-      cats.forEach((x) => {
-        const on = x === c;
-        x.classList.toggle('is-active', on);
-        x.setAttribute('aria-checked', on ? 'true' : 'false');
-      });
-    }));
-    // Scanned the in-modal QR on a phone → land straight on the feedback form.
-    if (new URLSearchParams(location.search).get('fb') === '1') {
-      window.setTimeout(() => setFb(true), 1500);
-    }
-    form?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const msg = $('#fb-msg')?.value.trim();
-      if (!msg) return;
-      const contact = $('#fb-contact')?.value.trim() || '';
-      submit.disabled = true;
-      statusEl.className = 'fb-status';
-      statusEl.textContent = 'กำลังส่ง…';
-      try {
-        const res = await fetch('https://api.web3forms.com/submit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({
-            access_key: FEEDBACK_ACCESS_KEY,
-            subject: `[${fbCategory}] Tesla Active Sound Feedback`,
-            from_name: 'Tesla Active Sound',
-            category: fbCategory,
-            message: msg,
-            contact,
-            app_version: $('#app-ver')?.textContent || '',
-            profile: state.profileId,
-          }),
-        });
-        if (!res.ok) throw new Error(String(res.status));
-        statusEl.className = 'fb-status ok';
-        statusEl.textContent = 'ส่งแล้ว ขอบคุณครับ 🙏';
-        form.reset();
-        window.setTimeout(() => setFb(false), 1500);
-      } catch (_) {
-        statusEl.className = 'fb-status err';
-        statusEl.textContent = 'ส่งไม่สำเร็จ · ลองใหม่อีกครั้ง';
-      } finally {
-        submit.disabled = false;
-      }
-    });
-  }
-
-  // GPS help sheet — opened when the browser DENIES location (in-app browser, or permission off).
-  // The denial is an environment/permission issue, not a bug — so guide the user to fix it.
-  function openGpsHelp() {
-    const back = $('#gps-help-backdrop');
-    const sheet = $('#gps-help-sheet');
-    if (!sheet || !sheet.hidden) return; // already open / missing
-    const ua = navigator.userAgent || '';
-    if (/FBAN|FBAV|Instagram|Line\/|MicroMessenger|; wv\)/i.test(ua)) {
-      const warn = $('#gps-inapp-warn');
-      if (warn) warn.hidden = false;
-    }
-    for (const el of [back, sheet]) {
-      if (!el) continue;
-      el.hidden = false;
-      requestAnimationFrame(() => el.classList.add('is-open'));
-    }
-    sheet.setAttribute('aria-hidden', 'false');
-  }
-  const closeGpsHelp = () => {
-    for (const el of [$('#gps-help-backdrop'), $('#gps-help-sheet')]) {
-      if (!el) continue;
-      el.classList.remove('is-open');
-      window.setTimeout(() => { el.hidden = true; }, 300);
-    }
-    $('#gps-help-sheet')?.setAttribute('aria-hidden', 'true');
-  };
-  $('#gps-help-x')?.addEventListener('click', closeGpsHelp);
-  $('#gps-help-backdrop')?.addEventListener('click', closeGpsHelp);
-  $('#gps-retry')?.addEventListener('click', () => { closeGpsHelp(); geo.start(); });
-
   ticker.add((dt) => tick(dt));
   setMode('sim', { silent: true }); // default sim so idle is easy to hear
   finishBoot();
 
   // First-run coach marks, after the boot overlay clears
-  // Skip the coach marks when the user arrived via the feedback QR (?fb=1 opens the feedback
-  // sheet instead) — otherwise both fight for the screen.
-  if (new URLSearchParams(location.search).get('fb') !== '1') {
-    window.setTimeout(() => startOnboarding(), 1400);
-  }
+  window.setTimeout(() => startOnboarding(), 1400);
 
   // Offline cache — skip on localhost so dev never serves stale files
   if (
@@ -810,17 +557,8 @@ function tick(dt) {
   const now = performance.now();
 
   if (state.mode === 'geo') {
-    // The car's speedo reads the wheels instantly; a GPS fix arrives ~1 Hz AND already
-    // describes a moment that has passed. Showing the raw fix therefore always trails the
-    // dash. So PREDICT: carry the last fix forward with the last known acceleration, over
-    // (age of the fix + the fix's own latency). Between fixes the number keeps moving with
-    // the car instead of stair-stepping, and it lands on the next fix already in sync.
-    const fixAge = Math.min(1.5, Math.max(0, (now - (state.lastGeoMs || now)) / 1000));
-    const lead = gpsLead() > 0 ? fixAge + gpsLead() : 0;
-    // Cap the extrapolation so a bad accel estimate can never run the number away.
-    const predict = clamp((state.geoAccel || 0) * lead, -18, 18);
-    const targetSpeed = Math.max(0, state.geoSpeed + predict);
-    state.activeSpeed += (targetSpeed - state.activeSpeed) * Math.min(1, dt * 14);
+    // Track GPS closely — stacked EMA was making speed lag the real car
+    state.activeSpeed += (state.geoSpeed - state.activeSpeed) * Math.min(1, dt * 6);
     const staleSec = (now - (state.lastGeoMs || 0)) / 1000;
     if (staleSec > 1.5) state.geoAccel = (state.geoAccel || 0) * Math.max(0, 1 - dt * 2);
     state.accelKmhps += ((state.geoAccel || 0) - state.accelKmhps) * Math.min(1, dt * 5);

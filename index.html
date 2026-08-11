@@ -50,13 +50,6 @@
       </div>
 
       <div class="top-actions">
-        <button type="button" class="chip-btn donate-chip" id="btn-donate" aria-label="เลี้ยงกาแฟผู้พัฒนา" aria-haspopup="dialog" title="เลี้ยงกาแฟผู้พัฒนา · Buy me a coffee">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 8h12v5a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
-            <path d="M16 9h2.4a2.4 2.4 0 0 1 0 4.8H16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
-            <path d="M7.5 3.2c0 1-1 1.2-1 2.2M10.5 3.2c0 1-1 1.2-1 2.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-        </button>
         <button type="button" class="chip-btn" id="btn-gps" aria-pressed="false" title="GPS speed on/off">
           <span class="pill-dot pill-dot--gps" id="gps-status-dot"></span>
           <span id="gps-status-label">GPS Off</span>
@@ -112,13 +105,6 @@
 
     <!-- Bottom row: tune · profile carousel · push-to-start -->
     <footer class="bottom-row">
-      <div class="left-dock">
-        <button type="button" class="fb-fab" id="btn-feedback" aria-haspopup="dialog" aria-label="ส่งความเห็น / Feedback" title="ส่งความเห็น" hidden>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9l-4 3v-3H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
-            <path d="M8 9.5h8M8 12.5h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-          </svg>
-        </button>
       <button type="button" class="tune-fab" id="btn-tune" aria-expanded="false" aria-controls="tune-sheet" aria-label="Sound tuning">
         <svg viewBox="0 0 24 24" aria-hidden="true" class="tune-icon">
           <path d="M4 7h10M18 7h2M4 12h4M12 12h8M4 17h13M20 17h0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>
@@ -127,7 +113,6 @@
           <circle cx="19" cy="17" r="2.1" fill="none" stroke="currentColor" stroke-width="1.8"/>
         </svg>
       </button>
-      </div>
 
       <div class="profile-dock" aria-label="Sound profiles">
         <div class="profile-carousel" id="profile-scroller" role="listbox" aria-label="Sound profiles">
@@ -247,14 +232,6 @@
         <span>GPS Accuracy</span>
         <span id="tele-accuracy">—</span>
       </div>
-      <div class="sheet-meta dev-only">
-        <span>GPS Source · Rate</span>
-        <span id="tele-gps-src">—</span>
-      </div>
-      <div class="sheet-meta dev-only">
-        <span>Speed Lead (predict)</span>
-        <button type="button" class="feedback-link" id="btn-gps-predict">On · 0.45s</button>
-      </div>
 
       <div class="sheet-meta sheet-credit">
         <span>© 2026 PreeMak03 · All rights reserved</span>
@@ -264,67 +241,6 @@
 
     <!-- Toast / notices -->
     <div class="toast-host" id="toast-host" aria-live="polite"></div>
-
-    <!-- Donate — PromptPay QR sheet (opened from the coffee chip) -->
-    <div class="donate-backdrop" id="donate-backdrop" hidden></div>
-    <div class="donate-sheet" id="donate-sheet" role="dialog" aria-modal="true" aria-label="เลี้ยงกาแฟผู้พัฒนา" aria-hidden="true" hidden>
-      <button type="button" class="donate-x" id="donate-x" aria-label="ปิด">✕</button>
-      <div class="donate-eyebrow">☕ Support</div>
-      <div class="donate-h">เลี้ยงกาแฟผู้พัฒนา</div>
-      <p class="donate-p">ถ้าชอบแอปนี้ เลี้ยงกาแฟสักแก้วเป็นกำลังใจให้กันได้ครับ 🙏</p>
-      <div class="donate-qr-card">
-        <img class="donate-qr-img" id="donate-qr-img" data-src="assets/donate-qr.png" loading="lazy" decoding="async" alt="PromptPay QR สำหรับบริจาค" width="240" height="240" />
-        <div class="donate-qr-fallback" id="donate-qr-fallback" hidden>QR ยังไม่ได้ติดตั้ง<br /><span>วางไฟล์ที่ assets/donate-qr.png</span></div>
-      </div>
-      <div class="donate-badge">PromptPay · สแกนด้วยแอปธนาคาร</div>
-    </div>
-
-    <!-- Feedback — in-app form (posts to a form service → developer email) -->
-    <div class="donate-backdrop" id="fb-backdrop" hidden></div>
-    <div class="donate-sheet fb-sheet" id="fb-sheet" role="dialog" aria-modal="true" aria-label="ส่งความเห็น" aria-hidden="true" hidden>
-      <button type="button" class="donate-x" id="fb-x" aria-label="ปิด">✕</button>
-      <div class="donate-eyebrow">💬 Feedback</div>
-      <div class="donate-h">บอกเราหน่อย</div>
-      <p class="donate-p">เจอบั๊ก อยากได้เสียงเครื่องไหน หรือติชมอะไร พิมพ์มาได้เลย</p>
-      <div class="fb-qr-hint">
-        <img class="fb-qr" src="assets/feedback-qr.svg" loading="lazy" decoding="async" alt="QR เปิดฟอร์มในมือถือ" width="96" height="96" />
-        <div class="fb-qr-cap">📱 พิมพ์ในรถยาก?<br />สแกนเปิดในมือถือ แล้วพิมพ์สบายกว่า</div>
-      </div>
-      <form class="fb-form" id="fb-form">
-        <div class="fb-cats" id="fb-cats" role="radiogroup" aria-label="หมวดความเห็น">
-          <button type="button" class="fb-cat is-active" data-cat="ประสบการณ์ขับขี่" role="radio" aria-checked="true">🚗 ประสบการณ์ขับขี่</button>
-          <button type="button" class="fb-cat" data-cat="แนะนำเพิ่มเติม" role="radio" aria-checked="false">💡 แนะนำเพิ่มเติม</button>
-          <button type="button" class="fb-cat" data-cat="รายงานบัค" role="radio" aria-checked="false">🐞 รายงานบัค</button>
-        </div>
-        <textarea class="fb-input" id="fb-msg" rows="4" maxlength="1500" required
-          placeholder="ความคิดเห็น / ปัญหาที่เจอ / เสียงที่อยากได้…"></textarea>
-        <input class="fb-input" id="fb-contact" type="text" maxlength="120"
-          placeholder="อีเมล/ไลน์ (ถ้าอยากให้ตอบกลับ · ไม่บังคับ)" />
-        <button type="submit" class="fb-submit" id="fb-submit">ส่งความเห็น</button>
-        <div class="fb-status" id="fb-status" aria-live="polite"></div>
-      </form>
-    </div>
-
-    <!-- GPS help — shown when the browser denies location (in-app browser or no permission) -->
-    <div class="donate-backdrop" id="gps-help-backdrop" hidden></div>
-    <div class="donate-sheet gps-help-sheet" id="gps-help-sheet" role="dialog" aria-modal="true" aria-label="เปิด GPS" aria-hidden="true" hidden>
-      <button type="button" class="donate-x" id="gps-help-x" aria-label="ปิด">✕</button>
-      <div class="donate-eyebrow">📍 GPS</div>
-      <div class="donate-h">เปิดตำแหน่งไม่ได้</div>
-      <p class="donate-p">แอปใช้ความเร็ว GPS จากมือถือ — ต้องอนุญาตตำแหน่งก่อน:</p>
-      <ol class="gps-steps">
-        <li>เปิดลิงก์ใน <b>Safari</b> หรือ <b>Chrome</b> จริง ๆ — ถ้าเปิดจากแอปสแกน QR / ไลน์ / เฟซบุ๊ก ให้กด <b>“เปิดในเบราว์เซอร์”</b> ก่อน (in-app browser บล็อกตำแหน่ง)
-          <div class="gps-sub" id="gps-inapp-warn" hidden>⚠️ ตอนนี้ดูเหมือนเปิดใน in-app browser อยู่</div>
-        </li>
-        <li><b>อนุญาตตำแหน่ง</b> เมื่อถูกถาม
-          <div class="gps-sub">iPhone: ตั้งค่า › ความเป็นส่วนตัว › บริการหาตำแหน่ง = เปิด แล้ว Safari = “ขณะใช้แอป”</div>
-          <div class="gps-sub">Android: แตะ 🔒 / ⓘ ข้าง URL › สิทธิ์ › ตำแหน่ง = อนุญาต</div>
-        </li>
-        <li>กลับมากดปุ่ม <b>GPS</b> อีกครั้ง</li>
-      </ol>
-      <button type="button" class="fb-submit" id="gps-retry">ลองเปิด GPS อีกครั้ง</button>
-      <div class="donate-badge">ไม่มี GPS ก็ลองเสียงในโหมด Sim ได้ (เมนูตั้งค่า ⚙️)</div>
-    </div>
 
     <!-- Boot overlay -->
     <div class="boot-overlay" id="boot-overlay">
