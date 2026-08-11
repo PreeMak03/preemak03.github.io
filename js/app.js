@@ -520,11 +520,16 @@ async function init() {
     state.geoAccuracy = payload.accuracy;
     setGpsStatus(payload.status);
     // What the receiver actually gives us — the ceiling on how live the readout can be.
+    const summary = `${payload.speedSource || '—'} · ${
+      payload.fixHz ? `${payload.fixHz.toFixed(1)} Hz` : '—'
+    }`;
     const srcEl = $('#tele-gps-src');
-    if (srcEl) {
-      srcEl.textContent = `${payload.speedSource || '—'} · ${
-        payload.fixHz ? `${payload.fixHz.toFixed(1)} Hz` : '—'
-      }`;
+    if (srcEl) srcEl.textContent = summary;
+    // Same figures on the drive screen, where they can be read while actually driving
+    const diagEl = $('#gps-diag');
+    if (diagEl) {
+      const acc = payload.accuracy != null ? ` · ±${Math.round(payload.accuracy)}m` : '';
+      diagEl.textContent = `${summary}${acc}`;
     }
     if (payload.status === 'denied') {
       showToast('Location permission denied — use Simulation');

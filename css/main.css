@@ -261,6 +261,17 @@ button {
   display: block;
 }
 
+/* GPS telemetry on the drive screen (dev only) — deliberately NOT inside .drive-lock's reach,
+   because the numbers only mean anything while the car is actually moving. */
+.gps-diag {
+  margin-top: 8px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .left-dock {
   flex: 0 0 auto;
   align-self: center;

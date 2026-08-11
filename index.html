@@ -89,6 +89,9 @@
             <div class="speed-unit">km/h</div>
             <div class="speed-rpm" id="speed-rpm">0 RPM · G1</div>
             <div class="state-chip" id="drive-state" data-state="idle">Idle</div>
+            <!-- Dev-only GPS telemetry. Lives on the drive screen ON PURPOSE: the tune sheet is
+                 locked out while moving, and this is exactly what needs reading while moving. -->
+            <div class="gps-diag dev-only" id="gps-diag">—</div>
           </div>
         </div>
       </section>
