@@ -276,8 +276,7 @@ button {
   position: fixed;
   inset: 0;
   z-index: 60;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(3px);
+  background: rgba(0, 0, 0, 0.72);
   opacity: 0;
   transition: opacity 0.25s var(--ease-soft);
 }
@@ -293,8 +292,7 @@ button {
   width: min(340px, calc(100vw - 40px));
   padding: 22px 22px 18px;
   text-align: center;
-  background: var(--bg-panel-strong);
-  backdrop-filter: blur(var(--blur-glass));
+  background: var(--bg-elevated);
   border: 1px solid var(--border-glass);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-panel);

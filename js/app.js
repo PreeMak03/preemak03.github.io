@@ -580,7 +580,11 @@ async function init() {
       }
       sheet?.setAttribute('aria-hidden', open ? 'false' : 'true');
     };
-    $('#btn-donate')?.addEventListener('click', () => setDonate(true));
+    $('#btn-donate')?.addEventListener('click', () => {
+      const im = $('#donate-qr-img'); // fetch/decode the 153KB QR on demand, never at boot
+      if (im && !im.src && im.dataset.src) im.src = im.dataset.src;
+      setDonate(true);
+    });
     $('#donate-x')?.addEventListener('click', () => setDonate(false));
     back?.addEventListener('click', () => setDonate(false));
     document.addEventListener('keydown', (e) => {
