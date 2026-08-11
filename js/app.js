@@ -365,6 +365,28 @@ async function init() {
   };
   renderCarousel();
 
+  // Donate / Feedback: the module is fetched on the FIRST tap and tears itself down on close,
+  // so nothing about these features exists while you are driving. See js/extras.js.
+  $('#btn-donate')?.addEventListener('click', async () => {
+    try {
+      const x = await import('./extras.js');
+      x.openDonate();
+    } catch (_) {
+      showToast('เปิดไม่สำเร็จ · ตรวจอินเทอร์เน็ต');
+    }
+  });
+  $('#btn-feedback')?.addEventListener('click', async () => {
+    try {
+      const x = await import('./extras.js');
+      x.openFeedback({
+        version: $('#app-ver')?.textContent || '',
+        profile: state.profileId,
+      });
+    } catch (_) {
+      showToast('เปิดไม่สำเร็จ · ตรวจอินเทอร์เน็ต');
+    }
+  });
+
   // GPS chip toggles between real GPS speed (geo) and the sim fader
   $('#btn-gps')?.addEventListener('click', () => {
     setMode(state.mode === 'geo' ? 'sim' : 'geo');
@@ -557,8 +579,10 @@ function tick(dt) {
   const now = performance.now();
 
   if (state.mode === 'geo') {
-    // Track GPS closely — stacked EMA was making speed lag the real car
-    state.activeSpeed += (state.geoSpeed - state.activeSpeed) * Math.min(1, dt * 6);
+    // Ramp to the newest fix fast. Fixes land ~1 Hz, so this only exists to turn each step
+    // into a short glide instead of a jump — at lambda 6 it was still catching up when the
+    // NEXT fix arrived, which is latency we were adding on top of the GPS's own.
+    state.activeSpeed += (state.geoSpeed - state.activeSpeed) * Math.min(1, dt * 12);
     const staleSec = (now - (state.lastGeoMs || 0)) / 1000;
     if (staleSec > 1.5) state.geoAccel = (state.geoAccel || 0) * Math.max(0, 1 - dt * 2);
     state.accelKmhps += ((state.geoAccel || 0) - state.accelKmhps) * Math.min(1, dt * 5);

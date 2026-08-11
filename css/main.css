@@ -245,6 +245,54 @@ button {
   background: var(--text-muted);
 }
 
+/* Donate / Feedback entry points. ONLY the buttons live here — every sheet, its markup and
+   its stylesheet ship inside js/extras.js and exist solely while a sheet is open. */
+.donate-chip {
+  padding: 11px 13px;
+  gap: 0;
+  color: #d9a066;
+}
+[data-theme="bright"] .donate-chip {
+  color: #b26a2e;
+}
+.donate-chip svg {
+  width: 19px;
+  height: 19px;
+  display: block;
+}
+
+.left-dock {
+  flex: 0 0 auto;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.fb-fab {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(127, 127, 127, 0.08);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  transition: color 0.2s, border-color 0.2s, transform 0.15s;
+}
+.fb-fab svg {
+  width: 20px;
+  height: 20px;
+}
+.fb-fab:active {
+  transform: scale(0.94);
+}
+.drive-lock .fb-fab {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
 /* --------------------------------------------------------------------------
    Drive stage — fader rail · speed · accel tube
    -------------------------------------------------------------------------- */

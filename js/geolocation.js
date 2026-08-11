@@ -56,7 +56,9 @@ export class GeolocationService {
       (err) => this._onError(err),
       {
         enableHighAccuracy: true,
-        maximumAge: 500,
+        // 0 = never hand us a cached fix. A 500 ms-old fix is 500 ms of latency we chose
+        // to accept; the whole job here is to deliver what the receiver just measured.
+        maximumAge: 0,
         timeout: 12000,
       }
     );
@@ -82,9 +84,14 @@ export class GeolocationService {
 
     let speedMs = coords.speed;
 
-    // Some browsers return null speed — estimate from positions
+    // coords.speed is the receiver's own Doppler solution: fresh and already clean.
+    // Only when the browser withholds it do we derive speed from two positions — that path
+    // IS noisy, and it is the only one that earns any smoothing further down.
     if (speedMs == null || Number.isNaN(speedMs) || speedMs < 0) {
+      this.speedSource = 'derived';
       speedMs = this._estimateSpeed(coords.latitude, coords.longitude, timestamp);
+    } else {
+      this.speedSource = 'doppler';
     }
 
     // m/s → km/h; clamp wild spikes
@@ -94,14 +101,19 @@ export class GeolocationService {
     if (kmh < 1.2 && (this.accuracy == null || this.accuracy > 40)) {
       kmh = 0;
     }
-    // Soft-limit absurd single-fix jumps only (teleport / bad fix)
+    // Teleport guard ONLY. This used to clamp to 12 km/h per fix — at ~1 fix/s that capped
+    // the readout at 12 km/h/s while the car pulls 16–30, so every hard launch drove the
+    // number progressively further behind the dash. We must never overwrite a change the
+    // receiver actually measured; 40 still rejects a genuinely broken fix.
     const prev = this.speedKmh || 0;
     const jump = kmh - prev;
-    if (Math.abs(jump) > 12 && prev > 8) {
-      kmh = prev + Math.sign(jump) * 12;
+    if (Math.abs(jump) > 40 && prev > 8) {
+      kmh = prev + Math.sign(jump) * 40;
     }
-    // Light EMA — heavy lag made UI/audio speed trail the real car
-    this.speedKmh = prev * 0.25 + kmh * 0.75;
+    // Doppler speed goes through UNTOUCHED — smoothing it here only re-adds latency, and the
+    // display already ramps between fixes. The derived fallback is genuinely noisy, so that
+    // one (and only that one) still gets a light average.
+    this.speedKmh = this.speedSource === 'derived' ? prev * 0.25 + kmh * 0.75 : kmh;
     this._emit();
   }
 
