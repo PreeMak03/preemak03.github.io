@@ -30,6 +30,8 @@ export class GeolocationService {
       status: this.status,
       error: this.error,
       lastFix: this.lastFix,
+      fixHz: this.fixHz,
+      speedSource: this.speedSource,
     };
     for (const fn of this._listeners) fn(payload);
   }
@@ -80,11 +82,22 @@ export class GeolocationService {
     this.status = 'live';
     this.error = null;
 
+    // Fix rate + speed source, so the drive readout can be diagnosed instead of guessed.
+    if (this._prevFixTs) {
+      const gap = (timestamp - this._prevFixTs) / 1000;
+      if (gap > 0.01 && gap < 10) this.fixHz = (this.fixHz || 1 / gap) * 0.7 + (1 / gap) * 0.3;
+    }
+    this._prevFixTs = timestamp;
+
     let speedMs = coords.speed;
 
-    // Some browsers return null speed — estimate from positions
+    // Some browsers return null speed — estimate from positions. Doppler speed (coords.speed)
+    // is both fresher and cleaner; the derived path needs TWO fixes, so it lags ~1 fix more.
     if (speedMs == null || Number.isNaN(speedMs) || speedMs < 0) {
+      this.speedSource = 'derived';
       speedMs = this._estimateSpeed(coords.latitude, coords.longitude, timestamp);
+    } else {
+      this.speedSource = 'doppler';
     }
 
     // m/s → km/h; clamp wild spikes

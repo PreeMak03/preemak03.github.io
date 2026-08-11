@@ -35,6 +35,23 @@ const ACCEL_TUBE_MAX = SIM_RATE.maxDeltaKmhPerSec;
  */
 const GPS_FIX_LATENCY_S = 0.45;
 
+/**
+ * Lead amount actually in use. 0 = show the raw fix with no compensation at all (honest but
+ * always ~1 s behind the dash — that lag belongs to the Geolocation API, not to us).
+ * Cycled from the dev sheet so it can be A/B'd against the real speedometer while driving.
+ */
+const GPS_LEAD_STEPS = [0.45, 0.7, 0.25, 0];
+let gpsLeadIdx = 0;
+try {
+  // Guard the empty case: Number(null) is 0, which would silently select the "off" step.
+  const raw = localStorage.getItem('tas-gps-lead');
+  if (raw != null && raw !== '') {
+    const i = GPS_LEAD_STEPS.indexOf(Number(raw));
+    if (i >= 0) gpsLeadIdx = i;
+  }
+} catch (_) {}
+const gpsLead = () => GPS_LEAD_STEPS[gpsLeadIdx];
+
 /** Coffee link (Ko-fi / Buy Me a Coffee / PromptPay page). Empty = hidden. */
 const DONATE_URL = '';
 
@@ -49,9 +66,11 @@ const FEEDBACK_ACCESS_KEY = 'b0c38acf-3953-4910-9fbb-290ad09af3a5';
    audio out, so it runs on the user's own phone (paired to the car over Bluetooth). Keep the
    screen awake while the engine runs, and best-effort unlock audio past the iOS ringer switch. ---- */
 let _wakeLock = null;
+/** Phone only — the car screen never sleeps while driving, so don't hold a lock on the MCU. */
+const _isPhone = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
 async function acquireWakeLock() {
   try {
-    if ('wakeLock' in navigator && document.visibilityState === 'visible' && !_wakeLock) {
+    if (_isPhone && 'wakeLock' in navigator && document.visibilityState === 'visible' && !_wakeLock) {
       _wakeLock = await navigator.wakeLock.request('screen');
       _wakeLock.addEventListener?.('release', () => { _wakeLock = null; });
     }
@@ -456,6 +475,24 @@ async function init() {
     if (document.visibilityState === 'visible' && state.engineOn) acquireWakeLock();
   });
 
+  // Speed-lead cycle (dev sheet): 0.45s → 0.7s → 0.25s → Off(raw fix). Lets the readout be
+  // A/B'd against the real speedometer instead of arguing about it.
+  {
+    const btn = $('#btn-gps-predict');
+    const label = () => {
+      if (!btn) return;
+      const v = gpsLead();
+      btn.textContent = v > 0 ? `On · ${v.toFixed(2)}s` : 'Off · raw fix';
+    };
+    label();
+    btn?.addEventListener('click', () => {
+      gpsLeadIdx = (gpsLeadIdx + 1) % GPS_LEAD_STEPS.length;
+      try { localStorage.setItem('tas-gps-lead', String(gpsLead())); } catch (_) {}
+      label();
+      showToast(gpsLead() > 0 ? `Speed lead ${gpsLead()}s` : 'Speed lead off — raw GPS fix');
+    });
+  }
+
   // Tune sheet open/close
   const tuneSheet = $('#tune-sheet');
   const tuneBackdrop = $('#sheet-backdrop');
@@ -556,6 +593,11 @@ async function init() {
     state.geoSpeed = newSpeed;
     state.geoAccuracy = payload.accuracy;
     setGpsStatus(payload.status);
+    const srcEl = $('#tele-gps-src');
+    if (srcEl) {
+      const hz = payload.fixHz ? `${payload.fixHz.toFixed(1)} Hz` : '—';
+      srcEl.textContent = `${payload.speedSource || '—'} · ${hz}`;
+    }
     if (payload.status === 'denied') {
       openGpsHelp();
     }
@@ -774,7 +816,7 @@ function tick(dt) {
     // (age of the fix + the fix's own latency). Between fixes the number keeps moving with
     // the car instead of stair-stepping, and it lands on the next fix already in sync.
     const fixAge = Math.min(1.5, Math.max(0, (now - (state.lastGeoMs || now)) / 1000));
-    const lead = fixAge + GPS_FIX_LATENCY_S;
+    const lead = gpsLead() > 0 ? fixAge + gpsLead() : 0;
     // Cap the extrapolation so a bad accel estimate can never run the number away.
     const predict = clamp((state.geoAccel || 0) * lead, -18, 18);
     const targetSpeed = Math.max(0, state.geoSpeed + predict);
