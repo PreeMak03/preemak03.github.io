@@ -27,6 +27,14 @@ import {
 /** Accel tube scale — tied to the real sim rate limit, not a magic number */
 const ACCEL_TUBE_MAX = SIM_RATE.maxDeltaKmhPerSec;
 
+/**
+ * How far behind reality a GPS fix already is when it reaches us (receiver + browser
+ * pipeline). Used to lead the displayed speed so it runs level with the car's speedometer
+ * instead of trailing it. Raise if the app still reads low while accelerating; lower if it
+ * overshoots the dash.
+ */
+const GPS_FIX_LATENCY_S = 0.45;
+
 /** Coffee link (Ko-fi / Buy Me a Coffee / PromptPay page). Empty = hidden. */
 const DONATE_URL = '';
 
@@ -760,8 +768,17 @@ function tick(dt) {
   const now = performance.now();
 
   if (state.mode === 'geo') {
-    // Track GPS closely — stacked EMA was making speed lag the real car
-    state.activeSpeed += (state.geoSpeed - state.activeSpeed) * Math.min(1, dt * 6);
+    // The car's speedo reads the wheels instantly; a GPS fix arrives ~1 Hz AND already
+    // describes a moment that has passed. Showing the raw fix therefore always trails the
+    // dash. So PREDICT: carry the last fix forward with the last known acceleration, over
+    // (age of the fix + the fix's own latency). Between fixes the number keeps moving with
+    // the car instead of stair-stepping, and it lands on the next fix already in sync.
+    const fixAge = Math.min(1.5, Math.max(0, (now - (state.lastGeoMs || now)) / 1000));
+    const lead = fixAge + GPS_FIX_LATENCY_S;
+    // Cap the extrapolation so a bad accel estimate can never run the number away.
+    const predict = clamp((state.geoAccel || 0) * lead, -18, 18);
+    const targetSpeed = Math.max(0, state.geoSpeed + predict);
+    state.activeSpeed += (targetSpeed - state.activeSpeed) * Math.min(1, dt * 14);
     const staleSec = (now - (state.lastGeoMs || 0)) / 1000;
     if (staleSec > 1.5) state.geoAccel = (state.geoAccel || 0) * Math.max(0, 1 - dt * 2);
     state.accelKmhps += ((state.geoAccel || 0) - state.accelKmhps) * Math.min(1, dt * 5);

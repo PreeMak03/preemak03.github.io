@@ -1119,7 +1119,7 @@ export class AudioEngine {
     const speed = this.speedReactive ? this._speedSmooth : Math.max(this._speedSmooth, 40);
 
     // GPS accel damp — keep responsive (wide deadband made load lag the car)
-    const aLambda = this.smoothFilter ? 7 : 12;
+    const aLambda = this.smoothFilter ? 11 : 16;
     this._accelSmooth = damp(this._accelSmooth, this._accelKmhps, aLambda, dt);
     let accelForLoad = this._accelSmooth;
     if (Math.abs(accelForLoad) < 1.5) accelForLoad = 0;
@@ -1306,9 +1306,9 @@ export class AudioEngine {
     });
 
     // Cruise = slow follow (GPS speed wobble); pull/shift a bit snappier
-    let rpmLambda = this.smoothFilter ? 3.6 : 5.5;
-    if (rpmAccel > 0.35) rpmLambda = 6 + rpmAccel * 2.5;
-    if (rpmDecel > 0.35) rpmLambda = 5.5 + rpmDecel * 2;
+    let rpmLambda = this.smoothFilter ? 6.5 : 8;
+    if (rpmAccel > 0.35) rpmLambda = 9 + rpmAccel * 3;
+    if (rpmDecel > 0.35) rpmLambda = 8 + rpmDecel * 2.5;
     if (this._shifting) {
       rpmLambda = 8;
       targetRpm = this._rpm * 0.9 + targetRpm * 0.1;
@@ -1316,7 +1316,7 @@ export class AudioEngine {
       // Just upshifted — climb back from the dip GRADUALLY so revs sweep up through the
       // new gear (the "row" feel) instead of snapping to mid-gear in ~0.3s.
       this._shiftRecover -= dt;
-      rpmLambda = Math.min(rpmLambda, 2.4);
+      rpmLambda = Math.min(rpmLambda, 3.6);
     }
 
     this._rpmSmooth = damp(
@@ -1359,7 +1359,7 @@ export class AudioEngine {
     if (!this.ctx || !this._started) return;
 
     // Light speed follow — heavy lag made cabin speed trail the car (user report)
-    const smoothL = this.smoothFilter ? 8 : 14;
+    const smoothL = this.smoothFilter ? 14 : 20;
     this._speedSmooth = damp(this._speedSmooth, this._speed, smoothL, dt);
 
     // Dedicated real-time clock for the rotary idle pant (Hz-accurate, not
@@ -1420,10 +1420,10 @@ export class AudioEngine {
     const prevEff = this._effort ?? 0;
     if (effTarget > prevEff) {
       this._effort = damp(prevEff, effTarget, 5.5, dt);
-      this._effortHold = 0.35;
+      this._effortHold = 0.12;
     } else {
       this._effortHold = (this._effortHold || 0) - dt;
-      this._effort = this._effortHold > 0 ? prevEff : damp(prevEff, effTarget, 3.8, dt);
+      this._effort = this._effortHold > 0 ? prevEff : damp(prevEff, effTarget, 6, dt);
     }
 
     // --- DynamicVolume: pure profile.dynamics (smoothing = audio glue only) ---
@@ -1434,7 +1434,7 @@ export class AudioEngine {
         : DEFAULT_CLASSIC_DYN_CURVE;
     const curveMulRaw = sampleVolumeCurve(this._rpm, curvePts);
     // Light slew so GPS RPM wobble doesn't zipper — does not rewrite author curve
-    this._curveMulSmooth = damp(this._curveMulSmooth ?? curveMulRaw, curveMulRaw, 5, dt);
+    this._curveMulSmooth = damp(this._curveMulSmooth ?? curveMulRaw, curveMulRaw, 9, dt);
     this._dynCurve = curvePts;
     const shiftDuck = dynCfg.shiftDuck != null ? +dynCfg.shiftDuck : 0.9;
 
@@ -1478,9 +1478,9 @@ export class AudioEngine {
     // Gear-change torque cut — a brief audible dip THROUGH the accel boost, so the shift
     // is felt even at full throttle (the internal shiftDuck alone was swamped by accel).
     if (this._shifting) dynTarget *= 0.5;
-    this._dynVolSmooth = damp(this._dynVolSmooth ?? dynTarget, dynTarget, this._shifting ? 9 : 4.5, dt);
+    this._dynVolSmooth = damp(this._dynVolSmooth ?? dynTarget, dynTarget, this._shifting ? 12 : 8, dt);
     if (this.dynGain) {
-      this.dynGain.gain.setTargetAtTime(this._dynVolSmooth, this.ctx.currentTime, 0.18);
+      this.dynGain.gain.setTargetAtTime(this._dynVolSmooth, this.ctx.currentTime, 0.06);
     }
     this._dynVol = this._dynVolSmooth;
     this._driveEnergy = dyn.driveEnergy;
@@ -1514,8 +1514,8 @@ export class AudioEngine {
 
     const t = this.ctx.currentTime;
     // Long time constants — Tesla MCU audio thread hates dense setTarget spam
-    const tau = this.smoothFilter ? 0.14 : 0.09;
-    const fTau = Math.max(tau, 0.16);
+    const tau = this.smoothFilter ? 0.05 : 0.035;
+    const fTau = Math.max(tau, 0.09);
 
     // WG only if node exists (lazily created); never keep a silent worklet warm
     if (this._wgReady) this._pushWaveguideParams(t, tau);
@@ -1554,7 +1554,7 @@ export class AudioEngine {
 
     // Push AudioParams at ~25 Hz with epsilon — halves automation load, less zipper
     this._paramTick = (this._paramTick || 0) + 1;
-    const pushAudio = (this._paramTick & 1) === 0;
+    const pushAudio = true; // every 50 Hz tick — halving it added 40 ms of lag
     const setRate = (node, value, eps = 0.006) => {
       if (!node || !pushAudio) return;
       const key = node;

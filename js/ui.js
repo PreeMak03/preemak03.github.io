@@ -236,7 +236,7 @@ export class SpeedDisplay {
 
   /** Smooth the big number every frame */
   step(dt) {
-    const lambda = 28;
+    const lambda = 45; // the number must not add lag of its own on top of GPS
     this.display += (this.target - this.display) * (1 - Math.exp(-lambda * dt));
     if (Math.abs(this.target - this.display) < 0.15) this.display = this.target;
 

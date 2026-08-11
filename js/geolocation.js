@@ -56,7 +56,7 @@ export class GeolocationService {
       (err) => this._onError(err),
       {
         enableHighAccuracy: true,
-        maximumAge: 500,
+        maximumAge: 0, // never hand us a cached fix — a 500 ms-old one is 500 ms of lag
         timeout: 12000,
       }
     );
@@ -97,11 +97,13 @@ export class GeolocationService {
     // Soft-limit absurd single-fix jumps only (teleport / bad fix)
     const prev = this.speedKmh || 0;
     const jump = kmh - prev;
-    if (Math.abs(jump) > 12 && prev > 8) {
-      kmh = prev + Math.sign(jump) * 12;
+    // Only catch teleports / bad fixes. The old 12 km/h cap also clipped REAL hard
+    // acceleration (an EV pulls 25+ km/h per second), so the sound trailed the car.
+    if (Math.abs(jump) > 40 && prev > 8) {
+      kmh = prev + Math.sign(jump) * 40;
     }
-    // Light EMA — heavy lag made UI/audio speed trail the real car
-    this.speedKmh = prev * 0.25 + kmh * 0.75;
+    // Fixes arrive at ~1 Hz — let the newest one dominate, or everything downstream lags
+    this.speedKmh = prev * 0.12 + kmh * 0.88;
     this._emit();
   }
 
