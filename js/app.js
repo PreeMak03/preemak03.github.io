@@ -55,25 +55,21 @@ function releaseWakeLock() {
 }
 
 let _audioUnlocked = false;
+const _isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent || '') ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 function unlockPhoneAudio() {
-  if (_audioUnlocked) return;
+  // iOS-ONLY and ONE-SHOT. Never add a persistent audio stream on the Tesla MCU (a looping
+  // silent element there stole the audio thread → delay/stutter). A 0-length silent WAV played
+  // once inside the tap gesture is enough to route iOS WebAudio past the ringer switch.
+  if (_audioUnlocked || !_isIOS) return;
   _audioUnlocked = true;
   try {
-    // A muted silent WAV played inside the tap gesture nudges iOS to route WebAudio through the
-    // ringer switch. Harmless elsewhere; best-effort — iPhone on silent may still need the ringer on.
-    const sr = 8000, n = Math.floor(sr * 0.2), buf = new ArrayBuffer(44 + n * 2);
-    const v = new DataView(buf);
-    const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
-    w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
-    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
-    v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true);
-    v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
     const el = document.createElement('audio');
-    el.src = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
-    el.loop = true;
+    el.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA=';
     el.volume = 0;
     el.setAttribute('playsinline', '');
-    el.play().catch(() => {});
+    const p = el.play();
+    if (p) p.then(() => { el.pause(); el.src = ''; }).catch(() => {});
   } catch (_) {}
 }
 
