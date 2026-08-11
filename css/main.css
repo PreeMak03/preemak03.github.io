@@ -261,6 +261,29 @@ button {
   display: block;
 }
 
+/* GPS nudge — a first-timer who never taps GPS hears only idle and concludes the app is
+   "just bass". A ring breathes on the chip so the thing to press is obvious without reading
+   anything. Animates OPACITY ONLY (compositor work, no layout or paint) and the class is
+   removed the moment it is done, so nothing keeps running. */
+@keyframes gps-nudge {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
+}
+.gps-nudge {
+  position: relative;
+}
+.gps-nudge::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: var(--radius-pill);
+  border: 1.5px solid var(--accent);
+  box-shadow: 0 0 12px var(--accent-glow);
+  opacity: 0;
+  pointer-events: none;
+  animation: gps-nudge 1.6s ease-in-out infinite;
+}
+
 /* GPS telemetry on the drive screen (dev only) — deliberately NOT inside .drive-lock's reach,
    because the numbers only mean anything while the car is actually moving. */
 .gps-diag {

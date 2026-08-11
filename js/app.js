@@ -405,12 +405,19 @@ async function init() {
         state.engineOn = true;
         setAudioStatus(true);
         $('#btn-launch')?.classList.add('is-armed');
-        showToast('Engine online · idle active at 0 km/h');
+        if (state.mode === 'geo') {
+          showToast('Engine online · idle active at 0 km/h');
+        } else {
+          // No real speed source yet: say what to press, and light up the chip that does it.
+          showToast('แตะ GPS ให้เสียงวิ่งตามความเร็วรถ · หรือกด REV ฟังเสียงลากรอบ', 5200);
+          startGpsNudge();
+        }
       } else {
         audio.stop();
         state.engineOn = false;
         setAudioStatus(false);
         $('#btn-launch')?.classList.remove('is-armed', 'is-active');
+        stopGpsNudge();
         showToast('Engine offline');
       }
     } catch (err) {
@@ -563,12 +570,38 @@ async function init() {
   showToast(`0→100 ≈ ${(100 / SIM_RATE.maxDeltaKmhPerSec).toFixed(1)}s (±${SIM_RATE.maxDeltaKmhPerSec} km/h/s)`, 2600);
 }
 
+/**
+ * GPS nudge — breathe a ring on the GPS chip when the engine is running but no real speed
+ * source is on, because a first-timer otherwise hears idle only and thinks that is the app.
+ * Self-terminating: stops on tap, on engine off, and on its own after NUDGE_MS. Stopping
+ * REMOVES the class, so the animation is gone rather than merely invisible.
+ */
+const NUDGE_MS = 15000;
+let nudgeTimer = null;
+
+function stopGpsNudge() {
+  if (nudgeTimer) {
+    window.clearTimeout(nudgeTimer);
+    nudgeTimer = null;
+  }
+  $('#btn-gps')?.classList.remove('gps-nudge');
+}
+
+function startGpsNudge() {
+  // Dev mode drives the sim slider on purpose — never nag there.
+  if (document.body.classList.contains('dev-mode')) return;
+  stopGpsNudge();
+  $('#btn-gps')?.classList.add('gps-nudge');
+  nudgeTimer = window.setTimeout(stopGpsNudge, NUDGE_MS);
+}
+
 function setMode(mode, { silent = false } = {}) {
   state.mode = mode;
   setModeUI(mode);
   lastPhysicsWall = 0; // reset wall clock on mode change
 
   if (mode === 'geo') {
+    stopGpsNudge(); // they found it
     if (geo.supported) {
       geo.start();
       if (!silent) showToast('Geolocation · real GPS speed');
