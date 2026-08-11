@@ -517,7 +517,11 @@ async function init() {
     // Accel from real GPS interval (not per-frame). Light clamp only.
     const nowMs = performance.now();
     const gdt = state.lastGeoMs ? (nowMs - state.lastGeoMs) / 1000 : 0;
-    if (gdt > 0.12 && gdt < 4) {
+    // 0.06 s, not 0.12: the booster can now land fixes ~200 ms apart (and faster on a good
+    // receiver), and at 0.12 those intervals were discarded — the very fixes we added to be
+    // more responsive would have contributed no acceleration at all. Still wide enough to
+    // reject a sub-60 ms burst, and `a` stays clamped either way.
+    if (gdt > 0.06 && gdt < 4) {
       let a = (newSpeed - state.geoSpeed) / gdt;
       a = Math.max(-30, Math.min(30, a));
       state.geoAccel = (state.geoAccel || 0) * 0.35 + a * 0.65;
@@ -654,18 +658,18 @@ function tick(dt) {
     state.brake = p.brake;
   }
 
-  // UNIFIED acceleration — ONE system (user's model): accel comes from the ACTUAL speed
-  // change, computed identically for GPS and sim. Sim just supplies the speed via its ramp;
-  // GPS supplies the real car speed. This replaces the separate GPS geoAccel path (which had
-  // a gdt>0.12 guard + decay that could produce ~0 accel = "GPS won't rev") and the x3 patch.
-  const dv = state.activeSpeed - (state.prevActiveSpeed ?? state.activeSpeed);
-  state.prevActiveSpeed = state.activeSpeed;
-  const instAccel = clamp(dv / Math.max(0.001, dt), -40, 40);
-  state.accelUni = (state.accelUni ?? 0) * 0.7 + instAccel * 0.3; // light smooth
+  // Acceleration is measured over the interval in which the speed actually changed — the gap
+  // between two GPS fixes (geo) or the physics step (sim) — NOT as a per-frame derivative of
+  // the displayed speed. That derivative looked equivalent but is not: fixes land ~1 Hz, so
+  // activeSpeed ramps to each one and then sits flat, making d/dt a brief spike followed by
+  // ~zero. Load then swung 0.14<->0.80 every second, i.e. the engine surged and sagged instead
+  // of pulling. Measured over the fix interval the value persists, as it physically should.
+  // (The reason this path once read ~0 was maximumAge:500 replaying the same fix; that is gone
+  // now — maximumAge is 0 and identical timestamps are deduped before they ever reach here.)
   audio.setSpeed(state.activeSpeed, {
     throttle: state.throttle,
     brake: state.brake,
-    accelKmhps: state.accelUni,
+    accelKmhps: state.accelKmhps,
   });
   // Audio params update on the engine's own 50 Hz clock (see AudioEngine),
   // so sound stays smooth even when Tesla Browser rAF drops to 20–30 fps.
