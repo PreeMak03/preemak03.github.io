@@ -357,7 +357,13 @@ export class AudioEngine {
       const now = performance.now();
       let dt = (now - this._lastUpdateWall) / 1000;
       this._lastUpdateWall = now;
-      if (!(dt > 0) || dt > 0.25) dt = 0.02;
+      // A hidden page has its timers throttled to roughly 1 Hz. Rewriting that gap to 0.02 s
+      // (as this did) advanced the simulation at 2% of real time, so revs, load and gears all
+      // crawled to a halt while the browser was minimised. Clamp the gap instead of discarding
+      // it: 0.25 s is a large but perfectly stable step for exponential damping, so the engine
+      // keeps up with the car while backgrounded and never lurches on resume.
+      if (!(dt > 0)) dt = 0.02;
+      else if (dt > 0.25) dt = 0.25;
       this.update(dt);
     }, 20);
   }
@@ -854,6 +860,7 @@ export class AudioEngine {
     if (!this._layers) this._rebuildLayers();
     this.running = true;
     this._lastUpdateWall = performance.now();
+    this._startKeepAlive(); // must be inside the Start tap — media playback needs the gesture
     this._startUpdateLoop();
     this._syncWaveguidePresence();
     const t = this.ctx.currentTime;
@@ -924,8 +931,49 @@ export class AudioEngine {
     }, 440);
   }
 
+  /**
+   * Hold the browser's "this page is playing media" status for as long as the engine runs.
+   *
+   * Web Audio on its own does not earn that status, so a minimised page gets its context
+   * suspended and its timers throttled — the sound simply stops. A looping media element does
+   * earn it. This one carries digital silence, so it changes nothing you can hear and adds no
+   * latency to the engine (which still goes straight to ctx.destination); it exists purely so
+   * the page keeps running while the driver is on the navigation screen.
+   */
+  _startKeepAlive() {
+    if (this._keepAliveEl) return;
+    try {
+      const sr = 8000, secs = 1, n = sr * secs, buf = new ArrayBuffer(44 + n * 2);
+      const v = new DataView(buf);
+      const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+      w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+      v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+      v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true);
+      v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true); // samples stay 0
+      const el = document.createElement('audio');
+      this._keepAliveUrl = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+      el.src = this._keepAliveUrl;
+      el.loop = true;
+      el.setAttribute('playsinline', '');
+      el.play().catch(() => {});
+      this._keepAliveEl = el;
+    } catch (_) {}
+  }
+
+  _stopKeepAlive() {
+    const el = this._keepAliveEl;
+    this._keepAliveEl = null;
+    if (!el) return;
+    try { el.pause(); el.removeAttribute('src'); el.load(); } catch (_) {}
+    if (this._keepAliveUrl) {
+      try { URL.revokeObjectURL(this._keepAliveUrl); } catch (_) {}
+      this._keepAliveUrl = null;
+    }
+  }
+
   stop() {
     this.running = false;
+    this._stopKeepAlive();
     this._stopUpdateLoop();
     // Free WG CPU while engine off
     this._disposeWaveguide();

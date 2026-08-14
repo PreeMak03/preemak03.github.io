@@ -387,6 +387,13 @@ async function init() {
     }
   });
 
+  // Coming back from the navigation screen must never require pressing Start again: if the
+  // browser suspended the context while we were away, resume it the moment we are shown.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || !state.engineOn) return;
+    audio?.resume?.().catch?.(() => {});
+  });
+
   // GPS chip toggles between real GPS speed (geo) and the sim fader
   $('#btn-gps')?.addEventListener('click', () => {
     setMode(state.mode === 'geo' ? 'sim' : 'geo');
@@ -529,6 +536,23 @@ async function init() {
     state.lastGeoMs = nowMs;
     state.geoSpeed = newSpeed;
     state.geoAccuracy = payload.accuracy;
+
+    // While the browser is minimised, rAF stops — so tick() stops and the engine would be fed
+    // a frozen speed forever. Drive it straight from the fix instead: this callback is the one
+    // thing that still fires. No display ramp is needed (nothing is on screen to smooth), so
+    // the newest measurement goes in as-is and acceleration keeps working on the nav screen.
+    if (document.hidden && state.mode === 'geo') {
+      state.activeSpeed = state.geoSpeed;
+      state.accelKmhps = state.geoAccel || 0;
+      const aN = state.accelKmhps / SIM_RATE.maxDeltaKmhPerSec;
+      state.throttle = clamp(aN, 0, 1);
+      state.brake = aN < -0.04 ? clamp(-aN, 0, 1) : 0;
+      audio.setSpeed(state.activeSpeed, {
+        throttle: state.throttle,
+        brake: state.brake,
+        accelKmhps: state.accelKmhps,
+      });
+    }
     setGpsStatus(payload.status);
     // What the receiver actually gives us — the ceiling on how live the readout can be.
     const summary = `${payload.speedSource || '—'} · ${
