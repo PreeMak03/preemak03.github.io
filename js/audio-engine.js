@@ -219,7 +219,9 @@ export class AudioEngine {
     this.makeup.connect(this.limiter);
     this.limiter.connect(this.safety);
     this.safety.connect(this.analyser);
-    this.analyser.connect(this.ctx.destination);
+    // Output is attached in _attachOutput(), which prefers routing through a media element so
+    // the car treats us as a real audio source (and keeps playing on the navigation screen).
+    this._attachOutput();
 
     this._packLoader = new SamplePackLoader(this.ctx);
     this._buildBus();
@@ -860,7 +862,7 @@ export class AudioEngine {
     if (!this._layers) this._rebuildLayers();
     this.running = true;
     this._lastUpdateWall = performance.now();
-    this._startKeepAlive(); // must be inside the Start tap — media playback needs the gesture
+    this._startOutput(); // must be inside the Start tap — media playback needs the gesture
     this._startUpdateLoop();
     this._syncWaveguidePresence();
     const t = this.ctx.currentTime;
@@ -932,48 +934,80 @@ export class AudioEngine {
   }
 
   /**
-   * Hold the browser's "this page is playing media" status for as long as the engine runs.
+   * Send the engine out as a REAL media source instead of straight to ctx.destination.
    *
-   * Web Audio on its own does not earn that status, so a minimised page gets its context
-   * suspended and its timers throttled — the sound simply stops. A looping media element does
-   * earn it. This one carries digital silence, so it changes nothing you can hear and adds no
-   * latency to the engine (which still goes straight to ctx.destination); it exists purely so
-   * the page keeps running while the driver is on the navigation screen.
+   * Raw Web Audio is not "media" as far as the browser is concerned, so a minimised page gets
+   * its context suspended and the sound just stops — which is what happens when the driver
+   * slides the browser down to use navigation. Routing the finished mix through a
+   * MediaStreamAudioDestination into an <audio> element makes the car see an actual playing
+   * audio source, which is the thing that is allowed to keep running in the background (and
+   * can appear in the car's media controls).
+   *
+   * The cost is the media element's own buffer, tens of milliseconds — negligible beside the
+   * ~1 s that GPS sampling already contributes, and the alternative is no sound at all.
+   * If the element cannot play for any reason we fall back to ctx.destination, so the worst
+   * case is today's behaviour rather than silence.
    */
-  _startKeepAlive() {
-    if (this._keepAliveEl) return;
+  _attachOutput() {
     try {
-      const sr = 8000, secs = 1, n = sr * secs, buf = new ArrayBuffer(44 + n * 2);
-      const v = new DataView(buf);
-      const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
-      w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
-      v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
-      v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true);
-      v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true); // samples stay 0
+      this._streamDest = this.ctx.createMediaStreamDestination();
+      this.analyser.connect(this._streamDest);
       const el = document.createElement('audio');
-      this._keepAliveUrl = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
-      el.src = this._keepAliveUrl;
-      el.loop = true;
+      el.srcObject = this._streamDest.stream;
       el.setAttribute('playsinline', '');
-      el.play().catch(() => {});
-      this._keepAliveEl = el;
+      el.autoplay = true;
+      el.volume = 1;
+      this._outEl = el;
+      this.outputMode = 'media';
+    } catch (_) {
+      this.analyser.connect(this.ctx.destination);
+      this.outputMode = 'direct';
+    }
+  }
+
+  /** Fall back to the plain destination if the media element never actually plays. */
+  _useDirectOutput() {
+    if (this.outputMode === 'direct') return;
+    try { this.analyser.disconnect(this._streamDest); } catch (_) {}
+    try { this._outEl?.pause(); } catch (_) {}
+    this.analyser.connect(this.ctx.destination);
+    this.outputMode = 'direct';
+  }
+
+  /**
+   * Start the media element. MUST be called inside the Start tap — playback needs the gesture.
+   * Also publishes MediaSession metadata so the car labels the source instead of showing a
+   * blank player.
+   */
+  async _startOutput() {
+    if (this.outputMode !== 'media' || !this._outEl) return;
+    try {
+      await this._outEl.play();
+    } catch (_) {
+      this._useDirectOutput();
+      return;
+    }
+    try {
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new window.MediaMetadata({
+          title: this.profile?.name ? `${this.profile.name} — engine` : 'Engine',
+          artist: 'Tesla Active Sound',
+        });
+        navigator.mediaSession.playbackState = 'playing';
+      }
     } catch (_) {}
   }
 
-  _stopKeepAlive() {
-    const el = this._keepAliveEl;
-    this._keepAliveEl = null;
-    if (!el) return;
-    try { el.pause(); el.removeAttribute('src'); el.load(); } catch (_) {}
-    if (this._keepAliveUrl) {
-      try { URL.revokeObjectURL(this._keepAliveUrl); } catch (_) {}
-      this._keepAliveUrl = null;
-    }
+  _pauseOutput() {
+    try { this._outEl?.pause(); } catch (_) {}
+    try {
+      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+    } catch (_) {}
   }
 
   stop() {
     this.running = false;
-    this._stopKeepAlive();
+    this._pauseOutput();
     this._stopUpdateLoop();
     // Free WG CPU while engine off
     this._disposeWaveguide();
