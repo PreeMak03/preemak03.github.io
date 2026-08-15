@@ -219,9 +219,7 @@ export class AudioEngine {
     this.makeup.connect(this.limiter);
     this.limiter.connect(this.safety);
     this.safety.connect(this.analyser);
-    // Output is attached in _attachOutput(), which prefers routing through a media element so
-    // the car treats us as a real audio source (and keeps playing on the navigation screen).
-    this._attachOutput();
+    this.analyser.connect(this.ctx.destination);
 
     this._packLoader = new SamplePackLoader(this.ctx);
     this._buildBus();
@@ -359,13 +357,7 @@ export class AudioEngine {
       const now = performance.now();
       let dt = (now - this._lastUpdateWall) / 1000;
       this._lastUpdateWall = now;
-      // A hidden page has its timers throttled to roughly 1 Hz. Rewriting that gap to 0.02 s
-      // (as this did) advanced the simulation at 2% of real time, so revs, load and gears all
-      // crawled to a halt while the browser was minimised. Clamp the gap instead of discarding
-      // it: 0.25 s is a large but perfectly stable step for exponential damping, so the engine
-      // keeps up with the car while backgrounded and never lurches on resume.
-      if (!(dt > 0)) dt = 0.02;
-      else if (dt > 0.25) dt = 0.25;
+      if (!(dt > 0) || dt > 0.25) dt = 0.02;
       this.update(dt);
     }, 20);
   }
@@ -862,7 +854,6 @@ export class AudioEngine {
     if (!this._layers) this._rebuildLayers();
     this.running = true;
     this._lastUpdateWall = performance.now();
-    this._startOutput(); // must be inside the Start tap — media playback needs the gesture
     this._startUpdateLoop();
     this._syncWaveguidePresence();
     const t = this.ctx.currentTime;
@@ -933,81 +924,8 @@ export class AudioEngine {
     }, 440);
   }
 
-  /**
-   * Send the engine out as a REAL media source instead of straight to ctx.destination.
-   *
-   * Raw Web Audio is not "media" as far as the browser is concerned, so a minimised page gets
-   * its context suspended and the sound just stops — which is what happens when the driver
-   * slides the browser down to use navigation. Routing the finished mix through a
-   * MediaStreamAudioDestination into an <audio> element makes the car see an actual playing
-   * audio source, which is the thing that is allowed to keep running in the background (and
-   * can appear in the car's media controls).
-   *
-   * The cost is the media element's own buffer, tens of milliseconds — negligible beside the
-   * ~1 s that GPS sampling already contributes, and the alternative is no sound at all.
-   * If the element cannot play for any reason we fall back to ctx.destination, so the worst
-   * case is today's behaviour rather than silence.
-   */
-  _attachOutput() {
-    try {
-      this._streamDest = this.ctx.createMediaStreamDestination();
-      this.analyser.connect(this._streamDest);
-      const el = document.createElement('audio');
-      el.srcObject = this._streamDest.stream;
-      el.setAttribute('playsinline', '');
-      el.autoplay = true;
-      el.volume = 1;
-      this._outEl = el;
-      this.outputMode = 'media';
-    } catch (_) {
-      this.analyser.connect(this.ctx.destination);
-      this.outputMode = 'direct';
-    }
-  }
-
-  /** Fall back to the plain destination if the media element never actually plays. */
-  _useDirectOutput() {
-    if (this.outputMode === 'direct') return;
-    try { this.analyser.disconnect(this._streamDest); } catch (_) {}
-    try { this._outEl?.pause(); } catch (_) {}
-    this.analyser.connect(this.ctx.destination);
-    this.outputMode = 'direct';
-  }
-
-  /**
-   * Start the media element. MUST be called inside the Start tap — playback needs the gesture.
-   * Also publishes MediaSession metadata so the car labels the source instead of showing a
-   * blank player.
-   */
-  async _startOutput() {
-    if (this.outputMode !== 'media' || !this._outEl) return;
-    try {
-      await this._outEl.play();
-    } catch (_) {
-      this._useDirectOutput();
-      return;
-    }
-    try {
-      if ('mediaSession' in navigator) {
-        navigator.mediaSession.metadata = new window.MediaMetadata({
-          title: this.profile?.name ? `${this.profile.name} — engine` : 'Engine',
-          artist: 'Tesla Active Sound',
-        });
-        navigator.mediaSession.playbackState = 'playing';
-      }
-    } catch (_) {}
-  }
-
-  _pauseOutput() {
-    try { this._outEl?.pause(); } catch (_) {}
-    try {
-      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
-    } catch (_) {}
-  }
-
   stop() {
     this.running = false;
-    this._pauseOutput();
     this._stopUpdateLoop();
     // Free WG CPU while engine off
     this._disposeWaveguide();

@@ -99,9 +99,6 @@ export class GeolocationService {
     const run = () => {
       if (!this.watching) return;
       if ((this.fixHz || 0) >= 4) { interval = 1000; return schedule(); } // already plenty
-      // Minimised: nobody is reading the number, and watchPosition still feeds the engine.
-      // Polling here would only spend the MCU's budget on a screen that isn't shown.
-      if (typeof document !== 'undefined' && document.hidden) { interval = 1000; return schedule(); }
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           // A novel fix here means the poll beat the watch to it — real latency won, so stay
