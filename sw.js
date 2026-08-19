@@ -6,7 +6,7 @@
  */
 
 // Bump when ship assets change so cars drop stale offline shells
-const CACHE = 'tas-v38';
+const CACHE = 'tas-v40';
 
 const ASSETS = [
   './',
@@ -29,6 +29,8 @@ const ASSETS = [
   './js/onboarding.js',
   './js/vessel-audio.js',
   './js/vessel-rigs.js',
+  './js/crank-audio.js',
+  './js/crank-rigs.js',
   './js/launch-rev.js',
   './js/vessel-runtime.worklet.js',
   './js/engine-waveguide.worklet.js',
@@ -37,6 +39,8 @@ const ASSETS = [
   './assets/vessel/american.rig.json',
   './assets/vessel/gentle.rig.json',
   './assets/vessel/live-set.json',
+  './assets/crank/jz.crank.json',
+  './assets/crank/civic.crank.json',
   './assets/classic/registry.json',
   // vessel/command-room/* is Lab-only — never precache
 ];

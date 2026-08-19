@@ -3,14 +3,16 @@
   "updatedAt": "2026-07-30T09:53:37.849Z",
   "source": "manual-lineup",
   "status": "online",
-  "message": "5 Online (4 dev-only) · public: classic-muscle",
+  "message": "7 Online (crank: 1JZ + Civic, dev-only) · public: classic-muscle",
   "site": "https://preemak03.github.io/",
   "live": [
     "classic-muscle",
     "na-v12",
     "s85-v10",
     "flat6-911",
-    "2jz"
+    "2jz",
+    "jz-crank",
+    "civic-crank"
   ],
   "versions": {
     "camaro-vessel": "v1.1-fp-cabin",
@@ -27,7 +29,9 @@
     "electric-hyper": "tone-current",
     "rotary-vessel": "v1.0-13b",
     "american-vessel": "v1.0-deep",
-    "gentle-vessel": "v1.0-gentle"
+    "gentle-vessel": "v1.0-gentle",
+    "jz-crank": "crank-v1",
+    "civic-crank": "crank-v1"
   },
   "deployPick": [
     "classic-muscle",

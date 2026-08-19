@@ -8,6 +8,8 @@ import { getProfileById, loadLiveSet, loadClassicStandards, getLiveProfileIds, g
 import { AudioEngine } from './audio-engine.js';
 // hasRig is tiny; VesselAudio itself is dynamic-imported only for VESSEL cards
 import { hasRig } from './vessel-rigs.js';
+// same trick for CRANK — the id map is a few bytes, CrankAudio loads on demand
+import { hasCrank } from './crank-rigs.js';
 import { GeolocationService } from './geolocation.js';
 import { VehiclePhysics, SIM_RATE } from './vehicle-physics.js';
 import { startOnboarding } from './onboarding.js';
@@ -149,29 +151,47 @@ const state = {
 
 let audio = new AudioEngine();
 
+/** Which of the three sound engines a profile id belongs to. */
+function engineKindFor(id) {
+  if (hasRig(id)) return 'vessel';
+  if (hasCrank(id)) return 'crank';
+  return 'classic';
+}
+
+/** What the live `audio` instance currently is. */
+function currentEngineKind() {
+  const n = audio?.constructor?.name;
+  if (n === 'VesselAudio') return 'vessel';
+  if (n === 'CrankAudio') return 'crank';
+  return 'classic';
+}
+
 /**
- * Pick the sound engine for a profile: VESSEL synthesis runtime for rigs that
- * have a compiled .vsl, the classic AudioEngine otherwise. Swaps the live
- * `audio` instance (restarting if running). Falls back to AudioEngine if the
- * VESSEL runtime fails to load, so the app never goes silent.
+ * Pick the sound engine for a profile: VESSEL synthesis runtime for rigs with a
+ * compiled .vsl, CRANK firing-order synthesis for compiled .crank.json cards,
+ * the classic AudioEngine otherwise. Swaps the live `audio` instance (restarting
+ * if running). Falls back to AudioEngine if the chosen runtime fails to load, so
+ * the app never goes silent.
  */
 async function ensureEngineFor(id) {
-  const wantVessel = hasRig(id);
-  const isVessel = audio?.constructor?.name === 'VesselAudio';
-  if (wantVessel === isVessel) return;
+  const want = engineKindFor(id);
+  if (want === currentEngineKind()) return;
   const wasRunning = state.engineOn;
   try {
     if (wasRunning) audio.stop();
-    if (wantVessel) {
+    if (want === 'vessel') {
       const { VesselAudio } = await import('./vessel-audio.js');
       audio = new VesselAudio();
+    } else if (want === 'crank') {
+      const { CrankAudio } = await import('./crank-audio.js');
+      audio = new CrankAudio();
     } else {
       audio = new AudioEngine();
     }
     audio.setProfile(getProfileById(id));
     if (wasRunning) await audio.start();
   } catch (e) {
-    console.warn('[app] VESSEL engine unavailable, falling back', e);
+    console.warn(`[app] ${want} engine unavailable, falling back`, e);
     if (audio) try { audio.stop(); } catch {}
     audio = new AudioEngine();
     audio.setProfile(getProfileById(id));
@@ -271,23 +291,31 @@ function applyProfileMix(profile) {
  *   + Classic tone engine     vs  VESSEL synthesis
  */
 function updateTuneScope(profileId) {
-  const vessel = hasRig(profileId);
+  const kind = engineKindFor(profileId);
+  const vessel = kind === 'vessel';
   const chip = $('#engine-scope-chip');
   const hint = $('#tune-scope-hint');
   const note = $('#sound-profile-note');
   if (chip) {
-    chip.textContent = vessel ? 'VESSEL · synthesis' : 'Classic · tone';
+    chip.textContent =
+      kind === 'vessel' ? 'VESSEL · synthesis'
+        : kind === 'crank' ? 'CRANK · firing order'
+          : 'Classic · tone';
     chip.classList.toggle('is-vessel', vessel);
+    chip.classList.toggle('is-crank', kind === 'crank');
   }
   if (hint) {
-    hint.textContent = vessel
-      ? 'Sound = cabin/DNA of this card · App = Master/GPS (global)'
-      : 'Bass/Edge = this card · Master/GPS = app-wide';
+    hint.textContent = kind === 'classic'
+      ? 'Bass/Edge = this card · Master/GPS = app-wide'
+      : 'Sound = cabin/DNA of this card · App = Master/GPS (global)';
   }
   if (note) {
-    note.textContent = vessel
-      ? 'Bass/Edge = cabin path. Engine DNA = vessel/presets/*.engine.json (bench). Vehicle RPM = camaro.deploy.json → vehicle{}.'
-      : 'Bass/Edge follow this card’s tone mix. Engine character is the classic procedural profile.';
+    note.textContent =
+      kind === 'vessel'
+        ? 'Bass/Edge = cabin path. Engine DNA = vessel/presets/*.engine.json (bench). Vehicle RPM = camaro.deploy.json → vehicle{}.'
+        : kind === 'crank'
+          ? 'Bass/Edge = cabin shelves (neutral at 50). Engine character = firing order + resonances compiled into assets/crank/*.crank.json.'
+          : 'Bass/Edge follow this card’s tone mix. Engine character is the classic procedural profile.';
   }
 }
 
@@ -357,8 +385,8 @@ async function init() {
     renderProfiles(scroller, state.profileId, async (profile) => {
       await selectProfile(profile.id);
       showToast(
-        hasRig(profile.id)
-          ? `${profile.name} · Sound Profile (VESSEL)`
+        engineKindFor(profile.id) !== 'classic'
+          ? `${profile.name} · Sound Profile (${engineKindFor(profile.id).toUpperCase()})`
           : `${profile.name} · ${profile.car || profile.tag}`
       );
     });
@@ -691,8 +719,8 @@ function tick(dt) {
 
 // Debug handle for in-car console / testing (harmless in production)
 window.TAS = {
-  get audio() { return audio; },   // live — the instance swaps between AudioEngine / VesselAudio
-  get engine() { return audio instanceof VesselAudio ? 'vessel' : 'classic'; },
+  get audio() { return audio; },   // live — swaps between AudioEngine / VesselAudio / CrankAudio
+  get engine() { return currentEngineKind(); },
   state,
   physics,
   perf,

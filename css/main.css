@@ -1065,6 +1065,12 @@ body:not(.dev-mode) .dev-only {
   background: rgba(94, 234, 212, 0.1);
 }
 
+.scope-chip.is-crank {
+  color: #f5b544;
+  border-color: rgba(245, 181, 68, 0.35);
+  background: rgba(245, 181, 68, 0.1);
+}
+
 .scope-hint {
   font-size: 11px;
   color: var(--text-muted);

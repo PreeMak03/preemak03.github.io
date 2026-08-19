@@ -881,6 +881,67 @@ export const SOUND_PROFILES = [
     },
     mix: { master: 70, bass: 55, edge: 35 },
   },
+  /* ---------------------------------------------------------------- CRANK --
+   * Firing-order synthesis (js/crank-audio.js). The sound identity lives in
+   * assets/crank/{id}.crank.json — engine{} here only supplies the rev window
+   * for the virtual gearbox, and tone{} is a Classic fallback if the CRANK
+   * engine ever fails to load. mix bass/edge are NEUTRAL at 50: that is the
+   * prototype's own balance, untouched.
+   */
+  {
+    id: 'jz-crank',
+    name: '1JZ · CRANK',
+    tag: 'Turbo I6 · silk',
+    car: 'Toyota JZA70 / JZX90 · 1JZ-GTE',
+    accent: 'rgba(244, 164, 66, 0.55)',
+    crank: true,
+    engine: {
+      type: 'ice',
+      cylinders: 6,
+      idleRpm: 750,
+      redlineRpm: 7200,
+      gears: [3.5, 2.2, 1.5, 1.15, 0.9],
+      rpmCurve: 0.88,
+      revLo: 0.16,
+      revHi: 0.52,
+      revPull: 0.88,
+    },
+    tone: {
+      harmonics: [0, 1, 0.86, 0.6, 0.42, 0.3, 0.24, 0.2, 0.16, 0.13, 0.1, 0.08, 0.07],
+      body: 0.86, mid: 0.55, high: 0.28, sub: 0.7, noise: 0.14, metallic: 0.12, scream: 0.15,
+      turbo: 0.85, turboLag: 0.55, crackle: 0.08, lope: 0.06, boxer: 0, rotary: 0, electric: 0,
+      exhaustPulse: 0.6, drive: 0.3, filterIdle: 300, filterRedline: 3600, resonance: 0.5,
+      volume: 1, idlePresence: 0.72, characterMid: 0.6,
+    },
+    mix: { master: 100, bass: 50, edge: 50 },
+  },
+  {
+    id: 'civic-crank',
+    name: 'Civic · CRANK',
+    tag: 'K20 · VTEC',
+    car: 'Honda Civic Type R · K20A',
+    accent: 'rgba(214, 63, 63, 0.55)',
+    crank: true,
+    engine: {
+      type: 'ice',
+      cylinders: 4,
+      idleRpm: 850,
+      redlineRpm: 8400,
+      gears: [3.27, 2.13, 1.52, 1.15, 0.92],
+      rpmCurve: 0.95,
+      revLo: 0.18,
+      revHi: 0.58,
+      revPull: 0.92,
+    },
+    tone: {
+      harmonics: [0, 1, 0.7, 0.52, 0.44, 0.36, 0.3, 0.26, 0.22, 0.18, 0.15, 0.12, 0.1],
+      body: 0.4, mid: 0.6, high: 0.7, sub: 0.28, noise: 0.12, metallic: 0.35, scream: 0.7,
+      turbo: 0, turboLag: 0, crackle: 0.18, lope: 0.04, boxer: 0, rotary: 0, electric: 0,
+      exhaustPulse: 0.5, drive: 0.4, filterIdle: 520, filterRedline: 7200, resonance: 0.55,
+      volume: 1, idlePresence: 0.68, characterMid: 0.58,
+    },
+    mix: { master: 100, bass: 50, edge: 50 },
+  },
 ];
 
 export function getProfileById(id) {
@@ -893,6 +954,8 @@ export function getProfileById(id) {
  */
 export const SHIP_ACTIVE_IDS = [
   'camaro-restomod',
+  'jz-crank',
+  'civic-crank',
   'camaro-vessel',
   'gentle-vessel',
   'rotary-vessel',

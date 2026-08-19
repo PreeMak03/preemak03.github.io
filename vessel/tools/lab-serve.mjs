@@ -13,6 +13,7 @@
  * GET  /__lab/classic?id=
  * GET  /__lab/classic-fields
  * POST /__lab/classic-save  { profile }  |  { id, path, value }
+ * POST /__lab/control-save  { global?, cars? }  merge runtime control into live-set.json (local)
  * POST /__lab/vessel-seal   re-run seal-vessel.mjs
  */
 import http from 'http';
@@ -141,6 +142,11 @@ function applyAndPush(action, payload) {
   const versions = payload.versions && typeof payload.versions === 'object' ? payload.versions : {};
   const now = new Date().toISOString();
 
+  // Preserve CommandRoom-authored runtime control (System + Tune tabs). These live in
+  // the SAME file (live-set.json = control.json) and must NOT be wiped by a carousel
+  // Apply/Deploy — carry them forward from disk.
+  const prev = readLive() || {};
+
   // optional vessel rebuild on full deploy
   if (action === 'deploy' && payload.buildVessel !== false) {
     const build = spawnSync(process.execPath, ['vessel/tools/build.mjs'], {
@@ -167,6 +173,8 @@ function applyAndPush(action, payload) {
     site: SITE,
     live,
     versions,
+    ...(prev.global && typeof prev.global === 'object' ? { global: prev.global } : {}),
+    ...(prev.cars && typeof prev.cars === 'object' ? { cars: prev.cars } : {}),
     deployPick: Array.isArray(payload.deployPick) ? payload.deployPick : live.slice(),
     lastPush: {
       at: now,
@@ -194,6 +202,11 @@ function applyAndPush(action, payload) {
       'js/vehicle-physics.js',
       'js/animations.js',
       'js/vessel-audio.js',
+      'js/vessel-rigs.js',
+      'js/crank-audio.js',
+      'js/crank-rigs.js',
+      'assets/crank/jz.crank.json',
+      'assets/crank/civic.crank.json',
       'js/vessel-runtime.worklet.js',
       'js/engine-waveguide.worklet.js',
       'js/audio-engine.js',
@@ -353,6 +366,45 @@ const server = http.createServer(async (req, res) => {
       send(res, result.ok ? 200 : 500, result);
     } catch (e) {
       send(res, 500, { ok: false, status: 'error', message: String(e.message || e) });
+    }
+    return;
+  }
+
+  // --- Runtime control (System + Tune tabs) ---
+  // Merge global{} / cars{} into live-set.json LOCALLY (no git). The app reads this file
+  // no-store so localhost preview reflects instantly; Deploy stages live-set.json to ship it.
+  // POST /__lab/control-save  { global?:{perf,masterTrim}, cars?:{ id:{vehicle,dynamics,cabin,synth}|null } }
+  if (p === '/__lab/control-save' && req.method === 'POST') {
+    try {
+      const body = await readBody(req);
+      const doc = readLive() || {
+        schema: 'tas-live-set/1',
+        source: 'command-room',
+        live: [],
+        versions: {},
+      };
+      if (body.global && typeof body.global === 'object') {
+        doc.global = { ...(doc.global || {}), ...body.global };
+      }
+      if (body.cars && typeof body.cars === 'object') {
+        doc.cars = doc.cars || {};
+        for (const [id, ov] of Object.entries(body.cars)) {
+          if (/[^\w.-]/.test(id)) continue;
+          if (ov == null) delete doc.cars[id];        // null = clear this car's override
+          else doc.cars[id] = ov;                     // full replace of that car's block
+        }
+        if (!Object.keys(doc.cars).length) delete doc.cars;
+      }
+      doc.updatedAt = new Date().toISOString();
+      writeLive(doc);
+      send(res, 200, {
+        ok: true,
+        message: 'Control saved (local) — Deploy to publish',
+        global: doc.global || {},
+        cars: doc.cars || {},
+      });
+    } catch (e) {
+      send(res, 500, { ok: false, message: String(e.message || e) });
     }
     return;
   }
@@ -533,7 +585,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`  http://localhost:${PORT}/vessel/command-room/`);
   console.log(`  API: POST /__lab/apply-online  POST /__lab/deploy  GET /__lab/status`);
   console.log(`  API: GET  /__lab/classic-list  GET /__lab/classic?id=  POST /__lab/classic-save`);
-  console.log(`  API: POST /__lab/vessel-seal`);
+  console.log(`  API: POST /__lab/control-save  POST /__lab/vessel-seal`);
   console.log(`  root: ${ROOT}`);
   console.log('');
 });
