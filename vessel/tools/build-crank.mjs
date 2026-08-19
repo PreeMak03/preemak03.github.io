@@ -117,18 +117,49 @@ const DYN_BASE = { dynDb: 7, dynCeiling: 0.9, shiftDuck: 0.4, overrunDuck: 0.7, 
  *                             "seconds to sweep the tacho under load".
  *   fallRpmPerSec             overrun drops faster than it climbs
  */
-function deriveMotion(spec) {
+function deriveMotion(spec, drive) {
   const inertia = spec.inertia ?? 0.7;
-  const shiftGlideSec = round3(0.055 + inertia * 0.038);
+  const span = spec.redlineRpm - spec.idleRpm;
+
+  // How far the revs actually fall at an upshift, in SEMITONES — because that,
+  // not the engine's weight, is what the ear has to sit through. Sizing the
+  // glide off the drop keeps the swoop RATE comparable between engines instead
+  // of letting a wide-rev-range engine whip through the same arc in less time.
+  const topRpm = spec.idleRpm + span * drive.revPull;
+  const landRpm = spec.idleRpm + span * (drive.revLo + 0.03);
+  const dropSt = 12 * Math.log2(topRpm / landRpm);
+
   const rise = Math.round(spec.redlineRpm / (0.35 + inertia * 0.7) / 100) * 100;
   return {
     glideSec: round3(0.022 + inertia * 0.012),
-    shiftGlideSec,
-    glideHoldSec: round3(shiftGlideSec * 2.2),
+    shiftGlideSec: round3(Math.min(0.16, Math.max(0.07, dropSt / 220))),
+    glideHoldSec: round3(Math.min(0.35, Math.max(0.15, (dropSt / 220) * 2.2))),
     riseRpmPerSec: rise,
     fallRpmPerSec: Math.round(rise * 1.25 / 100) * 100,
+    // Pitch-rate ceiling for the whole CRANK type, in semitones/second. The
+    // rpm/s caps above are engine character (a K20 does rev faster than a 1JZ);
+    // this is the ear's limit, and it only bites low in the rev range right
+    // after a shift, where rpm/s translates into the most pitch per second.
+    // Measured: without it the K20 spent 63% more frames above 80 st/s than the
+    // 1JZ and read as judder, while sounding identical by every level metric.
+    maxRiseStPerSec: 58,
+    maxFallStPerSec: 72,
   };
 }
+
+/**
+ * CAM — variable valve timing crossover, for `induction: 'vtec'`.
+ *
+ * Real VTEC latches: the rocker engages as revs climb past the switch point and
+ * does NOT release until well below it. Without that hysteresis the cam chases
+ * every rev swing — measured 10 swaps in 4 seconds of sim driving, because each
+ * gearshift drops the K20 from ~7,800 back to ~2,400 rpm straight through the
+ * threshold, flipping the engine's whole voice out and in each time.
+ *
+ * onAt/offAt are on the smoothed 0..1 cam signal, so the gap is a real latch
+ * rather than a second threshold the same noise can still straddle.
+ */
+const CAM = { onAt: 0.62, offAt: 0.34, dwellSec: 0.28 };
 
 /**
  * BOOST — forced induction, derived from the engine's own published numbers.
@@ -180,9 +211,13 @@ function deriveBoost(spec) {
  */
 function defaultsFor(spec) {
   return {
-    drive: { ...DRIVE_BASE, ...deriveMotion(spec), ...(spec.drive || {}) },
+    drive: (() => {
+      const window_ = { ...DRIVE_BASE, ...(spec.drive || {}) };   // rev window first
+      return { ...window_, ...deriveMotion(spec, window_), ...(spec.drive || {}) };
+    })(),
     dynamics: { ...DYN_BASE, ...(spec.dynamics || {}) },
     boost: deriveBoost(spec) ? { ...deriveBoost(spec), ...(spec.boost || {}) } : null,
+    cam: spec.induction === 'vtec' ? { ...CAM, ...(spec.cam || {}) } : null,
   };
 }
 
@@ -321,11 +356,12 @@ for (const spec of SPECS) {
   console.log(`  ${spec.code.padEnd(6)} -> assets/crank/${spec.id}.crank.json  ${kb} KB  (${Date.now() - t0} ms)`);
   // Show what the type defaults derived, so a new engine can be sanity-checked
   const d = doc.drive;
-  console.log(`         motion  glide ${d.glideSec}s / shift ${d.shiftGlideSec}s  rise ${d.riseRpmPerSec} rpm/s  fall ${d.fallRpmPerSec}`);
+  console.log(`         motion  glide ${d.glideSec}s / shift ${d.shiftGlideSec}s  rise ${d.riseRpmPerSec} rpm/s (<= ${d.maxRiseStPerSec} st/s)  fall ${d.fallRpmPerSec}`);
   console.log(
     doc.boost
       ? `         boost   on ${doc.boost.onsetRpm} -> full ${doc.boost.fullRpm} @ ${doc.boost.peakBar} bar, taper from ${doc.boost.taperRpm} to ${doc.boost.taperTo}, offGain ${doc.boost.offGain}`
       : `         boost   none (${spec.induction})`,
   );
+  if (doc.cam) console.log(`         cam     latch on ${doc.cam.onAt} / off ${doc.cam.offAt}, dwell ${doc.cam.dwellSec}s`);
 }
 console.log('CRANK compile done.');

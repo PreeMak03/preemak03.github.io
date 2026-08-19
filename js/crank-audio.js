@@ -76,10 +76,14 @@ const DEFAULT_MIXER = { exhaust: 0.92, intake: 0.58, mechanical: 0.34, induction
  */
 const DEFAULT_DRIVE = {
   revLo: 0.17, revHi: 0.55, revPull: 0.9, floorLo: 1300, floorHi: 1800,
-  glideSec: 0.03, shiftGlideSec: 0.085, glideHoldSec: 0.19,
+  glideSec: 0.03, shiftGlideSec: 0.09, glideHoldSec: 0.2,
   riseRpmPerSec: 8000, fallRpmPerSec: 10000,
+  maxRiseStPerSec: 58, maxFallStPerSec: 72,
 };
 const DEFAULT_DYN = { dynDb: 7, dynCeiling: 0.9, shiftDuck: 0.4, overrunDuck: 0.7, idlePresence: 0.7 };
+
+/** VVT latch — used if a vtec profile ships without a cam block. */
+const DEFAULT_CAM = { onAt: 0.62, offAt: 0.34, dwellSec: 0.28 };
 
 /** Generic small-turbo curve — used only if a turbo profile ships without one. */
 const DEFAULT_BOOST = {
@@ -87,6 +91,9 @@ const DEFAULT_BOOST = {
   crossRpm: 2900, spoolSec: 0.36, spoolFastSec: 0.18, bleedSec: 0.16,
   loadLo: 0.08, loadHi: 0.55, offGain: 0.62, intakeGain: 0.45,
 };
+
+/** d(semitones)/dt = ST x (drpm/dt) / rpm — converts a rev rate into a pitch rate. */
+const ST = 12 / Math.LN2;
 
 /** Crank-cycle frequency: one full 720-degree cycle per revolution pair. */
 const cycleHz = (rpm) => rpm / 120;
@@ -199,6 +206,8 @@ export class CrankAudio {
     this._boost = 0;
     this._vtec = 0;
     this._sharpCam = false;
+    this._camHold = 0;         // min seconds between cam changes (VVT latch)
+    this._camSpec = null;
     this._limiter = false;
     this._jitter = 0;
     this._effort = 0;
@@ -285,6 +294,9 @@ export class CrankAudio {
     } else {
       this._boostSpec = null;
     }
+    this._camSpec = this._spec.induction === 'vtec'
+      ? { ...DEFAULT_CAM, ...(doc.cam || {}) }
+      : null;
     // A profile card may override the rev window without recompiling the JSON
     const e = this._profile && this._profile.engine;
     if (e) {
@@ -699,9 +711,15 @@ export class CrankAudio {
         // down low and then suddenly does not.
         const next = damp(this._rpm, clamp(targetRpm, idle * 0.85, redline * 1.05), rpmLambda, dt);
         const delta = next - this._rpm;
-        const riseCap = d.riseRpmPerSec
-          * (s.induction === 'turbo' ? 0.5 + 0.5 * this._boost : 1) * dt;
-        const fallCap = d.fallRpmPerSec * dt;
+        const engineRise = d.riseRpmPerSec
+          * (s.induction === 'turbo' ? 0.5 + 0.5 * this._boost : 1);
+        // The same rpm/s is far more pitch per second down low than up high, so a
+        // pure rpm/s cap lets a wide-range engine swoop away right after a shift
+        // while a heavier one sounds fine on identical numbers. Cap the PITCH
+        // rate too — it only binds at low rpm, which is exactly where it should.
+        const byPitch = Math.max(idle, this._rpm) * d.maxRiseStPerSec / ST;
+        const riseCap = Math.min(engineRise, byPitch) * dt;
+        const fallCap = Math.min(d.fallRpmPerSec, Math.max(idle, this._rpm) * d.maxFallStPerSec / ST) * dt;
         this._rpm += delta >= 0 ? Math.min(delta, riseCap) : Math.max(delta, -fallCap);
 
         load = clamp(accelLoad * 0.85 + decelLoad * 0.25 + (speed > 5 ? 0.08 : 0), 0, 1);
@@ -844,11 +862,14 @@ export class CrankAudio {
     v.panL.pan.setTargetAtTime(-s.stereoWidth, t, 0.1);
     v.panR.pan.setTargetAtTime(s.stereoWidth, t, 0.1);
 
-    // --- VTEC cam crossover ----------------------------------------------
-    if (s.induction === 'vtec' && this._vtecWaves) {
-      const sharp = this._vtec > 0.55;
-      if (sharp !== this._sharpCam) {
+    // --- VTEC cam crossover (latched, like the real rocker) ---------------
+    this._camHold -= dt;
+    if (s.induction === 'vtec' && this._vtecWaves && this._camSpec) {
+      const c = this._camSpec;
+      const sharp = this._sharpCam ? this._vtec > c.offAt : this._vtec > c.onAt;
+      if (sharp !== this._sharpCam && this._camHold <= 0) {
         this._sharpCam = sharp;
+        this._camHold = c.dwellSec;
         this._applyWaves(v, sharp ? this._vtecWaves : this._waves);
       }
     }
