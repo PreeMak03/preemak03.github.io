@@ -19,7 +19,32 @@ function mkRnd(seed) {
 const bench = {
   a: null,
 
+  /** Rig the CLASSIC engine instead, as the reference mechanism. */
+  async rigClassic(id = 'classic-muscle') {
+    const { AudioEngine } = await import(`/js/audio-engine.js?v=${Date.now()}`);
+    const m = await import('/js/profiles.js');
+    await m.loadClassicStandards();
+    const a = new AudioEngine();
+    a.setProfile(m.getProfileById(id));
+    await a.start();
+    a.setMasterVolume(0.0001);
+    this.a = a;
+    this.classic = true;
+    return `${id} (classic) · pitchCeiling=${a._rpmCeiling}`;
+  },
+
+  /** Whatever the engine actually plays, as a frequency. */
+  played() {
+    const a = this.a;
+    if (this.classic) {
+      const src = a._layers && a._layers.low && a._layers.low.src;
+      return src ? src.playbackRate.value : 0;
+    }
+    return a._voices ? a._voices[a._active].oscL.frequency.value : 0;
+  },
+
   async rig(id = 'jz-crank') {
+    this.classic = false;
     const { CrankAudio } = await import(`/js/crank-audio.js?v=${Date.now()}`);
     const { getProfileById } = await import('/js/profiles.js');
     const a = new CrankAudio();
@@ -48,7 +73,7 @@ const bench = {
     const rnd = mkRnd(seed);
     const gear0 = a.gearIndex;
     let prevSpeed = null, prevT = 0, reported = holdSpeed, accel = 0, lastFix = 0;
-    const R = [], AL = [];
+    const R = [], AL = [], F = [];
     const t0 = performance.now();
     while ((performance.now() - t0) / 1000 < seconds) {
       const t = (performance.now() - t0) / 1000;
@@ -61,20 +86,30 @@ const bench = {
       }
       a.setSpeed(reported, { accelKmhps: accel });
       R.push(a.rpm); AL.push(accel);
+      // The ear hears the OSCILLATOR, not the model's rpm. Once a pitch ceiling
+      // maps one onto the other they are no longer the same number, so the
+      // judder metric has to come from the played frequency.
+      F.push(this.played());
       await this.wait();
     }
     const mean = (x) => x.reduce((p, c) => p + c, 0) / x.length;
     const sd = (x) => { const m = mean(x); return Math.sqrt(mean(x.map((v) => (v - m) ** 2))); };
-    let mx = 0;
-    for (let i = 1; i < R.length; i++) {
-      const r = Math.abs(12 * Math.log2(R[i] / R[i - 1])) / 0.025;
-      if (r > mx) mx = r;
+    // Pitch statistics from the played frequency.
+    let mx = 0; const rates = [];
+    for (let i = 1; i < F.length; i++) {
+      if (F[i] > 1 && F[i - 1] > 1) {
+        const r = Math.abs(12 * Math.log2(F[i] / F[i - 1])) / 0.025;
+        rates.push(r); if (r > mx) mx = r;
+      }
     }
+    rates.sort((x, y) => x - y);
     const swing = Math.max(...R) - Math.min(...R);
+    const fSwingSt = 12 * Math.log2(Math.max(...F) / Math.max(1e-6, Math.min(...F)));
     return {
       label, gear: gear0, meanRpm: +mean(R).toFixed(0), swingRpm: +swing.toFixed(0),
-      swingSt: +((17.31 * swing) / mean(R)).toFixed(2), accelSd: +sd(AL).toFixed(2),
-      noiseEst: +(a._accelNoise || 0).toFixed(2), pitchMax: +mx.toFixed(1),
+      playedSwingSt: +fSwingSt.toFixed(2),
+      pitchP90: +(rates[Math.floor(rates.length * 0.9)] || 0).toFixed(2),
+      pitchMax: +mx.toFixed(1), accelSd: +sd(AL).toFixed(2),
     };
   },
 

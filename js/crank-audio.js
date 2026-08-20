@@ -79,8 +79,6 @@ const DEFAULT_DRIVE = {
   glideSec: 0.03, shiftGlideSec: 0.09, glideHoldSec: 0.2,
   riseRpmPerSec: 8000, fallRpmPerSec: 10000,
   maxRiseStPerSec: 58, maxFallStPerSec: 72,
-  mechSweep: 0.17, mechSpeedLambda: 2.0, liftFloor: 1.2, liftNoiseK: 1.5, liftNoiseMax: 4,
-  liftAttack: 3.5, liftRelease: 1.2,
 };
 const DEFAULT_DYN = { dynDb: 7, dynCeiling: 0.9, shiftDuck: 0.4, overrunDuck: 0.7, idlePresence: 0.7 };
 
@@ -96,6 +94,9 @@ const DEFAULT_BOOST = {
 
 /** d(semitones)/dt = ST x (drpm/dt) / rpm — converts a rev rate into a pitch rate. */
 const ST = 12 / Math.LN2;
+
+/** km/h/s. Below this the acceleration reading is scatter (classic parity). */
+const ACCEL_DEADBAND = 1.5;
 
 /** Crank-cycle frequency: one full 720-degree cycle per revolution pair. */
 const cycleHz = (rpm) => rpm / 120;
@@ -193,7 +194,7 @@ export class CrankAudio {
     this._boostSpec = null;
 
     // Vehicle input
-    this._speed = 0; this._speedSmooth = 0; this._speedMech = 0;
+    this._speed = 0; this._speedSmooth = 0;
     this._accel = 0; this._accelSmooth = 0;
     this._throttle = 0; this._brake = 0;
 
@@ -212,13 +213,12 @@ export class CrankAudio {
     this._camSpec = null;
     this._limiter = false;
     this._jitter = 0;
-    this._accelPrev = 0;
-    this._accelNoise = 0;  // running estimate of the accel channel's own scatter
-    this._lift = 0;        // smoothed "engine is working" term (see _driveModel)
-    this._liftNeg = 0;     // same, for engine braking
     this._effort = 0;
     this._effortHold = 0;
     this._idlePhase = 0;
+    this._breathePhase = 0;
+    this._paramTick = 0;
+    this._lastParam = new WeakMap();
     this._holdRpm = null;
 
     // Shift / crank phases
@@ -387,7 +387,17 @@ export class CrankAudio {
 
     this.running = true;
     const tickMs = this._lite ? 33 : 20;
-    this._timer = setInterval(() => this._tick(tickMs / 1000), tickMs);
+    // Measured wall-clock dt, like the classic engine. A fixed nominal dt makes
+    // every damp() integrate the wrong amount whenever the timer slips, which on
+    // a busy MCU is often — the filters then run faster or slower than tuned.
+    this._lastTickWall = performance.now();
+    this._timer = setInterval(() => {
+      const now = performance.now();
+      let dt = (now - this._lastTickWall) / 1000;
+      this._lastTickWall = now;
+      if (!(dt > 0) || dt > 0.25) dt = tickMs / 1000;
+      this._tick(dt);
+    }, tickMs);
   }
 
   stop() {
@@ -489,6 +499,18 @@ export class CrankAudio {
       panL, panR, intakeBp, intakeGain, combBp, combGain,
       mechHp, mechGain, turboBp, turboGain, whistleGain, sum, voiceGain,
     };
+  }
+
+  /**
+   * Set an AudioParam only when it has actually moved (classic's `setRate`).
+   * A change smaller than `eps` is inaudible, so sending it buys nothing and
+   * costs one automation event per parameter per tick.
+   */
+  _setParam(param, value, t, tau, eps) {
+    const prev = this._lastParam.get(param);
+    if (prev != null && Math.abs(prev - value) < eps) return;
+    this._lastParam.set(param, value);
+    param.setTargetAtTime(value, t, tau);
   }
 
   _applyWaves(voice, waves) {
@@ -614,53 +636,15 @@ export class CrankAudio {
     this._speedSmooth = damp(this._speedSmooth, this._speed, smoothL, dt);
     this._accelSmooth = damp(this._accelSmooth, this._accel, this.smoothFilter ? 10 : 18, dt);
     const speed = this.speedReactive ? this._speedSmooth : Math.max(this._speedSmooth, 40);
-    // Heavily filtered speed, used ONLY for the rev sweep inside a gear. Gear
-    // selection keeps the prompt one above.
-    this._speedMech = damp(this._speedMech, speed, d.mechSpeedLambda, dt);
 
-    // Soft gate at the accelerometer's noise floor. SUBTRACTING the floor rather
-    // than zeroing below it keeps the curve continuous — a hard threshold is a
-    // step nonlinearity and would judder on its own every time the signal
-    // crossed back and forth.
-    // How much does the acceleration estimate jitter FIX TO FIX? That scatter is
-    // the channel's noise floor, and it is not a constant — it depends on how
-    // good the fix is right now. Gate at a multiple of it, never below the
-    // clean-fix floor and never above a bounded multiple of it.
-    //
-    // Event-driven on purpose: GPS delivers ~1 fix/s while this ticks at 50 Hz,
-    // so averaging every tick would fold 49 zeros into every real sample and
-    // report a noise floor near zero however bad the fix actually was.
-    if (this._accel !== this._accelPrev) {
-      const jump = Math.abs(this._accel - this._accelPrev);
-      this._accelPrev = this._accel;
-      this._accelNoise = this._accelNoise * 0.8 + jump * 0.2;
-    }
-    const gate = Math.min(d.liftFloor * d.liftNoiseMax,
-      Math.max(d.liftFloor, this._accelNoise * d.liftNoiseK));
-
-    // Subtracting the gate would shift the WHOLE scale down, so after a stretch
-    // of bad GPS a genuine full-throttle pull would come up short (measured
-    // 5320 rpm instead of 6006). Rescale what survives so full acceleration
-    // still means full lift, while anything near the noise floor stays at zero.
-    const ref = this.accelRefKmhps;
-    const aRaw = this._accelSmooth;
-    const span_ = Math.max(1, ref - gate);
-    const aClean = Math.sign(aRaw) * Math.max(0, Math.abs(aRaw) - gate) * (ref / span_);
-    const aNorm = clamp(aClean / ref, -1.4, 1.4);
+    // Classic parity: below this the reading is GPS scatter, not the road.
+    let accelForLoad = this._accelSmooth;
+    if (Math.abs(accelForLoad) < ACCEL_DEADBAND) accelForLoad = 0;
+    const aNorm = clamp(accelForLoad / this.accelRefKmhps, -1.4, 1.4);
     let accelLoad = clamp(aNorm, 0, 1);
     let decelLoad = clamp(-aNorm, 0, 1);
     accelLoad = Math.max(accelLoad, this._throttle * 0.85);
     decelLoad = Math.max(decelLoad, this._brake * 0.85);
-
-    // Then put what survives on a leash. This is transmission slip: a real
-    // automatic takes about a second to change how hard it holds the engine, so
-    // the physically honest time constant is also the one that filters what is
-    // left of the derivative noise. Asymmetric — tip-in should feel prompt,
-    // lift-off should trail.
-    this._lift = damp(this._lift, accelLoad,
-      accelLoad > this._lift ? d.liftAttack : d.liftRelease, dt);
-    this._liftNeg = damp(this._liftNeg, decelLoad,
-      decelLoad > this._liftNeg ? d.liftAttack : d.liftRelease, dt);
 
     this._idlePhase += dt;
     let load;
@@ -732,29 +716,23 @@ export class CrankAudio {
         }
         this._gearBias = gearToneBias(this._gear);
 
-        // Mechanical term: the gear's own rev sweep, driven by SPEED. Centred on
-        // the gear's existing cruise rpm (gp 0.5), so mean cruise revs stay where
-        // they were — what changes is that the movement now comes from the car
-        // actually going faster, not from noise in a derivative.
-        const gp = clamp(gearProgress(this._speedMech, this._gear), 0, 1.15);
-        const cruiseRpm = rpmInGear({
-          gear: this._gear, idle, redline,
-          accelLoad: 0, decelLoad: 0,
-          revLo: d.revLo, pull: d.revPull, floorLo: d.floorLo, floorHi: d.floorHi,
+        let targetRpm = rpmInGear({
+          gear: this._gear,
+          idle,
+          redline,
+          accelLoad,
+          decelLoad,
+          revLo: d.revLo,
+          pull: d.revPull,
+          floorLo: d.floorLo,
+          floorHi: d.floorHi,
         });
-        const nMech = (cruiseRpm - idle) / span + (gp - 0.5) * d.mechSweep;
-
-        // Lift: how far toward the pull ceiling the smoothed workload takes it.
-        // Constant speed -> lift decays to 0 -> revs sit at the mechanical value
-        // and hold still, which is the entire point.
-        const headroom = Math.max(0, d.revPull - nMech);
-        const n = nMech + this._lift * headroom - this._liftNeg * 0.12;
-        let targetRpm = idle + span * clamp(n, d.revLo * 0.4, 1.02);
-        // Heavier rotating mass = lazier revs (1JZ 0.95 vs K20 0.5)
-        const inertiaL = 1 / clamp(0.45 + s.inertia * 0.75, 0.5, 1.6);
-        let rpmLambda = (this.smoothFilter ? 7 : 12) * inertiaL;
-        if (accelLoad > 0.4) rpmLambda = (10 + accelLoad * 5) * inertiaL;
-        if (decelLoad > 0.4) rpmLambda = (9 + decelLoad * 4) * inertiaL;
+        // Classic's rates, verbatim. CRANK was chasing the target roughly twice as
+        // fast (6-15 against 3.6-8.5), which on a single oscillator means it
+        // tracked GPS scatter straight into the pitch.
+        let rpmLambda = this.smoothFilter ? 3.6 : 5.5;
+        if (accelLoad > 0.35) rpmLambda = 6 + accelLoad * 2.5;
+        if (decelLoad > 0.35) rpmLambda = 5.5 + decelLoad * 2;
         if (this._shifting) {
           rpmLambda = 18;
           targetRpm = this._rpm * 0.94 + targetRpm * 0.06;
@@ -852,10 +830,25 @@ export class CrankAudio {
       this._vtec = 0;
     }
 
+    // --- rev wander (classic parity) --------------------------------------
+    // Real revs are never frozen on a number, even holding a gear floor. Classic
+    // writes this into the rpm it plays AND displays, while gear selection keeps
+    // using the clean value. CRANK had nothing, so it sat dead flat.
+    this._breathePhase += dt;
+    const bp = this._breathePhase;
+    const lopeCh = s.idleHunt / 20;
+    const wanderAmp = (18 + lopeCh * 62) * (1.15 - Math.min(1, rpmNorm) * 0.65);
+    const wander = wanderAmp * (
+      0.5 * Math.sin(bp * 2.1) + 0.3 * Math.sin(bp * 5.3) + 0.2 * Math.sin(bp * (3.5 + lopeCh * 4))
+    );
+    const rpmPlayed = rpm + (this._speedSmooth > 2 ? wander : 0);
+
     // --- combustion micro-jitter (kills the perfect-loop tell) ------------
-    const jAmt = 0.003 + (1 - rpmNorm) * 0.007 + load * 0.0025;
-    this._jitter = damp(this._jitter, (Math.random() * 2 - 1) * jAmt, 4, dt);
-    const rpmOut = rpm * (1 + this._jitter);
+    // Classic's amounts. CRANK was running up to 4x more grain, which on a pure
+    // oscillator is continuous roughness rather than texture.
+    const jAmt = 0.0012 + (1 - rpmNorm) * 0.002 + load * 0.0008;
+    this._jitter = damp(this._jitter, (Math.random() * 2 - 1) * jAmt, 2.4, dt);
+    const rpmOut = rpmPlayed * (1 + this._jitter);
 
     // --- oscillators ------------------------------------------------------
     // Pitch glide. The gearbox SNAPS rpm on a shift (6400 -> 2200 in one step);
@@ -864,11 +857,31 @@ export class CrankAudio {
     // arrives as a click. (Launch Rev never exposed this: its script ramps rpm.)
     const d = this._drive;
     const glide = (this._shifting || this._glideHold > 0) ? d.shiftGlideSec : d.glideSec;
-    const f = cycleHz(Math.max(rpmOut, 1));
-    v.oscL.frequency.setTargetAtTime(f, t, glide);
-    v.oscR.frequency.setTargetAtTime(f, t, glide);
-    v.oscIntake.frequency.setTargetAtTime(f, t, glide);
-    v.oscMech.frequency.setTargetAtTime(Math.max(1, f * 2), t, glide);
+
+    // Pitch ceiling (classic parity). The readout still reaches the real
+    // redline, but everything that sets a PLAYED frequency runs on a rev range
+    // mapped onto idle..rpmCeiling. Classic has capped this at 4800 since the
+    // harshness complaint; muscle's own redline is 4500, so muscle is untouched
+    // by it — part of why muscle sounds settled. A 7200 rpm profile playing its
+    // full range is both brighter and 1.6x more sensitive, in semitones, to any
+    // rev error at all.
+    const ceilRpm = Math.min(s.redlineRpm, d.rpmCeiling || 4800);
+    const pitchRpm = s.idleRpm
+      + ((rpmOut - s.idleRpm) * (ceilRpm - s.idleRpm)) / Math.max(1, s.redlineRpm - s.idleRpm);
+
+    // Push at ~25 Hz, and skip anything smaller than the epsilon. Classic has
+    // done both since the start; CRANK pushed every parameter every tick, so a
+    // sub-audible rev wobble still became a fresh automation ramp 50 times a
+    // second. Fewer events is also strictly less work for the audio thread.
+    this._paramTick++;
+    const pushAudio = (this._paramTick & 1) === 0;
+    const f = cycleHz(Math.max(pitchRpm, 1));
+    if (pushAudio) {
+      this._setParam(v.oscL.frequency, f, t, glide, f * 0.004);
+      this._setParam(v.oscR.frequency, f, t, glide, f * 0.004);
+      this._setParam(v.oscIntake.frequency, f, t, glide, f * 0.004);
+      this._setParam(v.oscMech.frequency, Math.max(1, f * 2), t, glide, f * 0.008);
+    }
 
     const whistleHz = s.induction === 'turbo'
       ? 1800 + this._boost * 7400 + rpm * 0.22
