@@ -90,7 +90,7 @@ const DEFAULT_SPACE = {
 };
 
 const DEFAULT_DYN = {
-  dynDb: 21, dynCeiling: 0.92, shiftDuck: 0.9, overrunDuck: 0.9,
+  dynDb: 16, dynCeiling: 0.56, shiftDuck: 0.9, overrunDuck: 0.9,
   idlePresence: 0.55, loadBoost: 0.22, floorBias: 0.7,
 };
 
@@ -289,8 +289,9 @@ export class CrankAudio {
 
     // UI overrides (App System)
     this._masterOverride = null;
-    this._masterScale = 1.1;
+    this._masterScale = 1.3;
     this._outputTrim = 1;
+    this._makeup = 1;
     this._space = { ...DEFAULT_SPACE };
     this._bass = 0.5;
     this._edge = 0.5;
@@ -346,8 +347,9 @@ export class CrankAudio {
     this._mixer = { ...DEFAULT_MIXER, ...(doc.mixer || {}) };
     this._drive = { ...DEFAULT_DRIVE, ...(doc.drive || {}) };
     this._dyn = { ...DEFAULT_DYN, ...(doc.dynamics || {}) };
-    this._masterScale = doc.masterScale ?? 1.1;
+    this._masterScale = doc.masterScale ?? 1.3;
     this._outputTrim = doc.outputTrim ?? 1;
+    this._makeup = doc.makeup ?? 1;
     this._space = { ...DEFAULT_SPACE, ...(doc.space || {}) };
     // Every forced-induction CRANK profile gets a boost curve, compiled or not.
     if (doc.boost) {
@@ -646,20 +648,27 @@ export class CrankAudio {
     analyser.fftSize = 2048;
     analyser.smoothingTimeConstant = 0.72;
 
-    // Loudness makeup BEFORE the limiter, so cruise uses the headroom cleanly
-    // and only peaks ever touch it. Raising `master` instead would just push the
-    // whole signal into the brick wall.
+    // Makeup is 1.0 by default and exists only as a per-profile escape hatch.
+    // It used to be a flat 1.4, chosen when there was no outputTrim and no
+    // masterScale. Once those arrived the three stacked — trim 1.41 x makeup 1.4
+    // x master 1.1, about double — and drove the limiter to 9.3 dB of average
+    // gain reduction (14.6 dB worst) on every pull. A limiter working that hard
+    // is not catching peaks, it is pumping, and pumping is what the owner heard
+    // as heavy judder. Level belongs in trim/master, not in a limiter.
     const makeup = ctx.createGain();
-    makeup.gain.value = 1.4;
+    makeup.gain.value = this._makeup;
 
-    // Peak catcher, not a leveller — it only touches transients, so the dyn
-    // curve survives while the speakers stay protected.
+    // Classic's limiter settings verbatim, including the reason written above
+    // them there: "ultra-fast release was pumping with dyn swings". It must sit
+    // idle through normal driving — the brick wall below is what actually stops
+    // peaks, and being memoryless it cannot pump. A compressor doing steady
+    // multi-dB reduction has time constants, and those are audible as judder.
     const limiter = ctx.createDynamicsCompressor();
-    limiter.threshold.value = -6;
-    limiter.knee.value = 3;
-    limiter.ratio.value = 20;
-    limiter.attack.value = 0.002;
-    limiter.release.value = 0.09;
+    limiter.threshold.value = -1.5;
+    limiter.knee.value = 2;
+    limiter.ratio.value = 12;
+    limiter.attack.value = 0.003;
+    limiter.release.value = 0.12;
 
     // Final brick wall, after master, so nothing leaves above full scale no
     // matter what the volume slider or a profile asks for.

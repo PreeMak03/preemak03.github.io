@@ -106,7 +106,7 @@ const DRIVE_BASE = { revLo: 0.17, revHi: 0.55, revPull: 0.9, floorLo: 1300, floo
 // classic at cruise with less than half its dynamic range, which is why dynamic
 // volume was inaudible in the car.
 const DYN_BASE = {
-  dynDb: 21, dynCeiling: 0.92, shiftDuck: 0.9, overrunDuck: 0.9,
+  dynDb: 16, dynCeiling: 0.56, shiftDuck: 0.9, overrunDuck: 0.9,
   idlePresence: 0.55, loadBoost: 0.22, floorBias: 0.7,
 };
 
@@ -118,10 +118,14 @@ const DYN_BASE = {
  * one oscillator turns load straight into pitch and level with nothing masking
  * it, so it gets a slacker reference.
  */
-const ACCEL_REF_KMHPS = 32;
+const ACCEL_REF_KMHPS = 28;
 
 /** Slider 100 lands here. The mix is conservative, so 100 alone was quiet. */
-const MASTER_SCALE = 1.1;
+// Level lives AFTER the limiter on purpose. Putting it before would feed the
+// limiter a hotter signal and bring back the multi-dB gain reduction that was
+// pumping; after it, the only thing in the way is the memoryless brick wall,
+// which cannot pump because it has no time constants.
+const MASTER_SCALE = 1.3;
 
 /**
  * Output trim — levels the CARDS, not the engines.
