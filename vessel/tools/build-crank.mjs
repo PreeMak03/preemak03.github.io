@@ -60,7 +60,6 @@ const SPECS = [
     // Overrides — rev window only. Glide, inertia and the boost curve are
     // derived from the numbers above by the CRANK type defaults.
     drive: { revLo: 0.16, revHi: 0.52, revPull: 0.88, floorLo: 1250, floorHi: 1750 },
-    dynamics: { overrunDuck: 0.72, idlePresence: 0.72 },
   },
   {
     id: 'civic', code: 'Civic', name: 'K20A', car: 'Civic Type R',
@@ -74,7 +73,6 @@ const SPECS = [
     stereoWidth: 0.22, inertia: 0.5, vtecRpm: 5800,
     notes: '2.0 I4. i-VTEC locks a wilder cam at ~5,800 rpm.',
     drive: { revLo: 0.18, revHi: 0.58, revPull: 0.92, floorLo: 1400, floorHi: 1950 },
-    dynamics: { dynDb: 8, shiftDuck: 0.38, idlePresence: 0.68 },
   },
 ];
 
@@ -96,8 +94,77 @@ const round3 = (x) => Math.round(x * 1000) / 1000;
 /** Rev window for the TAS virtual gearbox. Per-engine character; overridable. */
 const DRIVE_BASE = { revLo: 0.17, revHi: 0.55, revPull: 0.9, floorLo: 1300, floorHi: 1800 };
 
-/** In-car loudness curve (js/dynamic-volume.js). Gentle by default. */
-const DYN_BASE = { dynDb: 7, dynCeiling: 0.9, shiftDuck: 0.4, overrunDuck: 0.7, idlePresence: 0.7 };
+/**
+ * In-car loudness curve (js/dynamic-volume.js).
+ *
+ * Calibrated against classic-muscle, which is the reference the owner drives by.
+ * Measured in the car's own terms (sim cruise at 60 vs a full pull):
+ *   classic-muscle  cruise -25.3 dB   pull -4.9 dB   range 20.4 dB
+ *   CRANK at dynDb 7  cruise -16.4 dB   pull -7.9 dB   range  8.5 dB
+ * i.e. it sat 9 dB too loud at cruise and had less than half the range, which
+ * is why dynamic volume "did nothing". dynDb 18 + loadBoost bring cruise down
+ * to a couple of dB above classic — the brief was quieter, but not as quiet.
+ */
+const DYN_BASE = {
+  dynDb: 18, dynCeiling: 0.92, shiftDuck: 0.55, overrunDuck: 0.62,
+  idlePresence: 0.55, loadBoost: 0.22, floorBias: 0.7,
+};
+
+/**
+ * SPACE — cabin staging, mirrored from the classic engine (js/audio-engine.js).
+ *
+ * Why CRANK needed this: the prototype ends in one mono chain fed to a pair of
+ * opposed panners, and panning the SAME signal left and right just rebuilds the
+ * mono — measured, the two cancel back to a single point source. On a phone
+ * that passes; in a car it is obviously one speaker. Inline engines make it
+ * worse, since an I4/I6 has no left/right bank to separate in the first place.
+ *
+ * So the width has to be made, not panned: split the exhaust off below the
+ * crossover, delay it by a rear-wall reflection and place it BEHIND the
+ * listener with an HRTF panner, keep the mechanical top end dry and in front,
+ * and feed a short decorrelated stereo IR for the cabin tail.
+ */
+const SPACE_BASE = {
+  // TWO rear reflections, not one. A single HRTF source sitting straight behind
+  // you is on the median plane, where the left and right ear responses are
+  // identical — measured, it produced no side energy at all (side/mid 0.020
+  // against classic-muscle's 0.067, which is the difference the owner heard as
+  // "one speaker"). Two taps at opposite x with different path lengths give a
+  // real inter-channel difference, which is what the ear reads as a space.
+  rearDelaySec: 0.021,   // near rear-wall reflection lag
+  rearSpreadSec: 0.009,  // the far tap arrives this much later
+  rearX: 1.15,           // metres either side
+  rearZ: 2,              // metres behind (listener faces -z)
+  rearGain: 1.15,        // offset HRTF distance loss (split across the taps)
+  reverbSec: 0.26,       // small cabin
+  reverbDecay: 3.4,
+  frontSend: 0.35,       // front band only gets a touch of tail
+};
+
+/**
+ * Output trim — levels the CARDS, not the engines.
+ *
+ * `body` is a voicing figure (1JZ 0.86, K20 0.40), so left alone the I4 card
+ * simply plays quieter than the I6 card: measured -29.1 dB at cruise against
+ * the 1JZ's -24.0 and classic-muscle's -25.7. An engine being intrinsically
+ * thinner is correct; a card the owner has to reach for the volume knob for is
+ * not. This puts every CRANK profile in the same window and leaves the voicing
+ * differences intact.
+ */
+function deriveOutputTrim(spec) {
+  const body = spec.body || 0.5;
+  return round3(Math.min(1.7, Math.max(0.85, (0.86 / body) ** 0.62)));
+}
+
+/** Crossover + wet scale follow the engine's own exhaust pitch and width. */
+function deriveSpace(spec) {
+  return {
+    ...SPACE_BASE,
+    // Everything below the exhaust fundamental region goes behind you
+    crossoverHz: Math.round(Math.min(420, Math.max(220, spec.exhaustHz * 1.15))),
+    reverbWet: round3(0.16 + (spec.stereoWidth ?? 0.3) * 0.2),
+  };
+}
 
 /**
  * MOTION — how fast the sound is allowed to move. This is the anti-judder half
@@ -218,6 +285,8 @@ function defaultsFor(spec) {
     dynamics: { ...DYN_BASE, ...(spec.dynamics || {}) },
     boost: deriveBoost(spec) ? { ...deriveBoost(spec), ...(spec.boost || {}) } : null,
     cam: spec.induction === 'vtec' ? { ...CAM, ...(spec.cam || {}) } : null,
+    space: { ...deriveSpace(spec), ...(spec.space || {}) },
+    outputTrim: spec.outputTrim ?? deriveOutputTrim(spec),
   };
 }
 
@@ -363,5 +432,6 @@ for (const spec of SPECS) {
       : `         boost   none (${spec.induction})`,
   );
   if (doc.cam) console.log(`         cam     latch on ${doc.cam.onAt} / off ${doc.cam.offAt}, dwell ${doc.cam.dwellSec}s`);
+  console.log(`         space   rear below ${doc.space.crossoverHz} Hz, wet ${doc.space.reverbWet}   dyn ${doc.dynamics.dynDb} dB   trim ${doc.outputTrim}x`);
 }
 console.log('CRANK compile done.');
