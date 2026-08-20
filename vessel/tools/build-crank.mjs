@@ -287,8 +287,13 @@ function deriveMotion(spec, drive) {
     // after a shift, where rpm/s translates into the most pitch per second.
     // Measured: without it the K20 spent 63% more frames above 80 st/s than the
     // 1JZ and read as judder, while sounding identical by every level metric.
-    maxRiseStPerSec: 58,
-    maxFallStPerSec: 72,
+    // Re-sized against classic measured on the same bench once the pitch metric
+    // was fixed: classic climbs at 44 st/s p90, and 58 let civic-crank ride the
+    // cap at 59 -- the profile the owner singled out as juddering where the 1JZ
+    // does not. 46 puts both CRANK profiles on classic's number. The 1JZ barely
+    // moves either way; its riseRpmPerSec binds first.
+    maxRiseStPerSec: 46,
+    maxFallStPerSec: 57,
   };
 }
 

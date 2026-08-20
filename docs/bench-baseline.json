@@ -1,69 +1,67 @@
 {
   "takenAt": "2026-08-21",
-  "note": "Baseline v4 — after items 1 and 2. Master pinned at 1, bass 0.5.",
+  "note": "Baseline v5 — after items 1, 2 and 4, with the corrected pull window, pitch metric, and pinned level controls. This is the row to diff against.",
   "pinned": {
     "master": 1,
     "bass": 0.5
   },
   "fixed": [
-    "item 1: light-throttle lift (cruiseLoad added, not maxed)",
-    "item 2: rev breathing (gauge showed the clean value; wander was 2.9x short)"
+    "item 1: light throttle made the car quieter — cruiseLoad added, not maxed",
+    "item 2: frozen needle and 2.9x-short rev breathing",
+    "item 4 (jz): pitch p90 now equals classic; most of the reported gap was a bench bug"
   ],
-  "dead": "item 3: there is no spare headroom — that reading came from the broken v1 pull window",
+  "dead": "item 3: no spare headroom — that reading came from the broken v1 pull window",
   "open": [
-    "item 4: pitch p99 110-131 st/s against classic 17",
-    "jz-crank shapes 1.2-1.8% of samples in the brick wall (classic 0%)"
+    "jz-crank shapes 0.9-1.8% of samples in the brick wall against classic 0%; the wall is a soft tanh, about 0.6 dB at the peak",
+    "civic-crank pitch p90 55.6 against classic 41.7 — the rate caps were NOT its main driver, root cause not found"
   ],
   "rows": [
     {
       "id": "classic-muscle",
-      "cruiseDb": -31.7,
-      "lightDb": -23,
-      "pullDb": -6.3,
-      "rangeDb": 25.4,
-      "lightLiftDb": 8.6,
-      "limiterAvgDb": -1.27,
+      "cruiseDb": -32.3,
+      "lightDb": -23.4,
+      "pullDb": -6.4,
+      "rangeDb": 25.9,
+      "lightLiftDb": 8.9,
       "pctClipped": 0,
-      "prePeak": 0.679,
-      "pitchP90": 6.4,
-      "pitchP99": 16.9,
-      "cruiseWanderRpm": 112,
-      "sideMid": 0.052,
+      "prePeak": 0.652,
+      "pitchP90": 41.7,
+      "pitchP99": 94.5,
+      "cruiseWanderRpm": 111,
+      "sideMid": 0.032,
       "nan": 0
     },
     {
       "id": "jz-crank",
       "cruiseDb": -30.5,
-      "lightDb": -24,
+      "lightDb": -23.6,
       "pullDb": -10.5,
       "rangeDb": 20,
-      "lightLiftDb": 6.5,
-      "limiterAvgDb": -1.43,
-      "pctClipped": 1.8,
-      "prePeak": 0.964,
-      "pitchP90": 45.4,
-      "pitchP99": 109.7,
+      "lightLiftDb": 6.9,
+      "pctClipped": 1.5,
+      "prePeak": 0.961,
+      "pitchP90": 41.7,
+      "pitchP99": 110.2,
       "cruiseWanderRpm": 129,
-      "sideMid": 0.073,
+      "sideMid": 0.057,
       "nan": 0,
-      "tickMs": 0.73
+      "tickMs": 0.68
     },
     {
       "id": "civic-crank",
-      "cruiseDb": -28.5,
-      "lightDb": -23.7,
-      "pullDb": -12.4,
-      "rangeDb": 16.2,
-      "lightLiftDb": 4.9,
-      "limiterAvgDb": -0.2,
-      "pctClipped": 0.2,
-      "prePeak": 0.905,
-      "pitchP90": 65.8,
-      "pitchP99": 130.7,
+      "cruiseDb": -27.7,
+      "lightDb": -22.9,
+      "pullDb": -12.3,
+      "rangeDb": 15.4,
+      "lightLiftDb": 4.8,
+      "pctClipped": 0.3,
+      "prePeak": 0.923,
+      "pitchP90": 55.6,
+      "pitchP99": 119.2,
       "cruiseWanderRpm": 136,
-      "sideMid": 0.065,
+      "sideMid": 0.07,
       "nan": 0,
-      "tickMs": 0.7
+      "tickMs": 0.81
     }
   ]
 }

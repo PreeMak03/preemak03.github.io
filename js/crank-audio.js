@@ -79,7 +79,7 @@ const DEFAULT_DRIVE = {
   cruiseLoad: 0.5, wanderRpm: 52, wanderLope: 178,
   glideSec: 0.03, shiftGlideSec: 0.09, glideHoldSec: 0.2,
   riseRpmPerSec: 8000, fallRpmPerSec: 10000,
-  maxRiseStPerSec: 58, maxFallStPerSec: 72, accelRef: 28, accelCurve: 0.65,
+  maxRiseStPerSec: 46, maxFallStPerSec: 57, accelRef: 28, accelCurve: 0.65,
 };
 /**
  * Cabin staging. These are the classic engine's own numbers — the brief was to
