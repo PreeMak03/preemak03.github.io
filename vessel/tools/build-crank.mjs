@@ -213,7 +213,13 @@ function deriveMotion(spec, drive) {
  * onAt/offAt are on the smoothed 0..1 cam signal, so the gap is a real latch
  * rather than a second threshold the same noise can still straddle.
  */
-const CAM = { onAt: 0.62, offAt: 0.34, dwellSec: 0.28 };
+// duckTo: how far the voice dips for the single tick the waveform is replaced.
+// setPeriodicWave swaps the oscillator's entire harmonic content in one sample —
+// free in CPU, but a step in the signal, and the classic engine never does
+// anything like it (it crossfades layers with gains). Measured 9 swaps in a
+// 6 second run through the gears, since every upshift drops the cam back out
+// and the climb puts it straight back in.
+const CAM = { onAt: 0.62, offAt: 0.34, dwellSec: 0.28, duckTo: 0.35 };
 
 /**
  * BOOST — forced induction, derived from the engine's own published numbers.

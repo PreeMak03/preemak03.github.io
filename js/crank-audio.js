@@ -209,6 +209,7 @@ export class CrankAudio {
     this._boost = 0;
     this._vtec = 0;
     this._sharpCam = false;
+    this._camPending = null;   // cam change waiting for its duck (see _tick)
     this._camHold = 0;         // min seconds between cam changes (VVT latch)
     this._camSpec = null;
     this._limiter = false;
@@ -941,14 +942,31 @@ export class CrankAudio {
     v.panR.pan.setTargetAtTime(s.stereoWidth, t, 0.1);
 
     // --- VTEC cam crossover (latched, like the real rocker) ---------------
+    // The latch stops the cam chasing every rev swing. What it cannot fix is
+    // that setPeriodicWave replaces the oscillator's ENTIRE harmonic content in
+    // one sample — no CPU cost (measured 0 ms), but a step in the waveform, and
+    // classic never does anything like it: it crossfades layers with gains.
+    // Only VTEC profiles reach this code, which is why the Civic yanks at
+    // shifts and the 1JZ, on the same engine, never does.
+    //
+    // So the swap happens UNDER a duck: one tick to fade the voice down, the
+    // next to change the wave and come back. Runs on the existing tick, so no
+    // timers and no extra nodes.
     this._camHold -= dt;
     if (s.induction === 'vtec' && this._vtecWaves && this._camSpec) {
       const c = this._camSpec;
-      const sharp = this._sharpCam ? this._vtec > c.offAt : this._vtec > c.onAt;
-      if (sharp !== this._sharpCam && this._camHold <= 0) {
-        this._sharpCam = sharp;
-        this._camHold = c.dwellSec;
-        this._applyWaves(v, sharp ? this._vtecWaves : this._waves);
+      if (this._camPending) {
+        this._applyWaves(v, this._camPending === 'sharp' ? this._vtecWaves : this._waves);
+        this._camPending = null;
+        v.sum.gain.setTargetAtTime(1, t, 0.012);
+      } else {
+        const sharp = this._sharpCam ? this._vtec > c.offAt : this._vtec > c.onAt;
+        if (sharp !== this._sharpCam && this._camHold <= 0) {
+          this._sharpCam = sharp;
+          this._camHold = c.dwellSec;
+          this._camPending = sharp ? 'sharp' : 'mild';
+          v.sum.gain.setTargetAtTime(c.duckTo ?? 0.35, t, 0.004);
+        }
       }
     }
 

@@ -21,6 +21,7 @@ const bench = {
 
   /** Rig the CLASSIC engine instead, as the reference mechanism. */
   async rigClassic(id = 'classic-muscle') {
+    if (this.a) { try { this.a.stop(); } catch (_) {} this.a = null; }
     const { AudioEngine } = await import(`/js/audio-engine.js?v=${Date.now()}`);
     const m = await import('/js/profiles.js');
     await m.loadClassicStandards();
@@ -45,6 +46,10 @@ const bench = {
 
   async rig(id = 'jz-crank') {
     this.classic = false;
+    // Chrome caps how many AudioContexts a page may hold; leaking one per rig
+    // silently starts handing back contexts that never run, which quietly
+    // invalidates every measurement taken after it.
+    if (this.a) { try { this.a.stop(); } catch (_) {} this.a = null; }
     const { CrankAudio } = await import(`/js/crank-audio.js?v=${Date.now()}`);
     const { getProfileById } = await import('/js/profiles.js');
     const a = new CrankAudio();
