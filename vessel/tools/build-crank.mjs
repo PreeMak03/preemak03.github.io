@@ -129,7 +129,7 @@ const ACCEL_REF_KMHPS = 28;
  * accelRef into almost nothing. That is why light acceleration needed the car
  * at 85% while a hard pull was right at 65%.
  */
-const ACCEL_CURVE = 0.5;
+const ACCEL_CURVE = 0.65;
 
 /**
  * Cabin staging. Starts from the classic engine's layout, then pushes further

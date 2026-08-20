@@ -78,7 +78,7 @@ const DEFAULT_DRIVE = {
   revLo: 0.17, revHi: 0.55, revPull: 0.9, floorLo: 1300, floorHi: 1800,
   glideSec: 0.03, shiftGlideSec: 0.09, glideHoldSec: 0.2,
   riseRpmPerSec: 8000, fallRpmPerSec: 10000,
-  maxRiseStPerSec: 58, maxFallStPerSec: 72, accelRef: 28, accelCurve: 0.5,
+  maxRiseStPerSec: 58, maxFallStPerSec: 72, accelRef: 28, accelCurve: 0.65,
 };
 /**
  * Cabin staging. These are the classic engine's own numbers — the brief was to
@@ -785,20 +785,26 @@ export class CrankAudio {
     let accelLoad = clamp(aNorm, 0, 1);
     let decelLoad = clamp(-aNorm, 0, 1);
 
-    // Gear choice keeps the RAW value so shift points do not move.
-    const accelRaw = accelLoad;
-
-    // Light acceleration was arriving as almost nothing. Measured: easing up at
-    // 3 km/h/s gives accelLoad 0.05 after the deadband, and the sound came out
-    // at exactly the cruise level — which is why it needed the car turned up to
-    // 85% to hear, while a hard pull was right at 65%. A curve below 1 lifts the
-    // small-but-real end without touching either the deadband (so GPS noise is
-    // still rejected) or full throttle (1^k is still 1).
-    const k = d.accelCurve ?? 0.5;
-    accelLoad = Math.pow(accelLoad, k);
-    decelLoad = Math.pow(decelLoad, k);
     accelLoad = Math.max(accelLoad, this._throttle * 0.85);
     decelLoad = Math.max(decelLoad, this._brake * 0.85);
+    const accelRaw = accelLoad;   // gear choice keeps this, so shift points hold
+
+    // Two readings of the same pedal, on purpose.
+    //
+    // accelLoad decides WHERE THE REVS GO. accelVoice decides HOW LOUD IT IS,
+    // and only that one gets the curve — it lifts the small-but-real end,
+    // because easing up at 3 km/h/s used to come out at exactly the cruise
+    // level, which is why light throttle needed the car at 85% while a hard
+    // pull was right at 65%.
+    //
+    // They are separate because the first attempt curved the single shared
+    // value, so the revs jumped on a light touch as well. The result felt
+    // twitchier than before the sensitivity was ever reduced — the opposite of
+    // what was asked for. Full throttle is untouched either way (1 ** k is 1),
+    // and the deadband still rejects GPS noise ahead of both.
+    const kv = d.accelCurve ?? 0.65;
+    const accelVoice = Math.pow(accelLoad, kv);
+    const decelVoice = Math.pow(decelLoad, kv);
 
     this._idlePhase += dt;
     let load;
@@ -908,7 +914,7 @@ export class CrankAudio {
         const fallCap = Math.min(d.fallRpmPerSec, Math.max(idle, this._rpm) * d.maxFallStPerSec / ST) * dt;
         this._rpm += delta >= 0 ? Math.min(delta, riseCap) : Math.max(delta, -fallCap);
 
-        load = clamp(accelLoad * 0.85 + decelLoad * 0.25 + (speed > 5 ? 0.08 : 0), 0, 1);
+        load = clamp(accelVoice * 0.85 + decelVoice * 0.25 + (speed > 5 ? 0.08 : 0), 0, 1);
         const gPos = gearProgress(speed, this._gear);
         if (accelLoad > 0.3 && gPos > 0.75) load = clamp(load + 0.15, 0, 1);
         // Torque interruption. This used to take load down to 12% on an upshift,
@@ -933,7 +939,7 @@ export class CrankAudio {
 
     // Rev-hang: effort punches in fast, holds, then eases — stops the sound
     // collapsing the instant GPS accel dips.
-    const effTarget = (this._revUntil || this._holdRpm != null) ? 1 : accelLoad;
+    const effTarget = (this._revUntil || this._holdRpm != null) ? 1 : accelVoice;
     if (effTarget > this._effort) {
       this._effort = damp(this._effort, effTarget, 14, dt);
       this._effortHold = 0.5;
@@ -945,7 +951,7 @@ export class CrankAudio {
     this._limiter = this._rpm >= redline;
     if (this._rpm > redline) this._rpm = redline;
     this._load = clamp(Math.max(load, this._effort * 0.9), 0, 1);
-    return { accelLoad, decelLoad, speed, idle, redline, span };
+    return { accelLoad, decelLoad, accelVoice, decelVoice, speed, idle, redline, span };
   }
 
   _tick(dt) {
@@ -1135,7 +1141,7 @@ export class CrankAudio {
     const dyn = computeDynamicVolume({
       effort: this._effort,
       rpmNorm,
-      accelLoad: drv.accelLoad,
+      accelLoad: drv.accelVoice,
       decelLoad: drv.decelLoad,
       speed: drv.speed,
       idlePresence: this._dyn.idlePresence,
