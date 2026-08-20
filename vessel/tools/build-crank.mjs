@@ -59,7 +59,7 @@ const SPECS = [
     boostBar: 0.7,                                      // factory 10 psi
     // Overrides — rev window only. Glide, inertia and the boost curve are
     // derived from the numbers above by the CRANK type defaults.
-    drive: { revLo: 0.16, revHi: 0.52, revPull: 0.88, floorLo: 1250, floorHi: 1750 },
+    drive: { revLo: 0.16, revHi: 0.52, revPull: 0.88 },
     dynamics: { overrunDuck: 0.72, idlePresence: 0.72 },
   },
   {
@@ -73,7 +73,7 @@ const SPECS = [
     induction: 'vtec', itb: false, overrun: 0.35,
     stereoWidth: 0.22, inertia: 0.5, vtecRpm: 5800,
     notes: '2.0 I4. i-VTEC locks a wilder cam at ~5,800 rpm.',
-    drive: { revLo: 0.18, revHi: 0.58, revPull: 0.92, floorLo: 1400, floorHi: 1950 },
+    drive: { revLo: 0.18, revHi: 0.58, revPull: 0.92 },
     dynamics: { dynDb: 8, shiftDuck: 0.38, idlePresence: 0.68 },
   },
 ];
@@ -131,6 +131,41 @@ const DYN_BASE = { dynDb: 7, dynCeiling: 0.9, shiftDuck: 0.4, overrunDuck: 0.7, 
  * for the same rev error.
  */
 const PITCH_CEILING_RPM = 4800;
+/** Cylinders the 4800 figure was tuned on. classic-muscle is a V8. */
+const PITCH_CEILING_CYL = 8;
+
+/**
+ * The ceiling is really a FIRING-frequency limit, not an rpm limit.
+ *
+ * What the ear gets is rpm/120 x cylinders. classic's 4800 was tuned on a V8,
+ * where that works out at 320 Hz. Reusing the raw rpm number on an engine with
+ * fewer cylinders quietly halves the frequency:
+ *
+ *   at 1500 rpm, played firing frequency
+ *     V8  @4800 cap ->  100 Hz     a note
+ *     I6  @4800 cap ->   61 Hz     a note
+ *     I4  @4800 cap ->   40 Hz     separate thuds, which IS the judder
+ *
+ * Below roughly 50 Hz the ear stops hearing a pitch and starts counting
+ * individual combustion events. So scale the cap to hold the frequency the cap
+ * was actually chosen for. A V8 lands on 4800 exactly, as before.
+ */
+function derivePitchCeiling(spec) {
+  return Math.round((PITCH_CEILING_RPM * PITCH_CEILING_CYL) / spec.cylinders);
+}
+
+/**
+ * Same reasoning for where each gear CRUISES. A four-cylinder loafing at the
+ * rpm a V8 loafs at is firing half as often, so its cruise has to sit higher to
+ * stay a note. Keeps whatever the profile asks for if that is already enough.
+ */
+function deriveGearFloors(spec, drive) {
+  const forHz = (hz) => Math.round((hz * 120) / spec.cylinders);
+  return {
+    floorLo: Math.max(drive.floorLo, forHz(60)),
+    floorHi: Math.max(drive.floorHi, forHz(75)),
+  };
+}
 
 function deriveMotion(spec, drive) {
   const inertia = spec.inertia ?? 0.7;
@@ -231,7 +266,8 @@ function defaultsFor(spec) {
       return {
         ...window_,
         ...deriveMotion(spec, window_),
-        rpmCeiling: PITCH_CEILING_RPM,
+        rpmCeiling: derivePitchCeiling(spec),
+        ...deriveGearFloors(spec, window_),
         ...(spec.drive || {}),
       };
     })(),
@@ -377,7 +413,10 @@ for (const spec of SPECS) {
   // Show what the type defaults derived, so a new engine can be sanity-checked
   const d = doc.drive;
   console.log(`         motion  glide ${d.glideSec}s / shift ${d.shiftGlideSec}s  rise ${d.riseRpmPerSec} rpm/s (<= ${d.maxRiseStPerSec} st/s)  fall ${d.fallRpmPerSec}`);
-  console.log(`         pitch   plays ${spec.idleRpm}-${Math.min(spec.redlineRpm, d.rpmCeiling)} rpm while the readout shows ${spec.idleRpm}-${spec.redlineRpm}`);
+  const ceil = Math.min(spec.redlineRpm, d.rpmCeiling);
+  const firing = (rpm) => ((spec.idleRpm + ((rpm - spec.idleRpm) * (ceil - spec.idleRpm)) / (spec.redlineRpm - spec.idleRpm)) / 120) * spec.cylinders;
+  console.log(`         pitch   plays ${spec.idleRpm}-${ceil} rpm (readout ${spec.idleRpm}-${spec.redlineRpm})  firing ${firing(1500).toFixed(0)} Hz @1500, ${firing(spec.redlineRpm).toFixed(0)} Hz @redline`);
+  console.log(`         floors  gear cruise ${d.floorLo}-${d.floorHi} rpm`);
   console.log(
     doc.boost
       ? `         boost   on ${doc.boost.onsetRpm} -> full ${doc.boost.fullRpm} @ ${doc.boost.peakBar} bar, taper from ${doc.boost.taperRpm} to ${doc.boost.taperTo}, offGain ${doc.boost.offGain}`
