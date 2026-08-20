@@ -80,20 +80,7 @@ const DEFAULT_DRIVE = {
   riseRpmPerSec: 8000, fallRpmPerSec: 10000,
   maxRiseStPerSec: 58, maxFallStPerSec: 72,
 };
-const DEFAULT_DYN = {
-  dynDb: 18, dynCeiling: 0.92, shiftDuck: 0.55, overrunDuck: 0.62,
-  idlePresence: 0.55, loadBoost: 0.22, floorBias: 0.7,
-};
-
-/** Cabin staging — used if a profile ships without a space block. */
-const DEFAULT_SPACE = {
-  crossoverHz: 300, rearDelaySec: 0.021, rearSpreadSec: 0.009, rearX: 1.15,
-  rearZ: 2, rearGain: 1.15, reverbSec: 0.26, reverbDecay: 3.4,
-  reverbWet: 0.22, frontSend: 0.35,
-};
-
-/** Rev wander — used if a profile ships without a breath block. */
-const DEFAULT_BREATH = { idlePct: 0.03, cruisePct: 0.017, rates: [0.37, 0.91, 2.27], loadFade: 0.8 };
+const DEFAULT_DYN = { dynDb: 7, dynCeiling: 0.9, shiftDuck: 0.4, overrunDuck: 0.7, idlePresence: 0.7 };
 
 /** VVT latch — used if a vtec profile ships without a cam block. */
 const DEFAULT_CAM = { onAt: 0.62, offAt: 0.34, dwellSec: 0.28 };
@@ -104,11 +91,6 @@ const DEFAULT_BOOST = {
   crossRpm: 2900, spoolSec: 0.36, spoolFastSec: 0.18, bleedSec: 0.16,
   loadLo: 0.08, loadHi: 0.55, offGain: 0.62, intakeGain: 0.45,
 };
-
-const TAU = Math.PI * 2;
-
-/** Below this the car is holding a speed, not accelerating (classic parity). */
-const ACCEL_DEADBAND_KMHPS = 1.5;
 
 /** d(semitones)/dt = ST x (drpm/dt) / rpm — converts a rev rate into a pitch rate. */
 const ST = 12 / Math.LN2;
@@ -152,26 +134,6 @@ function torqueFactor(rpm, s) {
   if (rpm < peak) return 0.42 + 0.58 * (1 - (1 - (rpm - idle) / Math.max(1, peak - idle)) ** 1.4);
   const over = (rpm - peak) / Math.max(1, red - peak);
   return 1 - 0.38 * over * over;
-}
-
-/**
- * Brick-wall ceiling curve (classic engine parity). Linear up to `knee`, then a
- * tanh knee that can never exceed `ceil`. This is the last thing in the chain
- * and the reason nothing reaches the speakers above full scale — a
- * DynamicsCompressor alone has no lookahead and lets fast transients overshoot,
- * measured at +0.5 dBFS before this was added.
- */
-function ceilingCurve(knee = 0.82, ceil = 0.985) {
-  const n = 2048;
-  const curve = new Float32Array(n);
-  const span = Math.max(1e-4, ceil - knee);
-  for (let i = 0; i < n; i++) {
-    const x = (i / (n - 1)) * 2 - 1;
-    const a = Math.abs(x);
-    const y = a <= knee ? a : knee + span * Math.tanh((a - knee) / span);
-    curve[i] = Math.sign(x) * Math.min(ceil, y);
-  }
-  return curve;
 }
 
 /** tanh drive curve for the exhaust waveshaper ("rasp"). */
@@ -224,9 +186,6 @@ export class CrankAudio {
     this._doc = null;
     this._spec = null;
     this._mixer = { ...DEFAULT_MIXER };
-    this._space = { ...DEFAULT_SPACE };
-    this._outputTrim = 1;
-    this._breath = { ...DEFAULT_BREATH };
     this._drive = { ...DEFAULT_DRIVE };
     this._dyn = { ...DEFAULT_DYN };
     this._boostSpec = null;
@@ -254,7 +213,6 @@ export class CrankAudio {
     this._effort = 0;
     this._effortHold = 0;
     this._idlePhase = 0;
-    this._breathPhase = 0;
     this._holdRpm = null;
 
     // Shift / crank phases
@@ -327,9 +285,6 @@ export class CrankAudio {
     this._mixer = { ...DEFAULT_MIXER, ...(doc.mixer || {}) };
     this._drive = { ...DEFAULT_DRIVE, ...(doc.drive || {}) };
     this._dyn = { ...DEFAULT_DYN, ...(doc.dynamics || {}) };
-    this._space = { ...DEFAULT_SPACE, ...(doc.space || {}) };
-    this._outputTrim = doc.outputTrim ?? 1;
-    this._breath = { ...DEFAULT_BREATH, ...(doc.breath || {}) };
     // Every forced-induction CRANK profile gets a boost curve, compiled or not.
     if (doc.boost) {
       this._boostSpec = doc.boost;
@@ -382,9 +337,6 @@ export class CrankAudio {
     this._waves = this._makeWaveSet(doc.waves.base);
     this._vtecWaves = doc.waves.vtec ? this._makeWaveSet(doc.waves.vtec) : null;
     this._sharpCam = false;
-    if (this._nodes) {
-      at(this._nodes.bus.gain, this._outputTrim, this.ctx.currentTime, 0.05);
-    }
 
     const nextKey = this._active === 'a' ? 'b' : 'a';
     const cur = this._voices[this._active];
@@ -539,85 +491,15 @@ export class CrankAudio {
     voice.oscIntake.setPeriodicWave(waves.mono);
   }
 
-  /** Two decorrelated exponentially-decaying noise tails = small-cabin IR. */
-  _makeCabinIR(seconds, decay) {
-    const ctx = this.ctx;
-    const n = Math.floor(ctx.sampleRate * seconds);
-    const buf = ctx.createBuffer(2, n, ctx.sampleRate);
-    for (let c = 0; c < 2; c++) {
-      const d = buf.getChannelData(c);
-      let lp = 0;
-      for (let i = 0; i < n; i++) {
-        const white = Math.random() * 2 - 1;
-        lp += 0.22 * (white - lp);           // darken the tail
-        d[i] = lp * Math.pow(1 - i / n, decay);
-      }
-    }
-    return buf;
-  }
-
   _buildGraph() {
     const ctx = this.ctx;
-    const sp = this._space;
 
-    // Everything the engine makes lands here first.
-    const bus = ctx.createGain();
-    // The old opposed-panner pair summed to +1.9 dB of mono; the cabin stage
-    // that replaced it contributes its own rear taps and tail, so this is set
-    // by measurement rather than by copying that figure across.
-    bus.gain.value = this._outputTrim;
-
-    /* --- cabin staging (classic engine parity) -------------------------------
-     * The prototype panned one mono signal hard left AND hard right and summed
-     * them, which is just the mono signal again — a single point source. Width
-     * has to be manufactured instead: exhaust below the crossover is delayed by
-     * a rear-wall reflection and placed behind the listener via HRTF, the
-     * mechanical top end stays dry and in front, and a short decorrelated
-     * stereo IR supplies the cabin tail. */
-    const zoneRear = ctx.createBiquadFilter();
-    zoneRear.type = 'lowpass'; zoneRear.frequency.value = sp.crossoverHz; zoneRear.Q.value = 0.7;
-    const zoneFront = ctx.createBiquadFilter();
-    zoneFront.type = 'highpass'; zoneFront.frequency.value = sp.crossoverHz; zoneFront.Q.value = 0.7;
-
-    const stage = ctx.createGain();   // recombined stereo field
-
-    // Two rear reflections at opposite sides with different path lengths. One
-    // source directly behind is on the median plane, where both ears get the
-    // same HRTF and the output stays mono no matter how it is panned.
-    const rearTaps = [-1, 1].map((side, i) => {
-      const delay = ctx.createDelay(0.08);
-      delay.delayTime.value = sp.rearDelaySec + (i === 1 ? sp.rearSpreadSec : 0);
-      const panner = ctx.createPanner();
-      // HRTF is FFT-based and this graph uses two of them. On the lite tier
-      // (Tesla MCU / weak cores) fall back to equalpower: the behind-you cue
-      // softens, but the two different path lengths still carry the width,
-      // which is the part that was actually missing.
-      panner.panningModel = this._lite ? 'equalpower' : 'HRTF';
-      const x = side * sp.rearX;
-      const z = sp.rearZ + (i === 1 ? 0.2 : -0.1);
-      if (panner.positionX) {
-        panner.positionX.value = x; panner.positionY.value = 0; panner.positionZ.value = z;
-      } else {
-        panner.setPosition(x, 0, z);
-      }
-      const gain = ctx.createGain();
-      gain.gain.value = sp.rearGain * 0.62;
-      zoneRear.connect(delay).connect(panner).connect(gain).connect(stage);
-      return { delay, panner, gain };
-    });
-    const frontGain = ctx.createGain(); frontGain.gain.value = 1;
-
-    bus.connect(zoneRear);
-    bus.connect(zoneFront);
-    zoneFront.connect(frontGain).connect(stage);
-
-    const reverb = ctx.createConvolver();
-    reverb.buffer = this._makeCabinIR(sp.reverbSec, sp.reverbDecay);
-    const reverbWet = ctx.createGain(); reverbWet.gain.value = sp.reverbWet;
-    const frontSend = ctx.createGain(); frontSend.gain.value = sp.frontSend;
-    zoneRear.connect(reverb);
-    zoneFront.connect(frontSend).connect(reverb);
-    reverb.connect(reverbWet).connect(stage);
+    const compressor = ctx.createDynamicsCompressor();
+    compressor.threshold.value = -18;
+    compressor.knee.value = 12;
+    compressor.ratio.value = 3.2;
+    compressor.attack.value = 0.003;
+    compressor.release.value = 0.12;
 
     // TAS Sound Profile shelves (Bass / Edge). Neutral at 0.5 so the default
     // card sounds exactly like the prototype.
@@ -628,32 +510,6 @@ export class CrankAudio {
 
     const dynGain = ctx.createGain();   // in-car loudness curve
     dynGain.gain.value = 1;
-
-    /* Peak catcher, NOT a leveller. The prototype's -18 dB / 3.2:1 compressor was
-     * fine at its own 0.72 master, but at TAS master 100 it sat hard into the
-     * signal and ate 9 dB of the pull — which is most of why dynamic volume was
-     * inaudible. This only touches true peaks, so the dyn curve survives while
-     * the speakers stay protected. */
-    // Loudness makeup, before the limiter (classic engine parity). Raising the
-    // level here means cruise uses the headroom cleanly and only peaks ever
-    // touch the limiter — raising `master` instead would just push the whole
-    // signal into the brick wall.
-    const makeup = ctx.createGain();
-    makeup.gain.value = 1.4;
-
-    const limiter = ctx.createDynamicsCompressor();
-    limiter.threshold.value = -6;
-    limiter.knee.value = 3;
-    limiter.ratio.value = 20;
-    limiter.attack.value = 0.002;
-    limiter.release.value = 0.09;
-
-    // Final brick wall, after master, so nothing can leave above full scale no
-    // matter what the volume slider or a profile does.
-    const safety = ctx.createWaveShaper();
-    safety.oversample = 'none';
-    safety.curve = ceilingCurve(0.82, 0.985);
-
     const master = ctx.createGain();
     master.gain.value = 0;
 
@@ -661,9 +517,8 @@ export class CrankAudio {
     analyser.fftSize = 2048;
     analyser.smoothingTimeConstant = 0.72;
 
-    stage.connect(low).connect(high).connect(dynGain).connect(makeup).connect(limiter).connect(master);
-    master.connect(safety);
-    safety.connect(analyser);
+    compressor.connect(low).connect(high).connect(dynGain).connect(master);
+    master.connect(analyser);
     analyser.connect(ctx.destination);
 
     const voices = { a: this._makeVoice(), b: this._makeVoice() };
@@ -671,7 +526,7 @@ export class CrankAudio {
       const v = voices[key];
       this._applyWaves(v, this._waves);
       v.shape.curve = raspCurve(this._spec.rasp);
-      v.voiceGain.connect(bus);
+      v.voiceGain.connect(compressor);
     }
     voices.a.voiceGain.gain.value = 1;
     voices.b.voiceGain.gain.value = 0;
@@ -703,7 +558,7 @@ export class CrankAudio {
     const starterLp = ctx.createBiquadFilter();
     starterLp.type = 'lowpass'; starterLp.frequency.value = 400;
     const starterGain = ctx.createGain(); starterGain.gain.value = 0;
-    starterSrc.connect(starterLp).connect(starterGain).connect(bus);
+    starterSrc.connect(starterLp).connect(starterGain).connect(compressor);
 
     // Overrun pops: a PERMANENT bed we envelope, never per-event nodes.
     // Node churn on lift-off is exactly the kind of GC spike that shows up as a
@@ -712,7 +567,7 @@ export class CrankAudio {
     const popBp = ctx.createBiquadFilter();
     popBp.type = 'bandpass'; popBp.frequency.value = 900; popBp.Q.value = 0.9;
     const popGain = ctx.createGain(); popGain.gain.value = 0.0001;
-    popSrc.connect(popBp).connect(popGain).connect(bus);
+    popSrc.connect(popBp).connect(popGain).connect(compressor);
 
     const t0 = ctx.currentTime + 0.02;
     for (const key of ['a', 'b']) {
@@ -724,8 +579,7 @@ export class CrankAudio {
     this._voices = voices;
     this._active = 'a';
     this._nodes = {
-      bus, stage, zoneRear, zoneFront, rearTaps, frontGain,
-      reverb, reverbWet, frontSend, low, high, dynGain, makeup, limiter, safety, master, analyser,
+      compressor, low, high, dynGain, master, analyser,
       noiseComb, noiseTurbo, noiseIntake, starterSrc, starterLp, starterGain,
       popSrc, popBp, popGain,
     };
@@ -755,28 +609,13 @@ export class CrankAudio {
     this._accelSmooth = damp(this._accelSmooth, this._accel, this.smoothFilter ? 10 : 18, dt);
     const speed = this.speedReactive ? this._speedSmooth : Math.max(this._speedSmooth, 40);
 
-    // GPS/sim acceleration is never exactly zero when holding a speed, and every
-    // wobble in it moves the rpm target (accelLoad feeds rpmInGear). Measured on
-    // a steady cruise that is +-260 rpm of hunting — audible as judder. The
-    // classic engine has always had this deadband; CRANK was missing it.
-    let accelForLoad = this._accelSmooth;
-    if (Math.abs(accelForLoad) < ACCEL_DEADBAND_KMHPS) accelForLoad = 0;
-    const aNorm = clamp(accelForLoad / this.accelRefKmhps, -1.4, 1.4);
+    const aNorm = clamp(this._accelSmooth / this.accelRefKmhps, -1.4, 1.4);
     let accelLoad = clamp(aNorm, 0, 1);
     let decelLoad = clamp(-aNorm, 0, 1);
     accelLoad = Math.max(accelLoad, this._throttle * 0.85);
     decelLoad = Math.max(decelLoad, this._brake * 0.85);
 
     this._idlePhase += dt;
-    // Three slow unrelated rates. Peak amplitude is normalised to 1 so the
-    // percentages in the profile mean what they say.
-    this._breathPhase += dt;
-    const br = this._breath;
-    const bp = this._breathPhase * TAU;
-    const breathWave =
-      (Math.sin(bp * br.rates[0]) * 0.6 +
-        Math.sin(bp * br.rates[1]) * 0.3 +
-        Math.sin(bp * br.rates[2]) * 0.1);
     let load;
 
     if (this._holdRpm != null) {
@@ -819,8 +658,7 @@ export class CrankAudio {
         this._gear = 1;
         this._driveState = 'idle';
         const hunt = Math.sin(this._idlePhase * (7 + s.idleHunt * 0.15)) * s.idleHunt;
-        const idleTarget = (idle + hunt) * (1 + breathWave * br.idlePct);
-        this._rpm = damp(this._rpm, idleTarget, 10, dt);
+        this._rpm = damp(this._rpm, idle + hunt, 10, dt);
         this._gearBias = gearToneBias(1);
       } else {
         this._sinceShift += dt;
@@ -858,10 +696,6 @@ export class CrankAudio {
           floorLo: d.floorLo,
           floorHi: d.floorHi,
         });
-        // Wander the target rather than the output, so the rpm readout on the dash
-        // moves with the sound and the slew caps still apply to the result.
-        targetRpm *= 1 + breathWave * br.cruisePct * (1 - clamp(accelLoad, 0, 1) * br.loadFade);
-
         // Heavier rotating mass = lazier revs (1JZ 0.95 vs K20 0.5)
         const inertiaL = 1 / clamp(0.45 + s.inertia * 0.75, 0.5, 1.6);
         let rpmLambda = (this.smoothFilter ? 7 : 12) * inertiaL;
@@ -1063,8 +897,6 @@ export class CrankAudio {
       overrun: this._driveState === 'overrun',
       dynDb: this._dyn.dynDb,
       curveMul: 1,
-      loadBoost: this._dyn.loadBoost,
-      floorBias: this._dyn.floorBias,
       load,
       softCeiling: this._dyn.dynCeiling,
       shiftDuck: this._dyn.shiftDuck,
