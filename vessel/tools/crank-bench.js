@@ -147,7 +147,7 @@ const bench2 = {
         : (a._layers && a._layers.low ? a._layers.low.src.playbackRate.value : 0);
 
     const grab = async (ms) => {
-      const rms = []; const red = []; const side = []; const rpm = []; const freq = [];
+      const rms = []; const red = []; const side = []; const rpm = []; const freq = []; const effort = []; const accel = [];
       let peak = 0; let prePeak = 0; let over = 0; let total = 0; let nan = 0;
       const end = Date.now() + ms;
       while (Date.now() < end) {
@@ -178,11 +178,15 @@ const bench2 = {
         if (limiter) red.push(limiter.reduction);
         rpm.push(a.rpm || 0);
         freq.push(played());
+        effort.push(a._effort ?? 0);
+        accel.push((window.TAS.physics && window.TAS.physics.accelKmhps) || 0);
         await wait();
       }
       return { rms: mean(rms), peak, prePeak, pctClipped: (100 * over) / Math.max(1, total),
         nan, red: mean(red), redWorst: red.length ? Math.min(...red) : 0,
-        side: mean(side), rpm, freq };
+        side: mean(side), rpm, freq,
+        effortMax: effort.length ? Math.max(...effort) : 0,
+        accelMax: accel.length ? Math.max(...accel) : 0 };
     };
 
     // --- the three operating points the owner actually describes -----------
@@ -198,8 +202,23 @@ const bench2 = {
     const light = await grab(3000);
     clearInterval(iv);
 
-    await settle(sl, 150, 900);
-    const pull = await grab(2500);
+    // A pull is the CLIMB, not the arrival. Settling at 150 and measuring there
+    // measures a cruise at 150: the classic drive model ties revs to
+    // acceleration, so once the car stops accelerating the revs and the
+    // dynamic volume fall back to the gear floor. Measured directly: civic
+    // dynGain read 0.493 mid-climb and 0.417 after arrival — the earlier
+    // version of this bench was reporting the second number as "pull".
+    await settle(sl, 0, 1200);
+    sl.value = '140';
+    sl.dispatchEvent(new Event('input', { bubbles: true }));
+    await wait(1500);                 // let the climb establish
+    const pull = await grab(4000);    // sampled while the car is still climbing
+    if (pull.accelMax < 3) {
+      throw new Error(
+        `pull window peaked at ${pull.accelMax.toFixed(1)} km/h/s — the car was not ` +
+        `pulling. Not measuring what the label says.`
+      );
+    }
 
     // --- pitch rate through a full climb, which is where judder shows ------
     await settle(sl, 0, 1500);
@@ -234,6 +253,8 @@ const bench2 = {
       pctClipped: +pull.pctClipped.toFixed(1),
       pitchP90: +(rates[Math.floor(rates.length * 0.9)] || 0).toFixed(1),
       pitchP99: +(rates[Math.floor(rates.length * 0.99)] || 0).toFixed(1),
+      pullEffortMax: +pull.effortMax.toFixed(2),
+      pullAccelMax: +pull.accelMax.toFixed(1),
       cruiseWanderRpm: +wander.toFixed(0),
       sideMid: +mean([cruise.side, light.side, pull.side]).toFixed(3),
       peak: +Math.max(cruise.peak, light.peak, pull.peak).toFixed(3),
