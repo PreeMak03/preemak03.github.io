@@ -60,7 +60,7 @@ const SPECS = [
     // Overrides — rev window only. Glide, inertia and the boost curve are
     // derived from the numbers above by the CRANK type defaults.
     drive: { revLo: 0.16, revHi: 0.52, revPull: 0.88 },
-    dynamics: { overrunDuck: 0.72, idlePresence: 0.72 },
+    dynamics: { idlePresence: 0.72 },
   },
   {
     id: 'civic', code: 'Civic', name: 'K20A', car: 'Civic Type R',
@@ -74,7 +74,7 @@ const SPECS = [
     stereoWidth: 0.22, inertia: 0.5, vtecRpm: 5800,
     notes: '2.0 I4. i-VTEC locks a wilder cam at ~5,800 rpm.',
     drive: { revLo: 0.18, revHi: 0.58, revPull: 0.92 },
-    dynamics: { dynDb: 8, shiftDuck: 0.38, idlePresence: 0.68 },
+    dynamics: { dynDb: 8, idlePresence: 0.68 },
   },
 ];
 
@@ -97,7 +97,11 @@ const round3 = (x) => Math.round(x * 1000) / 1000;
 const DRIVE_BASE = { revLo: 0.17, revHi: 0.55, revPull: 0.9, floorLo: 1300, floorHi: 1800 };
 
 /** In-car loudness curve (js/dynamic-volume.js). Gentle by default. */
-const DYN_BASE = { dynDb: 7, dynCeiling: 0.9, shiftDuck: 0.4, overrunDuck: 0.7, idlePresence: 0.7 };
+// shiftDuck / overrunDuck are classic-muscle's values. CRANK's own were 0.4 and
+// 0.7, i.e. -8 dB on every gear change and -3 dB entering overrun, against
+// classic's -0.9 dB for both. That is not a duck, it is a hole, and it lands
+// exactly where the owner hears the sound break up.
+const DYN_BASE = { dynDb: 7, dynCeiling: 0.9, shiftDuck: 0.9, overrunDuck: 0.9, idlePresence: 0.7 };
 
 /**
  * MOTION — how fast the sound is allowed to move. This is the anti-judder half

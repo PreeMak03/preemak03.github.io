@@ -80,7 +80,7 @@ const DEFAULT_DRIVE = {
   riseRpmPerSec: 8000, fallRpmPerSec: 10000,
   maxRiseStPerSec: 58, maxFallStPerSec: 72,
 };
-const DEFAULT_DYN = { dynDb: 7, dynCeiling: 0.9, shiftDuck: 0.4, overrunDuck: 0.7, idlePresence: 0.7 };
+const DEFAULT_DYN = { dynDb: 7, dynCeiling: 0.9, shiftDuck: 0.9, overrunDuck: 0.9, idlePresence: 0.7 };
 
 /** VVT latch — used if a vtec profile ships without a cam block. */
 const DEFAULT_CAM = { onAt: 0.62, offAt: 0.34, dwellSec: 0.28 };
@@ -229,6 +229,7 @@ export class CrankAudio {
     this._postShift = 0;
     this._crankUntil = 0;      // starter phase end (audio clock)
     this._popCooldown = 0;
+    this._overrunLatch = false;   // hysteresis, so cruise<->overrun cannot flutter
     this._glideHold = 0;       // seconds left of the slow pitch glide after a shift
 
     // Launch Rev
@@ -757,11 +758,21 @@ export class CrankAudio {
         load = clamp(accelLoad * 0.85 + decelLoad * 0.25 + (speed > 5 ? 0.08 : 0), 0, 1);
         const gPos = gearProgress(speed, this._gear);
         if (accelLoad > 0.3 && gPos > 0.75) load = clamp(load + 0.15, 0, 1);
-        if (this._shifting) load = clamp(load * (this._shiftUp ? 0.12 : 0.28) + 0.05, 0, 1);
+        // Torque interruption. This used to take load down to 12% on an upshift,
+        // ON TOP of the gain duck — two cuts stacked into one hole. Classic
+        // applies its duck alone and lets the rev drop carry the shift.
+        if (this._shifting) load = clamp(load * (this._shiftUp ? 0.72 : 0.85), 0, 1);
         else if (this._postShift > 0) load = clamp(load + 0.2 * (this._postShift / 0.14), 0, 1);
 
+        // Overrun hysteresis, classic verbatim. A single threshold lets GPS
+        // scatter flip cruise<->overrun repeatedly, and every flip switches a
+        // gain multiplier — audible as the sound breaking up right at lift-off.
+        // Classic latches: enter deep, leave shallow.
+        if (decelLoad > 0.38) this._overrunLatch = true;
+        else if (decelLoad < 0.18 || accelLoad > 0.2) this._overrunLatch = false;
+
         if (this._shifting) this._driveState = 'shift';
-        else if (decelLoad > 0.28) this._driveState = 'overrun';
+        else if (this._overrunLatch) this._driveState = 'overrun';
         else if (accelLoad > 0.22) this._driveState = 'pull';
         else this._driveState = 'cruise';
       }
