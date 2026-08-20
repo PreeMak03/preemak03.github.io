@@ -536,6 +536,14 @@ async function init() {
     } catch (_) {}
   })();
 
+  // Dev perf readout — only in Dev mode, loaded on demand. If it fails to load
+  // the app is unaffected; it is a diagnostic, not a feature.
+  if (document.body.classList.contains('dev-mode')) {
+    import('./dev-perf.js')
+      .then((m) => m.startDevPerf($('#app-perf'), () => audio))
+      .catch(() => {});
+  }
+
   bindSliders({
     master: (v) => audio.setMasterVolume(v),
     bass: (v) => audio.setBass(v),

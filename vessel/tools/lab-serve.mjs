@@ -204,6 +204,7 @@ function applyAndPush(action, payload) {
       'js/vessel-audio.js',
       'js/vessel-rigs.js',
       'assets/version.json',
+      'js/dev-perf.js',
       'js/crank-audio.js',
       'js/crank-rigs.js',
       'assets/crank/jz.crank.json',

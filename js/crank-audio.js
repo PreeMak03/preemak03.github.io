@@ -250,6 +250,7 @@ export class CrankAudio {
     this._vtecWaves = null;
     this._timer = null;
     this._lite = false;
+    this._tickJitterMs = 0;
     this._swapToken = 0;
   }
 
@@ -397,6 +398,9 @@ export class CrankAudio {
       const now = performance.now();
       let dt = (now - this._lastTickWall) / 1000;
       this._lastTickWall = now;
+      // Rolling mean |interval - nominal|, for the Dev perf readout. If this
+      // grows on a device, the main thread is starving the parameter updates.
+      this._tickJitterMs = this._tickJitterMs * 0.9 + Math.abs(dt * 1000 - tickMs) * 0.1;
       if (!(dt > 0) || dt > 0.25) dt = tickMs / 1000;
       this._tick(dt);
     }, tickMs);
