@@ -92,6 +92,9 @@ const DEFAULT_SPACE = {
   reverbWet: 0.22, frontSend: 0.35,
 };
 
+/** Rev wander — used if a profile ships without a breath block. */
+const DEFAULT_BREATH = { idlePct: 0.03, cruisePct: 0.017, rates: [0.37, 0.91, 2.27], loadFade: 0.8 };
+
 /** VVT latch — used if a vtec profile ships without a cam block. */
 const DEFAULT_CAM = { onAt: 0.62, offAt: 0.34, dwellSec: 0.28 };
 
@@ -101,6 +104,8 @@ const DEFAULT_BOOST = {
   crossRpm: 2900, spoolSec: 0.36, spoolFastSec: 0.18, bleedSec: 0.16,
   loadLo: 0.08, loadHi: 0.55, offGain: 0.62, intakeGain: 0.45,
 };
+
+const TAU = Math.PI * 2;
 
 /** Below this the car is holding a speed, not accelerating (classic parity). */
 const ACCEL_DEADBAND_KMHPS = 1.5;
@@ -221,6 +226,7 @@ export class CrankAudio {
     this._mixer = { ...DEFAULT_MIXER };
     this._space = { ...DEFAULT_SPACE };
     this._outputTrim = 1;
+    this._breath = { ...DEFAULT_BREATH };
     this._drive = { ...DEFAULT_DRIVE };
     this._dyn = { ...DEFAULT_DYN };
     this._boostSpec = null;
@@ -248,6 +254,7 @@ export class CrankAudio {
     this._effort = 0;
     this._effortHold = 0;
     this._idlePhase = 0;
+    this._breathPhase = 0;
     this._holdRpm = null;
 
     // Shift / crank phases
@@ -322,6 +329,7 @@ export class CrankAudio {
     this._dyn = { ...DEFAULT_DYN, ...(doc.dynamics || {}) };
     this._space = { ...DEFAULT_SPACE, ...(doc.space || {}) };
     this._outputTrim = doc.outputTrim ?? 1;
+    this._breath = { ...DEFAULT_BREATH, ...(doc.breath || {}) };
     // Every forced-induction CRANK profile gets a boost curve, compiled or not.
     if (doc.boost) {
       this._boostSpec = doc.boost;
@@ -760,6 +768,15 @@ export class CrankAudio {
     decelLoad = Math.max(decelLoad, this._brake * 0.85);
 
     this._idlePhase += dt;
+    // Three slow unrelated rates. Peak amplitude is normalised to 1 so the
+    // percentages in the profile mean what they say.
+    this._breathPhase += dt;
+    const br = this._breath;
+    const bp = this._breathPhase * TAU;
+    const breathWave =
+      (Math.sin(bp * br.rates[0]) * 0.6 +
+        Math.sin(bp * br.rates[1]) * 0.3 +
+        Math.sin(bp * br.rates[2]) * 0.1);
     let load;
 
     if (this._holdRpm != null) {
@@ -802,7 +819,8 @@ export class CrankAudio {
         this._gear = 1;
         this._driveState = 'idle';
         const hunt = Math.sin(this._idlePhase * (7 + s.idleHunt * 0.15)) * s.idleHunt;
-        this._rpm = damp(this._rpm, idle + hunt, 10, dt);
+        const idleTarget = (idle + hunt) * (1 + breathWave * br.idlePct);
+        this._rpm = damp(this._rpm, idleTarget, 10, dt);
         this._gearBias = gearToneBias(1);
       } else {
         this._sinceShift += dt;
@@ -840,6 +858,10 @@ export class CrankAudio {
           floorLo: d.floorLo,
           floorHi: d.floorHi,
         });
+        // Wander the target rather than the output, so the rpm readout on the dash
+        // moves with the sound and the slew caps still apply to the result.
+        targetRpm *= 1 + breathWave * br.cruisePct * (1 - clamp(accelLoad, 0, 1) * br.loadFade);
+
         // Heavier rotating mass = lazier revs (1JZ 0.95 vs K20 0.5)
         const inertiaL = 1 / clamp(0.45 + s.inertia * 0.75, 0.5, 1.6);
         let rpmLambda = (this.smoothFilter ? 7 : 12) * inertiaL;

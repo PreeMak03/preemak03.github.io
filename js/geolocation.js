@@ -16,6 +16,7 @@ export class GeolocationService {
     this._fallbackSpeed = 0;
     this._lastPos = null;
     this._lastTs = 0;
+    this._stopped = true;   // standstill latch (see the deadband in _onPosition)
   }
 
   onUpdate(fn) {
@@ -148,9 +149,23 @@ export class GeolocationService {
     // m/s → km/h; clamp wild spikes
     let kmh = (speedMs || 0) * 3.6;
     if (kmh > 320) kmh = this.speedKmh; // ignore absurd spikes
-    // Zero-out crawl noise when accuracy is poor and speed tiny
-    if (kmh < 1.2 && (this.accuracy == null || this.accuracy > 40)) {
+    // Standstill deadband.
+    //
+    // A parked car's receiver still reports 0.3-1.5 km/h of Doppler noise, so
+    // this has to be zeroed or the readout never reaches 0. The old rule only
+    // did it when accuracy was POOR (>40 m), which is backwards — with a normal
+    // 5-15 m fix, which is what you get in the open, the noise went straight
+    // through and the speed sat at 1 km/h forever, engine idling at a red light.
+    //
+    // Hysteresis so a genuine crawl cannot flicker the engine on and off: once
+    // stopped it takes a clear reading to count as moving again.
+    const stopAt = this.accuracy != null && this.accuracy <= 40 ? 1.8 : 2.8;
+    const goAt = stopAt + 1.0;
+    if (this._stopped ? kmh < goAt : kmh < stopAt) {
       kmh = 0;
+      this._stopped = true;
+    } else {
+      this._stopped = false;
     }
     // Teleport guard ONLY. This used to clamp to 12 km/h per fix — at ~1 fix/s that capped
     // the readout at 12 km/h/s while the car pulls 16–30, so every hard launch drove the

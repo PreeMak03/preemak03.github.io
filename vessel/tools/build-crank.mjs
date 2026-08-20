@@ -142,6 +142,39 @@ const SPACE_BASE = {
 };
 
 /**
+ * BREATH — an engine holding a steady throttle is never at a fixed rpm. The idle
+ * governor hunts, load moves with road camber and wind, combustion is not
+ * perfectly even. classic-muscle drifts ~86 rpm at a constant 60 km/h.
+ *
+ * CRANK measured 0 after the acceleration deadband went in: the deadband
+ * correctly stopped GPS noise from yanking the rev target, but it also removed
+ * every trace of motion and left the revs sounding pinned. So the motion goes
+ * back deliberately — slow and on incommensurate rates, so it never repeats and
+ * can never be mistaken for the fast hunting that was just removed. It fades out
+ * under load, because an engine being worked hard does not wander.
+ *
+ * idleHunt from the spec scales it, so a lumpier engine breathes more.
+ */
+function deriveBreath(spec) {
+  // Calibrated against classic-muscle, measured peak-to-peak over 5 s:
+  //   classic  idle 13.5%  cruise 7.5%
+  //   CRANK    idle  0%    cruise 0%   (before this existed)
+  // These land CRANK at roughly 9% / 4.5% — clearly alive, deliberately still
+  // short of classic, because the wander here is slow and continuous where some
+  // of classic's is load noise. At 0.37 Hz a 4.5% swing is 0.5 semitones per
+  // second, nowhere near the rates that read as judder.
+  const idlePct = round3(0.034 + (spec.idleHunt ?? 6) * 0.0035);
+  return {
+    idlePct,
+    cruisePct: round3(idlePct * 0.67),
+    // Hz. Deliberately not harmonically related — a single sine reads as a
+    // tremolo effect, three unrelated ones read as an engine.
+    rates: [0.37, 0.91, 2.27],
+    loadFade: 0.8,       // how much of it disappears at full load
+  };
+}
+
+/**
  * Output trim — levels the CARDS, not the engines.
  *
  * `body` is a voicing figure (1JZ 0.86, K20 0.40), so left alone the I4 card
@@ -287,6 +320,7 @@ function defaultsFor(spec) {
     cam: spec.induction === 'vtec' ? { ...CAM, ...(spec.cam || {}) } : null,
     space: { ...deriveSpace(spec), ...(spec.space || {}) },
     outputTrim: spec.outputTrim ?? deriveOutputTrim(spec),
+    breath: { ...deriveBreath(spec), ...(spec.breath || {}) },
   };
 }
 
@@ -433,5 +467,6 @@ for (const spec of SPECS) {
   );
   if (doc.cam) console.log(`         cam     latch on ${doc.cam.onAt} / off ${doc.cam.offAt}, dwell ${doc.cam.dwellSec}s`);
   console.log(`         space   rear below ${doc.space.crossoverHz} Hz, wet ${doc.space.reverbWet}   dyn ${doc.dynamics.dynDb} dB   trim ${doc.outputTrim}x`);
+  console.log(`         breath  idle +-${(doc.breath.idlePct * 100).toFixed(1)}% / cruise +-${(doc.breath.cruisePct * 100).toFixed(1)}%`);
 }
 console.log('CRANK compile done.');
