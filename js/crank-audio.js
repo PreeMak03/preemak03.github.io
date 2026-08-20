@@ -78,19 +78,19 @@ const DEFAULT_DRIVE = {
   revLo: 0.17, revHi: 0.55, revPull: 0.9, floorLo: 1300, floorHi: 1800,
   glideSec: 0.03, shiftGlideSec: 0.09, glideHoldSec: 0.2,
   riseRpmPerSec: 8000, fallRpmPerSec: 10000,
-  maxRiseStPerSec: 58, maxFallStPerSec: 72, accelRef: 32,
+  maxRiseStPerSec: 58, maxFallStPerSec: 72, accelRef: 28, accelCurve: 0.5,
 };
 /**
  * Cabin staging. These are the classic engine's own numbers — the brief was to
  * sound placed like classic, so nothing here is "improved".
  */
 const DEFAULT_SPACE = {
-  crossoverHz: 300, rearDelaySec: 0.022, rearZ: 2, rearGain: 1.15,
-  frontGain: 1, reverbSec: 0.26, reverbDecay: 3.4, reverbWet: 0.13, frontSend: 0.35,
+  crossoverHz: 420, rearDelaySec: 0.024, rearZ: 2.4, rearGain: 1.45,
+  frontGain: 0.9, reverbSec: 0.3, reverbDecay: 3.2, reverbWet: 0.22, frontSend: 0.45,
 };
 
 const DEFAULT_DYN = {
-  dynDb: 16, dynCeiling: 0.56, shiftDuck: 0.9, overrunDuck: 0.9,
+  dynDb: 16, dynCeiling: 0.5, shiftDuck: 0.9, overrunDuck: 0.9,
   idlePresence: 0.55, loadBoost: 0.22, floorBias: 0.7,
 };
 
@@ -289,7 +289,7 @@ export class CrankAudio {
 
     // UI overrides (App System)
     this._masterOverride = null;
-    this._masterScale = 1.3;
+    this._masterScale = 1.45;
     this._outputTrim = 1;
     this._makeup = 1;
     this._space = { ...DEFAULT_SPACE };
@@ -347,7 +347,7 @@ export class CrankAudio {
     this._mixer = { ...DEFAULT_MIXER, ...(doc.mixer || {}) };
     this._drive = { ...DEFAULT_DRIVE, ...(doc.drive || {}) };
     this._dyn = { ...DEFAULT_DYN, ...(doc.dynamics || {}) };
-    this._masterScale = doc.masterScale ?? 1.3;
+    this._masterScale = doc.masterScale ?? 1.45;
     this._outputTrim = doc.outputTrim ?? 1;
     this._makeup = doc.makeup ?? 1;
     this._space = { ...DEFAULT_SPACE, ...(doc.space || {}) };
@@ -782,6 +782,19 @@ export class CrankAudio {
     const aNorm = clamp(accelForLoad / (d.accelRef || this.accelRefKmhps), -1.4, 1.4);
     let accelLoad = clamp(aNorm, 0, 1);
     let decelLoad = clamp(-aNorm, 0, 1);
+
+    // Gear choice keeps the RAW value so shift points do not move.
+    const accelRaw = accelLoad;
+
+    // Light acceleration was arriving as almost nothing. Measured: easing up at
+    // 3 km/h/s gives accelLoad 0.05 after the deadband, and the sound came out
+    // at exactly the cruise level — which is why it needed the car turned up to
+    // 85% to hear, while a hard pull was right at 65%. A curve below 1 lifts the
+    // small-but-real end without touching either the deadband (so GPS noise is
+    // still rejected) or full throttle (1^k is still 1).
+    const k = d.accelCurve ?? 0.5;
+    accelLoad = Math.pow(accelLoad, k);
+    decelLoad = Math.pow(decelLoad, k);
     accelLoad = Math.max(accelLoad, this._throttle * 0.85);
     decelLoad = Math.max(decelLoad, this._brake * 0.85);
 
@@ -832,7 +845,7 @@ export class CrankAudio {
         this._gearBias = gearToneBias(1);
       } else {
         this._sinceShift += dt;
-        let nextGear = resolveGear(speed, this._gear, accelLoad, decelLoad);
+        let nextGear = resolveGear(speed, this._gear, accelRaw, decelLoad);
         if (nextGear > this._gear + 1) nextGear = this._gear + 1;
         else if (nextGear < this._gear - 1) nextGear = this._gear - 1;
 

@@ -106,7 +106,7 @@ const DRIVE_BASE = { revLo: 0.17, revHi: 0.55, revPull: 0.9, floorLo: 1300, floo
 // classic at cruise with less than half its dynamic range, which is why dynamic
 // volume was inaudible in the car.
 const DYN_BASE = {
-  dynDb: 16, dynCeiling: 0.56, shiftDuck: 0.9, overrunDuck: 0.9,
+  dynDb: 16, dynCeiling: 0.5, shiftDuck: 0.9, overrunDuck: 0.9,
   idlePresence: 0.55, loadBoost: 0.22, floorBias: 0.7,
 };
 
@@ -120,12 +120,49 @@ const DYN_BASE = {
  */
 const ACCEL_REF_KMHPS = 28;
 
+/**
+ * Shapes how light acceleration lands. accelLoad ** this, so a value below 1
+ * lifts the small-but-real end while leaving full throttle alone (1 ** k is 1).
+ *
+ * Without it, easing up at 3 km/h/s came out at exactly the cruise level: the
+ * 1.5 km/h/s deadband takes the first slice, and what survives divides by
+ * accelRef into almost nothing. That is why light acceleration needed the car
+ * at 85% while a hard pull was right at 65%.
+ */
+const ACCEL_CURVE = 0.5;
+
+/**
+ * Cabin staging. Starts from the classic engine's layout, then pushes further
+ * back and wider than classic does, which is what the owner asked for.
+ *
+ *   crossoverHz  how much of the engine is treated as "exhaust" and sent behind
+ *                you. Raising it moves more of the body rearward.
+ *   rearGain     how loud that rear image is against the dry front.
+ *   rearZ        how far behind. Further = more clearly not in front of you.
+ *   reverbWet    the decorrelated stereo tail. This is what actually produces
+ *                side energy, and side energy is what Tesla's Immersive Sound
+ *                upmixer needs in order to feed the rear speakers at all.
+ *
+ * Measured side/mid: classic-muscle 0.061, CRANK on classic's own values 0.035.
+ */
+const SPACE = {
+  crossoverHz: 420,
+  rearDelaySec: 0.024,
+  rearZ: 2.4,
+  rearGain: 1.45,
+  frontGain: 0.9,
+  reverbSec: 0.3,
+  reverbDecay: 3.2,
+  reverbWet: 0.22,
+  frontSend: 0.45,
+};
+
 /** Slider 100 lands here. The mix is conservative, so 100 alone was quiet. */
 // Level lives AFTER the limiter on purpose. Putting it before would feed the
 // limiter a hotter signal and bring back the multi-dB gain reduction that was
 // pumping; after it, the only thing in the way is the memoryless brick wall,
 // which cannot pump because it has no time constants.
-const MASTER_SCALE = 1.3;
+const MASTER_SCALE = 1.45;
 
 /**
  * Output trim — levels the CARDS, not the engines.
@@ -316,6 +353,7 @@ function defaultsFor(spec) {
         ...deriveMotion(spec, window_),
         rpmCeiling: derivePitchCeiling(spec),
         accelRef: ACCEL_REF_KMHPS,
+        accelCurve: ACCEL_CURVE,
         ...deriveGearFloors(spec, window_),
         ...(spec.drive || {}),
       };
@@ -324,6 +362,7 @@ function defaultsFor(spec) {
     boost: deriveBoost(spec) ? { ...deriveBoost(spec), ...(spec.boost || {}) } : null,
     cam: spec.induction === 'vtec' ? { ...CAM, ...(spec.cam || {}) } : null,
     masterScale: spec.masterScale ?? MASTER_SCALE,
+    space: { ...SPACE, ...(spec.space || {}) },
     outputTrim: spec.outputTrim ?? deriveOutputTrim(spec),
   };
 }
@@ -468,6 +507,7 @@ for (const spec of SPECS) {
   const firing = (rpm) => ((spec.idleRpm + ((rpm - spec.idleRpm) * (ceil - spec.idleRpm)) / (spec.redlineRpm - spec.idleRpm)) / 120) * spec.cylinders;
   console.log(`         pitch   plays ${spec.idleRpm}-${ceil} rpm (readout ${spec.idleRpm}-${spec.redlineRpm})  firing ${firing(1500).toFixed(0)} Hz @1500, ${firing(spec.redlineRpm).toFixed(0)} Hz @redline`);
   console.log(`         floors  gear cruise ${d.floorLo}-${d.floorHi} rpm`);
+  console.log(`         space   rear below ${doc.space.crossoverHz} Hz at ${doc.space.rearGain}x, z ${doc.space.rearZ} m, wet ${doc.space.reverbWet}`);
   console.log(`         loud    dynDb ${doc.dynamics.dynDb}  accelRef ${d.accelRef} km/h/s  masterScale ${doc.masterScale}x  trim ${doc.outputTrim}x`);
   console.log(
     doc.boost
