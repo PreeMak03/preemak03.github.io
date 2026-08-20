@@ -118,6 +118,15 @@ const bench2 = {
   async run(id) {
     await assertLoopAlive();
     const a = await select(id);
+
+    // Pin every level control the app exposes before measuring. Absolute dB is
+    // meaningless without it: between two runs the master volume came back at a
+    // different default and moved classic-muscle — which nothing had touched —
+    // 2.6 dB, turning 0% brick-wall shaping into 2%. Differences taken WITHIN a
+    // run (range, light lift) survive that; anything absolute does not.
+    if (typeof a.setMasterVolume === 'function') a.setMasterVolume(1);
+    if (typeof a.setBass === 'function') a.setBass(0.5);
+    await wait(300);
     const ctx = a.ctx;
     const sl = $('#sim-speed');
     const an = a.getAnalyser();
@@ -255,6 +264,8 @@ const bench2 = {
       pitchP99: +(rates[Math.floor(rates.length * 0.99)] || 0).toFixed(1),
       pullEffortMax: +pull.effortMax.toFixed(2),
       pullAccelMax: +pull.accelMax.toFixed(1),
+      master: a._masterOverride ?? a.masterVolume ?? null,
+      bass: a._bass ?? null,
       cruiseWanderRpm: +wander.toFixed(0),
       sideMid: +mean([cruise.side, light.side, pull.side]).toFixed(3),
       peak: +Math.max(cruise.peak, light.peak, pull.peak).toFixed(3),

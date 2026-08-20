@@ -94,7 +94,12 @@ const MIXER = { exhaust: 0.92, intake: 0.58, mechanical: 0.34, induction: 0.46, 
 const round3 = (x) => Math.round(x * 1000) / 1000;
 
 /** Rev window for the TAS virtual gearbox. Per-engine character; overridable. */
-const DRIVE_BASE = { revLo: 0.17, revHi: 0.55, revPull: 0.9, floorLo: 1300, floorHi: 1800 };
+// cruiseLoad — how much of the app's standing cruise throttle counts as engine
+// load. It is ADDED to the acceleration signal, never maxed against it: the app
+// feeds 0.18 while holding speed and only 0.15 under a light pull, so max()
+// made a light acceleration read as LESS load than cruising and the car got
+// quieter when the driver eased on.
+const DRIVE_BASE = { revLo: 0.17, revHi: 0.55, revPull: 0.9, floorLo: 1300, floorHi: 1800, cruiseLoad: 0.5 };
 
 /** In-car loudness curve (js/dynamic-volume.js). Gentle by default. */
 // shiftDuck / overrunDuck are classic-muscle's values. CRANK's own were 0.4 and

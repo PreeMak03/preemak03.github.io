@@ -76,6 +76,7 @@ const DEFAULT_MIXER = { exhaust: 0.92, intake: 0.58, mechanical: 0.34, induction
  */
 const DEFAULT_DRIVE = {
   revLo: 0.17, revHi: 0.55, revPull: 0.9, floorLo: 1300, floorHi: 1800,
+  cruiseLoad: 0.5,
   glideSec: 0.03, shiftGlideSec: 0.09, glideHoldSec: 0.2,
   riseRpmPerSec: 8000, fallRpmPerSec: 10000,
   maxRiseStPerSec: 58, maxFallStPerSec: 72, accelRef: 28, accelCurve: 0.65,
@@ -785,7 +786,20 @@ export class CrankAudio {
     let accelLoad = clamp(aNorm, 0, 1);
     let decelLoad = clamp(-aNorm, 0, 1);
 
-    accelLoad = Math.max(accelLoad, this._throttle * 0.85);
+    // The app feeds a constant cruise throttle while holding speed
+    // (vehicle-physics.js sets 0.18), and a PROPORTIONAL one while accelerating
+    // — clamped to a 0.15 floor. So light acceleration arrives with LESS
+    // throttle (0.15) than holding a steady speed (0.18). Taking max() of that
+    // against the acceleration signal inverted the two: accelLoad read 0.153 at
+    // cruise and 0.128 under a light pull, so the car got quieter when the
+    // driver eased on. Measured: civic-crank light throttle came out -0.3 dB
+    // against classic's +8.4.
+    //
+    // Adding keeps the standing load a real engine carries at cruise while
+    // leaving acceleration free to move on top of it. Full throttle is
+    // unchanged — aNorm alone already saturates.
+    const cruiseLoad = d.cruiseLoad ?? DEFAULT_DRIVE.cruiseLoad;
+    accelLoad = clamp(accelLoad + this._throttle * cruiseLoad, 0, 1);
     decelLoad = Math.max(decelLoad, this._brake * 0.85);
     const accelRaw = accelLoad;   // gear choice keeps this, so shift points hold
 
