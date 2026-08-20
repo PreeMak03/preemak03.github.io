@@ -167,6 +167,7 @@ button {
 .brand-mini {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   color: var(--text-muted);
 }
@@ -1018,6 +1019,20 @@ body:not(.dev-mode) .dev-only {
 }
 
 /* Small, muted app-version badge after the brand name (top-left). */
+/* Build id, under the version badge. Dev mode only — see .dev-only.
+ * `flex-basis: 100%` pushes it onto its own line inside the brand row. */
+.brand-build {
+  flex-basis: 100%;
+  margin-left: 34px;
+  margin-top: -2px;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+}
+
 .brand-ver {
   margin-left: 6px;
   font-size: 9px;

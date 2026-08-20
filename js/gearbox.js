@@ -6,8 +6,8 @@
  * drop again on the next upshift. Five close ratios = frequent resets = a
  * "rowing through the gears" feel instead of one droning held note.
  *
- * Speed bands (steady cruise):
- *   G1  0–25 · G2 25–50 · G3 50–70 · G4 70–90 · G5 90+
+ * Speed bands (steady cruise), after the Ioniq 5 N:
+ *   G1  1–40 · G2 41–70 · G3 71–90 · G4 91–110 · G5 111+
  *
  * revLo / revHi / pull come from each profile's engine block, so a lazy
  * Stage-3 muscle car sits low and shifts early while a rotary screams.
@@ -15,21 +15,43 @@
 
 import { clamp } from './animations.js';
 
-// Spec bands: G1 1–25 · G2 26–50 · G3 51–70 · G4 71–90 · G5 90+
-export const GEAR_VMAX = [26, 51, 71, 91, 200];
+/**
+ * Speed bands: the Hyundai Ioniq 5 N's simulated gearbox, which is the closest
+ * production reference to what this app is doing.
+ *
+ *   G1 1–40 · G2 41–70 · G3 71–90 · G4 91–110 · G5 111+
+ *
+ * Shared by every engine — classic, VESSEL and CRANK. Replaces the earlier
+ * 26/51/71/91 set (kept below as LEGACY_BANDS for reference and rollback).
+ */
+export const GEAR_VMAX = [40, 70, 90, 110, 240];
 export const GEAR_COUNT = 5;
 
-// Wide hysteresis (~10–14 km/h gap) so Tesla GPS ±2–4 km/h never thrash gears.
+// Wide hysteresis (~17 km/h gap) so Tesla GPS ±2–4 km/h never thrash gears.
 // Thrashing gear = RPM jumps = the main "กระตุก" left after dyn soft-fix.
-// UP_AT[g-1] = leave gear g upward at this speed (26/51/71/91 per spec).
-const UP_AT = [26, 51, 71, 91, 999];
+// UP_AT[g-1] = leave gear g upward at this speed.
+const UP_AT = [41, 71, 91, 111, 999];
 /** DOWN_AT[i] = leave gear i+2 below this speed */
-const DOWN_AT = [12, 34, 54, 74];
+const DOWN_AT = [24, 54, 74, 94];
+
+/**
+ * @typedef {{vmax:number[], up:number[], down:number[]}} GearBands
+ *
+ * Bands are threaded through as an optional argument so a profile can differ
+ * without touching anyone else. Everything currently takes the default.
+ */
+export const DEFAULT_BANDS = { vmax: GEAR_VMAX, up: UP_AT, down: DOWN_AT };
+
+/** The set used up to 2026-08-20, if the Ioniq spacing ever needs backing out. */
+export const LEGACY_BANDS = {
+  vmax: [26, 51, 71, 91, 200], up: [26, 51, 71, 91, 999], down: [12, 34, 54, 74],
+};
 
 /** Fallback rev character when a profile doesn't specify one. */
 const REV_DEFAULT = { lo: 0.18, hi: 0.7, pull: 0.96 };
 
-export function resolveGear(speedKmh, currentGear = 1, accelLoad = 0, decelLoad = 0) {
+export function resolveGear(speedKmh, currentGear = 1, accelLoad = 0, decelLoad = 0, bands = DEFAULT_BANDS) {
+  const UP = bands.up, DOWN = bands.down;
   let g = clamp(Math.round(currentGear) || 1, 1, GEAR_COUNT);
   const v = Math.max(0, speedKmh);
 
@@ -38,11 +60,11 @@ export function resolveGear(speedKmh, currentGear = 1, accelLoad = 0, decelLoad 
   const downBias = decelLoad * 5;
 
   // One step at a time (caller also clamps) — only cross clear thresholds
-  if (g < GEAR_COUNT && v >= UP_AT[g - 1] + upBias) g += 1;
-  else if (g > 1 && v < DOWN_AT[g - 2] - downBias) g -= 1;
+  if (g < GEAR_COUNT && v >= UP[g - 1] + upBias) g += 1;
+  else if (g > 1 && v < DOWN[g - 2] - downBias) g -= 1;
 
   // Kickdown: rare, single step only — GPS noise must never multi-drop
-  if (accelLoad > 0.88 && g > 1 && v < UP_AT[g - 2] + upBias - 4) {
+  if (accelLoad > 0.88 && g > 1 && v < UP[g - 2] + upBias - 4) {
     g -= 1;
   }
 
@@ -50,15 +72,15 @@ export function resolveGear(speedKmh, currentGear = 1, accelLoad = 0, decelLoad 
   return g;
 }
 
-export function gearSpeedSpan(gear) {
+export function gearSpeedSpan(gear, bands = DEFAULT_BANDS) {
   const g = clamp(gear, 1, GEAR_COUNT);
-  const floor = g === 1 ? 0 : GEAR_VMAX[g - 2];
-  const ceil = GEAR_VMAX[g - 1];
+  const floor = g === 1 ? 0 : bands.vmax[g - 2];
+  const ceil = bands.vmax[g - 1];
   return { floor, ceil, vmax: ceil };
 }
 
-export function gearProgress(speedKmh, gear) {
-  const { floor, ceil } = gearSpeedSpan(gear);
+export function gearProgress(speedKmh, gear, bands = DEFAULT_BANDS) {
+  const { floor, ceil } = gearSpeedSpan(gear, bands);
   return clamp((speedKmh - floor) / Math.max(1, ceil - floor), 0, 1.15);
 }
 

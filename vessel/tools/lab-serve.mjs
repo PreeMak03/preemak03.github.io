@@ -203,6 +203,7 @@ function applyAndPush(action, payload) {
       'js/animations.js',
       'js/vessel-audio.js',
       'js/vessel-rigs.js',
+      'assets/version.json',
       'js/crank-audio.js',
       'js/crank-rigs.js',
       'assets/crank/jz.crank.json',

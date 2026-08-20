@@ -520,6 +520,19 @@ async function init() {
       if (!r.ok) return;
       const v = await r.json();
       if (v && v.v) el.textContent = 'v' + v.v;
+
+      // Build line under it, Dev mode only (.dev-only hides it otherwise). The
+      // version number changes per release; this changes per commit, which is
+      // what you need when you are checking whether the browser is running the
+      // code you just wrote. A trailing + means the tree had uncommitted edits
+      // when it was stamped, so the files on disk are NOT that commit.
+      const b = $('#app-build');
+      if (b && v && v.build) {
+        b.textContent = `build ${v.build} · ${v.builtAt || ''}`.trim();
+        b.title = v.build.endsWith('+')
+          ? 'uncommitted changes were present at stamp time'
+          : 'clean tree at stamp time';
+      }
     } catch (_) {}
   })();
 
