@@ -117,6 +117,57 @@ const DYN_BASE = { dynDb: 7, dynCeiling: 0.9, shiftDuck: 0.4, overrunDuck: 0.7, 
  *                             "seconds to sweep the tacho under load".
  *   fallRpmPerSec             overrun drops faster than it climbs
  */
+/**
+ * DRIVELINE — the physical invariant this profile type has to obey.
+ *
+ * With a gear engaged the crank is bolted to the wheels through a fixed ratio,
+ * and its effective inertia is dominated by the mass of the car. So:
+ *
+ *     constant road speed  =>  constant engine rpm
+ *
+ * The rev target was being computed almost entirely from ACCELERATION, which is
+ * a derivative of speed and therefore the noisiest signal in the system.
+ * Measured on a car held at a steady 60 km/h, the revs swung 4.9 to 7.9
+ * semitones — the engine warbling while the car was not changing speed at all.
+ * Gear changes were not involved (zero gear flips in every case).
+ *
+ * The split below gives rpm a CLEAN fast path and puts the noisy one on a leash:
+ *
+ *   mechSweep   revs rise across a gear because the CAR is going faster. Driven
+ *               by speed, so it holds still when the car does. Centred on the
+ *               gear's existing cruise rpm, so mean cruise revs do not move.
+ *   liftFloor   the accelerometer's noise floor. Below it the measurement
+ *               carries no information about the road, so it is subtracted
+ *               rather than passed on. Soft, because a hard gate is itself a
+ *               step nonlinearity and would judder at the threshold.
+ *   liftAttack  how fast "the engine is working harder" can lift the revs.
+ *   liftRelease and how slowly it lets go. In a real automatic this is converter
+ *               slip, which genuinely takes about a second — so the physically
+ *               honest value is also the one that filters the noise.
+ */
+function deriveDriveline(drive) {
+  return {
+    mechSweep: round3((drive.revHi - drive.revLo) * 0.45),
+    // The mechanical term reads SPEED, so it inherits speed's noise: a GPS fix
+    // carries +-0.3 to 1 km/h, which across a 20 km/h gear band is tens of rpm
+    // arriving in 1 Hz steps. Real speed changes across a gear take many
+    // seconds, so this channel can be filtered hard with nothing to lose.
+    // Separate from the speed used to CHOOSE the gear, which must stay prompt.
+    mechSpeedLambda: 2.0,   // ~0.5 s
+    liftFloor: 1.2,      // km/h/s — the floor even when the fix is perfect
+    // A fixed threshold cannot know how good today's GPS is. Under a poor fix
+    // the derivative's own scatter IS its noise floor, so the gate tracks it:
+    // refuse to react to anything the size of the measurement's own jitter.
+    // What is genuinely lost this way (a real speed wobble buried in the noise)
+    // still reaches the ear through mechSweep, because SPEED is far cleaner
+    // than its derivative. That is the whole reason for splitting them.
+    liftNoiseK: 1.5,
+    liftNoiseMax: 4,     // multiples of liftFloor, so the gate cannot run away
+    liftAttack: 3.5,     // lambda, ~0.29 s
+    liftRelease: 1.2,    // lambda, ~0.83 s
+  };
+}
+
 function deriveMotion(spec, drive) {
   const inertia = spec.inertia ?? 0.7;
   const span = spec.redlineRpm - spec.idleRpm;
@@ -213,7 +264,12 @@ function defaultsFor(spec) {
   return {
     drive: (() => {
       const window_ = { ...DRIVE_BASE, ...(spec.drive || {}) };   // rev window first
-      return { ...window_, ...deriveMotion(spec, window_), ...(spec.drive || {}) };
+      return {
+        ...window_,
+        ...deriveMotion(spec, window_),
+        ...deriveDriveline(window_),
+        ...(spec.drive || {}),
+      };
     })(),
     dynamics: { ...DYN_BASE, ...(spec.dynamics || {}) },
     boost: deriveBoost(spec) ? { ...deriveBoost(spec), ...(spec.boost || {}) } : null,
@@ -357,6 +413,7 @@ for (const spec of SPECS) {
   // Show what the type defaults derived, so a new engine can be sanity-checked
   const d = doc.drive;
   console.log(`         motion  glide ${d.glideSec}s / shift ${d.shiftGlideSec}s  rise ${d.riseRpmPerSec} rpm/s (<= ${d.maxRiseStPerSec} st/s)  fall ${d.fallRpmPerSec}`);
+  console.log(`         drive   mechSweep ${d.mechSweep} (speed lambda ${d.mechSpeedLambda})  liftFloor ${d.liftFloor} km/h/s  attack ${d.liftAttack} / release ${d.liftRelease}`);
   console.log(
     doc.boost
       ? `         boost   on ${doc.boost.onsetRpm} -> full ${doc.boost.fullRpm} @ ${doc.boost.peakBar} bar, taper from ${doc.boost.taperRpm} to ${doc.boost.taperTo}, offGain ${doc.boost.offGain}`

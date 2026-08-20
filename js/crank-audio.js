@@ -79,6 +79,8 @@ const DEFAULT_DRIVE = {
   glideSec: 0.03, shiftGlideSec: 0.09, glideHoldSec: 0.2,
   riseRpmPerSec: 8000, fallRpmPerSec: 10000,
   maxRiseStPerSec: 58, maxFallStPerSec: 72,
+  mechSweep: 0.17, mechSpeedLambda: 2.0, liftFloor: 1.2, liftNoiseK: 1.5, liftNoiseMax: 4,
+  liftAttack: 3.5, liftRelease: 1.2,
 };
 const DEFAULT_DYN = { dynDb: 7, dynCeiling: 0.9, shiftDuck: 0.4, overrunDuck: 0.7, idlePresence: 0.7 };
 
@@ -191,7 +193,7 @@ export class CrankAudio {
     this._boostSpec = null;
 
     // Vehicle input
-    this._speed = 0; this._speedSmooth = 0;
+    this._speed = 0; this._speedSmooth = 0; this._speedMech = 0;
     this._accel = 0; this._accelSmooth = 0;
     this._throttle = 0; this._brake = 0;
 
@@ -210,6 +212,10 @@ export class CrankAudio {
     this._camSpec = null;
     this._limiter = false;
     this._jitter = 0;
+    this._accelPrev = 0;
+    this._accelNoise = 0;  // running estimate of the accel channel's own scatter
+    this._lift = 0;        // smoothed "engine is working" term (see _driveModel)
+    this._liftNeg = 0;     // same, for engine braking
     this._effort = 0;
     this._effortHold = 0;
     this._idlePhase = 0;
@@ -608,12 +614,53 @@ export class CrankAudio {
     this._speedSmooth = damp(this._speedSmooth, this._speed, smoothL, dt);
     this._accelSmooth = damp(this._accelSmooth, this._accel, this.smoothFilter ? 10 : 18, dt);
     const speed = this.speedReactive ? this._speedSmooth : Math.max(this._speedSmooth, 40);
+    // Heavily filtered speed, used ONLY for the rev sweep inside a gear. Gear
+    // selection keeps the prompt one above.
+    this._speedMech = damp(this._speedMech, speed, d.mechSpeedLambda, dt);
 
-    const aNorm = clamp(this._accelSmooth / this.accelRefKmhps, -1.4, 1.4);
+    // Soft gate at the accelerometer's noise floor. SUBTRACTING the floor rather
+    // than zeroing below it keeps the curve continuous — a hard threshold is a
+    // step nonlinearity and would judder on its own every time the signal
+    // crossed back and forth.
+    // How much does the acceleration estimate jitter FIX TO FIX? That scatter is
+    // the channel's noise floor, and it is not a constant — it depends on how
+    // good the fix is right now. Gate at a multiple of it, never below the
+    // clean-fix floor and never above a bounded multiple of it.
+    //
+    // Event-driven on purpose: GPS delivers ~1 fix/s while this ticks at 50 Hz,
+    // so averaging every tick would fold 49 zeros into every real sample and
+    // report a noise floor near zero however bad the fix actually was.
+    if (this._accel !== this._accelPrev) {
+      const jump = Math.abs(this._accel - this._accelPrev);
+      this._accelPrev = this._accel;
+      this._accelNoise = this._accelNoise * 0.8 + jump * 0.2;
+    }
+    const gate = Math.min(d.liftFloor * d.liftNoiseMax,
+      Math.max(d.liftFloor, this._accelNoise * d.liftNoiseK));
+
+    // Subtracting the gate would shift the WHOLE scale down, so after a stretch
+    // of bad GPS a genuine full-throttle pull would come up short (measured
+    // 5320 rpm instead of 6006). Rescale what survives so full acceleration
+    // still means full lift, while anything near the noise floor stays at zero.
+    const ref = this.accelRefKmhps;
+    const aRaw = this._accelSmooth;
+    const span_ = Math.max(1, ref - gate);
+    const aClean = Math.sign(aRaw) * Math.max(0, Math.abs(aRaw) - gate) * (ref / span_);
+    const aNorm = clamp(aClean / ref, -1.4, 1.4);
     let accelLoad = clamp(aNorm, 0, 1);
     let decelLoad = clamp(-aNorm, 0, 1);
     accelLoad = Math.max(accelLoad, this._throttle * 0.85);
     decelLoad = Math.max(decelLoad, this._brake * 0.85);
+
+    // Then put what survives on a leash. This is transmission slip: a real
+    // automatic takes about a second to change how hard it holds the engine, so
+    // the physically honest time constant is also the one that filters what is
+    // left of the derivative noise. Asymmetric — tip-in should feel prompt,
+    // lift-off should trail.
+    this._lift = damp(this._lift, accelLoad,
+      accelLoad > this._lift ? d.liftAttack : d.liftRelease, dt);
+    this._liftNeg = damp(this._liftNeg, decelLoad,
+      decelLoad > this._liftNeg ? d.liftAttack : d.liftRelease, dt);
 
     this._idlePhase += dt;
     let load;
@@ -685,17 +732,24 @@ export class CrankAudio {
         }
         this._gearBias = gearToneBias(this._gear);
 
-        let targetRpm = rpmInGear({
-          gear: this._gear,
-          idle,
-          redline,
-          accelLoad,
-          decelLoad,
-          revLo: d.revLo,
-          pull: d.revPull,
-          floorLo: d.floorLo,
-          floorHi: d.floorHi,
+        // Mechanical term: the gear's own rev sweep, driven by SPEED. Centred on
+        // the gear's existing cruise rpm (gp 0.5), so mean cruise revs stay where
+        // they were — what changes is that the movement now comes from the car
+        // actually going faster, not from noise in a derivative.
+        const gp = clamp(gearProgress(this._speedMech, this._gear), 0, 1.15);
+        const cruiseRpm = rpmInGear({
+          gear: this._gear, idle, redline,
+          accelLoad: 0, decelLoad: 0,
+          revLo: d.revLo, pull: d.revPull, floorLo: d.floorLo, floorHi: d.floorHi,
         });
+        const nMech = (cruiseRpm - idle) / span + (gp - 0.5) * d.mechSweep;
+
+        // Lift: how far toward the pull ceiling the smoothed workload takes it.
+        // Constant speed -> lift decays to 0 -> revs sit at the mechanical value
+        // and hold still, which is the entire point.
+        const headroom = Math.max(0, d.revPull - nMech);
+        const n = nMech + this._lift * headroom - this._liftNeg * 0.12;
+        let targetRpm = idle + span * clamp(n, d.revLo * 0.4, 1.02);
         // Heavier rotating mass = lazier revs (1JZ 0.95 vs K20 0.5)
         const inertiaL = 1 / clamp(0.45 + s.inertia * 0.75, 0.5, 1.6);
         let rpmLambda = (this.smoothFilter ? 7 : 12) * inertiaL;
