@@ -10,6 +10,7 @@ import { AudioEngine } from './audio-engine.js';
 import { hasRig } from './vessel-rigs.js';
 // same trick for CRANK — the id map is a few bytes, CrankAudio loads on demand
 import { hasCrank } from './crank-rigs.js';
+import { hasTurbine } from './turbine-rigs.js';
 import { GeolocationService } from './geolocation.js';
 import { VehiclePhysics, SIM_RATE } from './vehicle-physics.js';
 import { startOnboarding } from './onboarding.js';
@@ -155,6 +156,7 @@ let audio = new AudioEngine();
 function engineKindFor(id) {
   if (hasRig(id)) return 'vessel';
   if (hasCrank(id)) return 'crank';
+  if (hasTurbine(id)) return 'turbine';
   return 'classic';
 }
 
@@ -163,6 +165,7 @@ function currentEngineKind() {
   const n = audio?.constructor?.name;
   if (n === 'VesselAudio') return 'vessel';
   if (n === 'CrankAudio') return 'crank';
+  if (n === 'TurbineAudio') return 'turbine';
   return 'classic';
 }
 
@@ -185,6 +188,9 @@ async function ensureEngineFor(id) {
     } else if (want === 'crank') {
       const { CrankAudio } = await import('./crank-audio.js');
       audio = new CrankAudio();
+    } else if (want === 'turbine') {
+      const { TurbineAudio } = await import('./turbine-audio.js');
+      audio = new TurbineAudio();
     } else {
       audio = new AudioEngine();
     }
@@ -300,7 +306,8 @@ function updateTuneScope(profileId) {
     chip.textContent =
       kind === 'vessel' ? 'VESSEL · synthesis'
         : kind === 'crank' ? 'CRANK · firing order'
-          : 'Classic · tone';
+          : kind === 'turbine' ? 'TURBINE · gearless'
+            : 'Classic · tone';
     chip.classList.toggle('is-vessel', vessel);
     chip.classList.toggle('is-crank', kind === 'crank');
   }
@@ -315,7 +322,9 @@ function updateTuneScope(profileId) {
         ? 'Bass/Edge = cabin path. Engine DNA = vessel/presets/*.engine.json (bench). Vehicle RPM = camaro.deploy.json → vehicle{}.'
         : kind === 'crank'
           ? 'Bass/Edge = cabin shelves (neutral at 50). Engine character = firing order + resonances compiled into assets/crank/*.crank.json.'
-          : 'Bass/Edge follow this card’s tone mix. Engine character is the classic procedural profile.';
+          : kind === 'turbine'
+            ? 'Bass/Edge = cabin shelves. No gearbox — shaft speed follows road speed. Character lives in assets/turbine/*.turbine.json.'
+            : 'Bass/Edge follow this card’s tone mix. Engine character is the classic procedural profile.';
   }
 }
 

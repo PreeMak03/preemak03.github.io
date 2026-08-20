@@ -12,7 +12,8 @@
     "flat6-911",
     "2jz",
     "jz-crank",
-    "civic-crank"
+    "civic-crank",
+    "turbine-jet"
   ],
   "versions": {
     "camaro-vessel": "v1.1-fp-cabin",
@@ -31,7 +32,8 @@
     "american-vessel": "v1.0-deep",
     "gentle-vessel": "v1.0-gentle",
     "jz-crank": "crank-v1.1",
-    "civic-crank": "crank-v1.1"
+    "civic-crank": "crank-v1.1",
+    "turbine-jet": "turbine-v1"
   },
   "deployPick": [
     "classic-muscle",

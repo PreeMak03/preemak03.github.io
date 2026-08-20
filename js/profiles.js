@@ -942,6 +942,36 @@ export const SOUND_PROFILES = [
     },
     mix: { master: 100, bass: 50, edge: 50 },
   },
+  /* -------------------------------------------------------------- TURBINE --
+   * A gas turbine, not a piston engine (js/turbine-audio.js). No firing order
+   * and no gearbox — shaft speed follows road speed continuously. engine{} is
+   * only here so the shared UI has an rpm range to label; tone{} is a classic
+   * fallback if the turbine runtime ever fails to load.
+   */
+  {
+    id: 'turbine-jet',
+    name: 'Turbine',
+    tag: 'Jet · gearless',
+    car: 'Gas turbine · pure gimmick',
+    accent: 'rgba(120, 190, 255, 0.55)',
+    turbine: true,
+    engine: {
+      type: 'ice',
+      cylinders: 1,
+      idleRpm: 0,
+      redlineRpm: 42000,
+      gears: [1],
+      rpmCurve: 1,
+    },
+    tone: {
+      harmonics: [0, 1, 0.6, 0.45, 0.38, 0.34, 0.3, 0.26, 0.22, 0.18, 0.15, 0.12, 0.1],
+      body: 0.45, mid: 0.6, high: 0.85, sub: 0.3, noise: 0.55, metallic: 0.7, scream: 0.6,
+      turbo: 0.4, turboLag: 0.6, crackle: 0, lope: 0, boxer: 0, rotary: 0, electric: 0.3,
+      exhaustPulse: 0.1, drive: 0.3, filterIdle: 500, filterRedline: 6000, resonance: 0.5,
+      volume: 1, idlePresence: 0.6, characterMid: 0.6,
+    },
+    mix: { master: 100, bass: 50, edge: 55 },
+  },
 ];
 
 export function getProfileById(id) {
@@ -954,6 +984,7 @@ export function getProfileById(id) {
  */
 export const SHIP_ACTIVE_IDS = [
   'camaro-restomod',
+  'turbine-jet',
   'jz-crank',
   'civic-crank',
   'camaro-vessel',

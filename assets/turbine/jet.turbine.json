@@ -1,0 +1,40 @@
+{
+  "format": "turbine/1",
+  "id": "turbine-jet",
+  "name": "Turbine",
+  "car": "Gas turbine · gearless",
+  "notes": "Shaft speed follows road speed continuously. No firing order, no gearbox.",
+  "spec": {
+    "partials": 32,
+    "tilt": 1.15,
+    "shaftGain": 0.5,
+    "shaftLpHz": { "lo": 420, "hi": 5200 },
+    "spool": {
+      "idleHz": 38,
+      "topHz": 340,
+      "topSpeedKmh": 140,
+      "curve": 0.8,
+      "accelLift": 0.22,
+      "lagSec": 0.9,
+      "decaySec": 1.4
+    },
+    "blade": { "mul": 4.2, "gain": 0.3 },
+    "whine": { "mul": 11, "gain": 0.16, "riseFrom": 0.35 },
+    "roar": { "loHz": 190, "hiHz": 2300, "q": 0.7, "gain": 0.55 },
+    "hiss": { "hz": 4200, "gain": 0.2 },
+    "stereo": { "detuneCents": 9, "spread": 0.55 },
+    "wander": 0.012,
+    "outputTrim": 1,
+    "makeup": 1.3,
+    "shaftRpmTop": 42000
+  },
+  "dynamics": {
+    "dynDb": 16,
+    "dynCeiling": 0.92,
+    "shiftDuck": 1,
+    "overrunDuck": 0.85,
+    "idlePresence": 0.6,
+    "loadBoost": 0.2,
+    "floorBias": 0.8
+  }
+}
