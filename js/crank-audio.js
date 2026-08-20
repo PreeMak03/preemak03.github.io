@@ -78,9 +78,21 @@ const DEFAULT_DRIVE = {
   revLo: 0.17, revHi: 0.55, revPull: 0.9, floorLo: 1300, floorHi: 1800,
   glideSec: 0.03, shiftGlideSec: 0.09, glideHoldSec: 0.2,
   riseRpmPerSec: 8000, fallRpmPerSec: 10000,
-  maxRiseStPerSec: 58, maxFallStPerSec: 72,
+  maxRiseStPerSec: 58, maxFallStPerSec: 72, accelRef: 32,
 };
-const DEFAULT_DYN = { dynDb: 7, dynCeiling: 0.9, shiftDuck: 0.9, overrunDuck: 0.9, idlePresence: 0.7 };
+/**
+ * Cabin staging. These are the classic engine's own numbers — the brief was to
+ * sound placed like classic, so nothing here is "improved".
+ */
+const DEFAULT_SPACE = {
+  crossoverHz: 300, rearDelaySec: 0.022, rearZ: 2, rearGain: 1.15,
+  frontGain: 1, reverbSec: 0.26, reverbDecay: 3.4, reverbWet: 0.13, frontSend: 0.35,
+};
+
+const DEFAULT_DYN = {
+  dynDb: 21, dynCeiling: 0.92, shiftDuck: 0.9, overrunDuck: 0.9,
+  idlePresence: 0.55, loadBoost: 0.22, floorBias: 0.7,
+};
 
 /** VVT latch — used if a vtec profile ships without a cam block. */
 const DEFAULT_CAM = { onAt: 0.62, offAt: 0.34, dwellSec: 0.28 };
@@ -137,6 +149,43 @@ function torqueFactor(rpm, s) {
   if (rpm < peak) return 0.42 + 0.58 * (1 - (1 - (rpm - idle) / Math.max(1, peak - idle)) ** 1.4);
   const over = (rpm - peak) / Math.max(1, red - peak);
   return 1 - 0.38 * over * over;
+}
+
+/**
+ * Two decorrelated exponentially-decaying noise tails = a small-cabin IR.
+ * Copied from the classic engine, including the darkening low-pass on the tail.
+ */
+function cabinIR(ctx, seconds, decay) {
+  const n = Math.floor(ctx.sampleRate * seconds);
+  const buf = ctx.createBuffer(2, n, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = buf.getChannelData(c);
+    let lp = 0;
+    for (let i = 0; i < n; i++) {
+      const white = Math.random() * 2 - 1;
+      lp += 0.22 * (white - lp);
+      d[i] = lp * Math.pow(1 - i / n, decay);
+    }
+  }
+  return buf;
+}
+
+/**
+ * Brick-wall ceiling curve. Linear to `knee`, then a tanh that can never exceed
+ * `ceil`. Last thing in the chain: a DynamicsCompressor has no lookahead and
+ * lets fast transients overshoot — measured +0.5 dBFS before this existed.
+ */
+function ceilingCurve(knee = 0.82, ceil = 0.985) {
+  const n = 2048;
+  const curve = new Float32Array(n);
+  const span = Math.max(1e-4, ceil - knee);
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    const a = Math.abs(x);
+    const y = a <= knee ? a : knee + span * Math.tanh((a - knee) / span);
+    curve[i] = Math.sign(x) * Math.min(ceil, y);
+  }
+  return curve;
 }
 
 /** tanh drive curve for the exhaust waveshaper ("rasp"). */
@@ -240,6 +289,9 @@ export class CrankAudio {
 
     // UI overrides (App System)
     this._masterOverride = null;
+    this._masterScale = 1.1;
+    this._outputTrim = 1;
+    this._space = { ...DEFAULT_SPACE };
     this._bass = 0.5;
     this._edge = 0.5;
 
@@ -294,6 +346,9 @@ export class CrankAudio {
     this._mixer = { ...DEFAULT_MIXER, ...(doc.mixer || {}) };
     this._drive = { ...DEFAULT_DRIVE, ...(doc.drive || {}) };
     this._dyn = { ...DEFAULT_DYN, ...(doc.dynamics || {}) };
+    this._masterScale = doc.masterScale ?? 1.1;
+    this._outputTrim = doc.outputTrim ?? 1;
+    this._space = { ...DEFAULT_SPACE, ...(doc.space || {}) };
     // Every forced-induction CRANK profile gets a boost curve, compiled or not.
     if (doc.boost) {
       this._boostSpec = doc.boost;
@@ -346,6 +401,9 @@ export class CrankAudio {
     this._waves = this._makeWaveSet(doc.waves.base);
     this._vtecWaves = doc.waves.vtec ? this._makeWaveSet(doc.waves.vtec) : null;
     this._sharpCam = false;
+    // The new card may carry a different output trim, and the graph already
+    // exists, so re-apply it here rather than only at build time.
+    at(this._nodes.compressor.gain, this._outputTrim, this.ctx.currentTime, 0.05);
 
     const nextKey = this._active === 'a' ? 'b' : 'a';
     const cur = this._voices[this._active];
@@ -528,12 +586,49 @@ export class CrankAudio {
   _buildGraph() {
     const ctx = this.ctx;
 
-    const compressor = ctx.createDynamicsCompressor();
-    compressor.threshold.value = -18;
-    compressor.knee.value = 12;
-    compressor.ratio.value = 3.2;
-    compressor.attack.value = 0.003;
-    compressor.release.value = 0.12;
+    // Bus for everything the engine makes. The prototype's -18 dB / 3.2:1
+    // LEVELLING compressor used to sit here: harmless at its own 0.72 master,
+    // but at TAS master 100 it pressed into the signal and ate about 9 dB of
+    // the pull, which is most of why dynamic volume was inaudible in the car.
+    const compressor = ctx.createGain();
+    compressor.gain.value = this._outputTrim;
+
+    /* --- cabin staging, copied from the classic engine ----------------------
+     * The exhaust band is split off below the crossover, delayed by a rear-wall
+     * reflection and placed BEHIND the listener with an HRTF panner; the
+     * mechanical top end stays dry and in front; a short decorrelated stereo IR
+     * supplies the tail. Wide, reverberant rear content is also what feeds
+     * Tesla's Immersive Sound upmixer toward the rear speakers, which is why
+     * the classic profiles come out of the whole cabin rather than one point.
+     * Values are classic's, not tuned ones — the brief was "same as classic". */
+    const sp = this._space;
+    const zoneRear = ctx.createBiquadFilter();
+    zoneRear.type = 'lowpass'; zoneRear.frequency.value = sp.crossoverHz; zoneRear.Q.value = 0.7;
+    const zoneFront = ctx.createBiquadFilter();
+    zoneFront.type = 'highpass'; zoneFront.frequency.value = sp.crossoverHz; zoneFront.Q.value = 0.7;
+
+    const rearDelay = ctx.createDelay(0.05);
+    rearDelay.delayTime.value = sp.rearDelaySec;
+    const rearPanner = ctx.createPanner();
+    rearPanner.panningModel = 'HRTF';
+    if (rearPanner.positionZ) rearPanner.positionZ.value = sp.rearZ;
+    else rearPanner.setPosition(0, 0, sp.rearZ);
+    const rearGain = ctx.createGain(); rearGain.gain.value = sp.rearGain;
+    const frontGain = ctx.createGain(); frontGain.gain.value = sp.frontGain ?? 1;
+
+    const stage = ctx.createGain();
+    compressor.connect(zoneRear);
+    zoneRear.connect(rearDelay).connect(rearPanner).connect(rearGain).connect(stage);
+    compressor.connect(zoneFront);
+    zoneFront.connect(frontGain).connect(stage);
+
+    const reverb = ctx.createConvolver();
+    reverb.buffer = cabinIR(ctx, sp.reverbSec, sp.reverbDecay);
+    const reverbWet = ctx.createGain(); reverbWet.gain.value = sp.reverbWet;
+    const frontSend = ctx.createGain(); frontSend.gain.value = sp.frontSend;
+    zoneRear.connect(reverb);
+    zoneFront.connect(frontSend).connect(reverb);
+    reverb.connect(reverbWet).connect(stage);
 
     // TAS Sound Profile shelves (Bass / Edge). Neutral at 0.5 so the default
     // card sounds exactly like the prototype.
@@ -551,8 +646,31 @@ export class CrankAudio {
     analyser.fftSize = 2048;
     analyser.smoothingTimeConstant = 0.72;
 
-    compressor.connect(low).connect(high).connect(dynGain).connect(master);
-    master.connect(analyser);
+    // Loudness makeup BEFORE the limiter, so cruise uses the headroom cleanly
+    // and only peaks ever touch it. Raising `master` instead would just push the
+    // whole signal into the brick wall.
+    const makeup = ctx.createGain();
+    makeup.gain.value = 1.4;
+
+    // Peak catcher, not a leveller — it only touches transients, so the dyn
+    // curve survives while the speakers stay protected.
+    const limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = -6;
+    limiter.knee.value = 3;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.002;
+    limiter.release.value = 0.09;
+
+    // Final brick wall, after master, so nothing leaves above full scale no
+    // matter what the volume slider or a profile asks for.
+    const safety = ctx.createWaveShaper();
+    safety.oversample = 'none';
+    safety.curve = ceilingCurve(0.82, 0.985);
+
+    stage.connect(low).connect(high).connect(dynGain)
+      .connect(makeup).connect(limiter).connect(master);
+    master.connect(safety);
+    safety.connect(analyser);
     analyser.connect(ctx.destination);
 
     const voices = { a: this._makeVoice(), b: this._makeVoice() };
@@ -613,7 +731,9 @@ export class CrankAudio {
     this._voices = voices;
     this._active = 'a';
     this._nodes = {
-      compressor, low, high, dynGain, master, analyser,
+      compressor, stage, zoneRear, zoneFront, rearDelay, rearPanner, rearGain,
+      frontGain, reverb, reverbWet, frontSend,
+      low, high, dynGain, makeup, limiter, safety, master, analyser,
       noiseComb, noiseTurbo, noiseIntake, starterSrc, starterLp, starterGain,
       popSrc, popBp, popGain,
     };
@@ -646,7 +766,11 @@ export class CrankAudio {
     // Classic parity: below this the reading is GPS scatter, not the road.
     let accelForLoad = this._accelSmooth;
     if (Math.abs(accelForLoad) < ACCEL_DEADBAND) accelForLoad = 0;
-    const aNorm = clamp(accelForLoad / this.accelRefKmhps, -1.4, 1.4);
+    // accelRef comes from the profile: bigger = LESS sensitive. CRANK reads as
+    // twitchier than the classic engines on identical input because one
+    // oscillator turns load straight into pitch and level with nothing masking
+    // it, so it runs a slacker reference than their 26.
+    const aNorm = clamp(accelForLoad / (d.accelRef || this.accelRefKmhps), -1.4, 1.4);
     let accelLoad = clamp(aNorm, 0, 1);
     let decelLoad = clamp(-aNorm, 0, 1);
     accelLoad = Math.max(accelLoad, this._throttle * 0.85);
@@ -997,6 +1121,8 @@ export class CrankAudio {
       overrun: this._driveState === 'overrun',
       dynDb: this._dyn.dynDb,
       curveMul: 1,
+      loadBoost: this._dyn.loadBoost,
+      floorBias: this._dyn.floorBias,
       load,
       softCeiling: this._dyn.dynCeiling,
       shiftDuck: this._dyn.shiftDuck,
@@ -1004,7 +1130,8 @@ export class CrankAudio {
     });
     at(this._nodes.dynGain.gain, clamp(dyn.dynVol, 0, 1.2), t, 0.05);
 
-    const master = this._masterOverride != null ? this._masterOverride : sq(this._mixer.master);
+    const scale = this._masterScale;
+    const master = (this._masterOverride != null ? this._masterOverride : sq(this._mixer.master)) * scale;
     at(this._nodes.master.gain, master, t, 0.04);
   }
 
@@ -1043,7 +1170,7 @@ export class CrankAudio {
   setMasterVolume(v) {
     this._masterOverride = clamp(v, 0, 1.2);
     if (!this._nodes || !this.ctx) return;
-    at(this._nodes.master.gain, this._masterOverride, this.ctx.currentTime, 0.03);
+    at(this._nodes.master.gain, this._masterOverride * this._masterScale, this.ctx.currentTime, 0.03);
   }
 
   /** SOUND PROFILE — cabin body. Neutral at 0.5 = the prototype's balance. */

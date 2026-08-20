@@ -74,7 +74,7 @@ const SPECS = [
     stereoWidth: 0.22, inertia: 0.5, vtecRpm: 5800,
     notes: '2.0 I4. i-VTEC locks a wilder cam at ~5,800 rpm.',
     drive: { revLo: 0.18, revHi: 0.58, revPull: 0.92 },
-    dynamics: { dynDb: 8, idlePresence: 0.68 },
+    dynamics: { idlePresence: 0.68 },
   },
 ];
 
@@ -101,7 +101,41 @@ const DRIVE_BASE = { revLo: 0.17, revHi: 0.55, revPull: 0.9, floorLo: 1300, floo
 // 0.7, i.e. -8 dB on every gear change and -3 dB entering overrun, against
 // classic's -0.9 dB for both. That is not a duck, it is a hole, and it lands
 // exactly where the owner hears the sound break up.
-const DYN_BASE = { dynDb: 7, dynCeiling: 0.9, shiftDuck: 0.9, overrunDuck: 0.9, idlePresence: 0.7 };
+// dynDb 18 (not 7) and the loadBoost/floorBias pair. Measured against
+// classic-muscle in the same session: at dynDb 7 CRANK sat 8.5 dB louder than
+// classic at cruise with less than half its dynamic range, which is why dynamic
+// volume was inaudible in the car.
+const DYN_BASE = {
+  dynDb: 21, dynCeiling: 0.92, shiftDuck: 0.9, overrunDuck: 0.9,
+  idlePresence: 0.55, loadBoost: 0.22, floorBias: 0.7,
+};
+
+/**
+ * How much acceleration counts as "full load".
+ *
+ * accelLoad = accel / accelRef, so a BIGGER number is LESS sensitive. The
+ * classic engines use 26; CRANK reads as twitchier on the same input because
+ * one oscillator turns load straight into pitch and level with nothing masking
+ * it, so it gets a slacker reference.
+ */
+const ACCEL_REF_KMHPS = 32;
+
+/** Slider 100 lands here. The mix is conservative, so 100 alone was quiet. */
+const MASTER_SCALE = 1.1;
+
+/**
+ * Output trim — levels the CARDS, not the engines.
+ *
+ * `body` is a voicing figure (1JZ 0.86, K20 0.40), so left alone the I4 card
+ * simply plays quieter than the I6 card — measured 3.6 dB down at cruise. An
+ * engine being intrinsically thinner is correct; a card you have to reach for
+ * the volume knob for is not. This puts them in the same window and leaves the
+ * voicing difference intact.
+ */
+function deriveOutputTrim(spec) {
+  const body = spec.body || 0.5;
+  return round3(Math.min(1.5, Math.max(0.9, (0.86 / body) ** 0.45)));
+}
 
 /**
  * MOTION — how fast the sound is allowed to move. This is the anti-judder half
@@ -277,6 +311,7 @@ function defaultsFor(spec) {
         ...window_,
         ...deriveMotion(spec, window_),
         rpmCeiling: derivePitchCeiling(spec),
+        accelRef: ACCEL_REF_KMHPS,
         ...deriveGearFloors(spec, window_),
         ...(spec.drive || {}),
       };
@@ -284,6 +319,8 @@ function defaultsFor(spec) {
     dynamics: { ...DYN_BASE, ...(spec.dynamics || {}) },
     boost: deriveBoost(spec) ? { ...deriveBoost(spec), ...(spec.boost || {}) } : null,
     cam: spec.induction === 'vtec' ? { ...CAM, ...(spec.cam || {}) } : null,
+    masterScale: spec.masterScale ?? MASTER_SCALE,
+    outputTrim: spec.outputTrim ?? deriveOutputTrim(spec),
   };
 }
 
@@ -427,6 +464,7 @@ for (const spec of SPECS) {
   const firing = (rpm) => ((spec.idleRpm + ((rpm - spec.idleRpm) * (ceil - spec.idleRpm)) / (spec.redlineRpm - spec.idleRpm)) / 120) * spec.cylinders;
   console.log(`         pitch   plays ${spec.idleRpm}-${ceil} rpm (readout ${spec.idleRpm}-${spec.redlineRpm})  firing ${firing(1500).toFixed(0)} Hz @1500, ${firing(spec.redlineRpm).toFixed(0)} Hz @redline`);
   console.log(`         floors  gear cruise ${d.floorLo}-${d.floorHi} rpm`);
+  console.log(`         loud    dynDb ${doc.dynamics.dynDb}  accelRef ${d.accelRef} km/h/s  masterScale ${doc.masterScale}x  trim ${doc.outputTrim}x`);
   console.log(
     doc.boost
       ? `         boost   on ${doc.boost.onsetRpm} -> full ${doc.boost.fullRpm} @ ${doc.boost.peakBar} bar, taper from ${doc.boost.taperRpm} to ${doc.boost.taperTo}, offGain ${doc.boost.offGain}`
