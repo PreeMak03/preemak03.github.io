@@ -156,7 +156,7 @@ const bench2 = {
         : (a._layers && a._layers.low ? a._layers.low.src.playbackRate.value : 0);
 
     const grab = async (ms) => {
-      const rms = []; const red = []; const side = []; const rpm = []; const freq = []; const effort = []; const accel = [];
+      const rms = []; const red = []; const side = []; const rpm = []; const freq = []; const effort = []; const accel = []; const stamp = [];
       let peak = 0; let prePeak = 0; let over = 0; let total = 0; let nan = 0;
       const end = Date.now() + ms;
       while (Date.now() < end) {
@@ -187,13 +187,14 @@ const bench2 = {
         if (limiter) red.push(limiter.reduction);
         rpm.push(a.rpm || 0);
         freq.push(played());
+        stamp.push(performance.now());
         effort.push(a._effort ?? 0);
         accel.push((window.TAS.physics && window.TAS.physics.accelKmhps) || 0);
         await wait();
       }
       return { rms: mean(rms), peak, prePeak, pctClipped: (100 * over) / Math.max(1, total),
         nan, red: mean(red), redWorst: red.length ? Math.min(...red) : 0,
-        side: mean(side), rpm, freq,
+        side: mean(side), rpm, freq, stamp,
         effortMax: effort.length ? Math.max(...effort) : 0,
         accelMax: accel.length ? Math.max(...accel) : 0 };
     };
@@ -235,10 +236,23 @@ const bench2 = {
     const climb = await grab(6000);
     await settle(sl, 0, 500);
 
+    // Semitones per second, over the interval that actually elapsed. This used
+    // to divide by a hardcoded 0.025 while the sampling loop really took 30-45 ms
+    // per pass — three analyser reads over 2048 samples each. The error is not a
+    // constant scale either: it tracks how busy the loop was, so it differed
+    // between engines. Measured against a direct probe, the fixed divisor put
+    // classic-muscle at p99 16.9 where the real figure was 94.6.
+    //
+    // f0 > 0.0001 not > 1: classic plays a sample at a playbackRATE near 0.35,
+    // not a frequency in Hz, and "> 1" silently discarded every classic frame
+    // and left the percentiles to be computed from whatever survived.
     const rates = [];
     for (let i = 1; i < climb.freq.length; i++) {
       const f0 = climb.freq[i - 1]; const f1 = climb.freq[i];
-      if (f0 > 1 && f1 > 1) rates.push(Math.abs(12 * Math.log2(f1 / f0)) / 0.025);
+      const dtS = (climb.stamp[i] - climb.stamp[i - 1]) / 1000;
+      if (f0 > 0.0001 && f1 > 0.0001 && dtS > 0.001) {
+        rates.push(Math.abs(12 * Math.log2(f1 / f0)) / dtS);
+      }
     }
     rates.sort((x, y) => x - y);
 
