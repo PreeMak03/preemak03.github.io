@@ -76,7 +76,7 @@ const DEFAULT_MIXER = { exhaust: 0.92, intake: 0.58, mechanical: 0.34, induction
  */
 const DEFAULT_DRIVE = {
   revLo: 0.17, revHi: 0.55, revPull: 0.9, floorLo: 1300, floorHi: 1800,
-  cruiseLoad: 0.5,
+  cruiseLoad: 0.5, wanderRpm: 52, wanderLope: 178,
   glideSec: 0.03, shiftGlideSec: 0.09, glideHoldSec: 0.2,
   riseRpmPerSec: 8000, fallRpmPerSec: 10000,
   maxRiseStPerSec: 58, maxFallStPerSec: 72, accelRef: 28, accelCurve: 0.65,
@@ -268,6 +268,7 @@ export class CrankAudio {
     this._effortHold = 0;
     this._idlePhase = 0;
     this._breathePhase = 0;
+    this._rpmDisplay = null;
     this._paramTick = 0;
     this._lastParam = new WeakMap();
     this._holdRpm = null;
@@ -1018,14 +1019,30 @@ export class CrankAudio {
     // Real revs are never frozen on a number, even holding a gear floor. Classic
     // writes this into the rpm it plays AND displays, while gear selection keeps
     // using the clean value. CRANK had nothing, so it sat dead flat.
+    const d0 = this._drive;
     this._breathePhase += dt;
     const bp = this._breathePhase;
     const lopeCh = s.idleHunt / 20;
-    const wanderAmp = (18 + lopeCh * 62) * (1.15 - Math.min(1, rpmNorm) * 0.65);
+    // Sized against classic measured on the same bench: at a settled 60 km/h
+    // classic's oscillator moved 7.06% while CRANK's moved 2.45%. The old base
+    // (18 + lope * 62) was 2.9x short. Raising it costs nothing in pitch rate --
+    // these are 2-5 rad/s sines, so even at 7% they contribute about 2 st/s
+    // against the 100 st/s already on the profile.
+    const wBase = d0.wanderRpm ?? DEFAULT_DRIVE.wanderRpm;
+    const wLope = d0.wanderLope ?? DEFAULT_DRIVE.wanderLope;
+    const wanderAmp = (wBase + lopeCh * wLope) * (1.15 - Math.min(1, rpmNorm) * 0.65);
     const wander = wanderAmp * (
       0.5 * Math.sin(bp * 2.1) + 0.3 * Math.sin(bp * 5.3) + 0.2 * Math.sin(bp * (3.5 + lopeCh * 4))
     );
     const rpmPlayed = rpm + (this._speedSmooth > 2 ? wander : 0);
+
+    // The needle shows what the engine PLAYS. _rpm stays clean because gear
+    // selection and the drive-state thresholds run off it and must not be
+    // jittered — but the owner reads the gauge, and a gauge frozen on an exact
+    // number is the tell that there is no engine behind it. Classic writes the
+    // wander into the value it displays; CRANK kept it out of both. Measured at
+    // cruise: classic's needle moved 134 rpm, CRANK's moved 0.
+    this._rpmDisplay = rpmPlayed;
 
     // --- combustion micro-jitter (kills the perfect-loop tell) ------------
     // Classic's amounts. CRANK was running up to 4x more grain, which on a pure
@@ -1262,7 +1279,7 @@ export class CrankAudio {
     return true;
   }
 
-  get rpm() { return this._rpm; }
+  get rpm() { return this._rpmDisplay ?? this._rpm; }
   get gearIndex() { return this._gear; }
   get gearCount() { return GEAR_COUNT; }
   get driveState() { return this._driveState; }
