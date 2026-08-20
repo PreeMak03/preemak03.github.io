@@ -1,9 +1,9 @@
 {
   "schema": "tas-live-set/1",
-  "updatedAt": "2026-07-30T09:53:37.849Z",
+  "updatedAt": "2026-08-20T00:00:00.000Z",
   "source": "manual-lineup",
   "status": "online",
-  "message": "7 Online (crank: 1JZ + Civic, dev-only) · public: classic-muscle",
+  "message": "7 Online · public: classic-muscle, jz-crank, civic-crank",
   "site": "https://preemak03.github.io/",
   "live": [
     "classic-muscle",
@@ -30,15 +30,17 @@
     "rotary-vessel": "v1.0-13b",
     "american-vessel": "v1.0-deep",
     "gentle-vessel": "v1.0-gentle",
-    "jz-crank": "crank-v1",
-    "civic-crank": "crank-v1"
+    "jz-crank": "crank-v1.1",
+    "civic-crank": "crank-v1.1"
   },
   "deployPick": [
     "classic-muscle",
     "na-v12",
     "s85-v10",
     "flat6-911",
-    "2jz"
+    "2jz",
+    "jz-crank",
+    "civic-crank"
   ],
   "lastPush": {
     "at": "2026-07-28T13:00:50.629Z",
@@ -47,6 +49,8 @@
     "commit": "50226a5"
   },
   "public": [
-    "classic-muscle"
+    "classic-muscle",
+    "jz-crank",
+    "civic-crank"
   ]
 }
