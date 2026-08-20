@@ -162,7 +162,18 @@ const SPACE = {
 // limiter a hotter signal and bring back the multi-dB gain reduction that was
 // pumping; after it, the only thing in the way is the memoryless brick wall,
 // which cannot pump because it has no time constants.
-const MASTER_SCALE = 1.45;
+/**
+ * Level, before the limiter. Bounded by CREST FACTOR, not by taste.
+ *
+ * Measured at full pull, peak against RMS: classic-muscle runs about 2 dB of
+ * crest and never touches its brick wall. CRANK runs about 10 dB — sharp
+ * exhaust pulses over a much lower average — so the same RMS arrives with peaks
+ * four times higher. Push the level for loudness and those peaks land in the
+ * wall, and 15-20% of samples being shaped is what the owner heard as heavy
+ * judder. This is set where the wall goes idle, and cannot go higher until the
+ * VOICE is made denser, which is a tone change and not one to sneak in.
+ */
+const MASTER_SCALE = 0.88;
 
 /**
  * Output trim — levels the CARDS, not the engines.

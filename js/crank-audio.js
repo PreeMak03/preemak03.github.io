@@ -289,7 +289,7 @@ export class CrankAudio {
 
     // UI overrides (App System)
     this._masterOverride = null;
-    this._masterScale = 1.45;
+    this._masterScale = 0.88;
     this._outputTrim = 1;
     this._makeup = 1;
     this._space = { ...DEFAULT_SPACE };
@@ -347,7 +347,7 @@ export class CrankAudio {
     this._mixer = { ...DEFAULT_MIXER, ...(doc.mixer || {}) };
     this._drive = { ...DEFAULT_DRIVE, ...(doc.drive || {}) };
     this._dyn = { ...DEFAULT_DYN, ...(doc.dynamics || {}) };
-    this._masterScale = doc.masterScale ?? 1.45;
+    this._masterScale = doc.masterScale ?? 0.88;
     this._outputTrim = doc.outputTrim ?? 1;
     this._makeup = doc.makeup ?? 1;
     this._space = { ...DEFAULT_SPACE, ...(doc.space || {}) };
@@ -405,7 +405,7 @@ export class CrankAudio {
     this._sharpCam = false;
     // The new card may carry a different output trim, and the graph already
     // exists, so re-apply it here rather than only at build time.
-    at(this._nodes.compressor.gain, this._outputTrim, this.ctx.currentTime, 0.05);
+    this.setBass(this._bass);   // re-applies trim with the bass compensation
 
     const nextKey = this._active === 'a' ? 'b' : 'a';
     const cur = this._voices[this._active];
@@ -648,27 +648,29 @@ export class CrankAudio {
     analyser.fftSize = 2048;
     analyser.smoothingTimeConstant = 0.72;
 
-    // Makeup is 1.0 by default and exists only as a per-profile escape hatch.
-    // It used to be a flat 1.4, chosen when there was no outputTrim and no
-    // masterScale. Once those arrived the three stacked — trim 1.41 x makeup 1.4
-    // x master 1.1, about double — and drove the limiter to 9.3 dB of average
-    // gain reduction (14.6 dB worst) on every pull. A limiter working that hard
-    // is not catching peaks, it is pumping, and pumping is what the owner heard
-    // as heavy judder. Level belongs in trim/master, not in a limiter.
+    // Level goes in HERE, before the limiter, so something can contain it.
+    //
+    // The previous arrangement put it after, to stop the limiter pumping — but
+    // after the limiter the only thing left is the brick wall, so it traded
+    // pumping for clipping. Measured at full pull: peak 1.52 arriving at a wall
+    // that starts shaping at 0.82, with 15% of all samples inside the knee (20%
+    // once bass was turned up). classic-muscle in the same test: peak 0.711 and
+    // 0% — it never touches its wall at all, which is what "the wall only ever
+    // shapes rare peaks" is supposed to mean.
     const makeup = ctx.createGain();
-    makeup.gain.value = this._makeup;
+    makeup.gain.value = this._makeup * this._masterScale;
 
-    // Classic's limiter settings verbatim, including the reason written above
-    // them there: "ultra-fast release was pumping with dyn swings". It must sit
-    // idle through normal driving — the brick wall below is what actually stops
-    // peaks, and being memoryless it cannot pump. A compressor doing steady
-    // multi-dB reduction has time constants, and those are audible as judder.
+    // A proper peak limiter this time: fast enough to actually catch the
+    // exhaust pulses (a 3 ms attack let them straight through to the wall) and
+    // slow enough on release that it cannot pump. Fast attack with a slow
+    // release removes peak energy while barely touching RMS, which is exactly
+    // the loudness the level above is asking for.
     const limiter = ctx.createDynamicsCompressor();
-    limiter.threshold.value = -1.5;
-    limiter.knee.value = 2;
+    limiter.threshold.value = -3;
+    limiter.knee.value = 3;
     limiter.ratio.value = 12;
-    limiter.attack.value = 0.003;
-    limiter.release.value = 0.12;
+    limiter.attack.value = 0.0006;
+    limiter.release.value = 0.25;
 
     // Final brick wall, after master, so nothing leaves above full scale no
     // matter what the volume slider or a profile asks for.
@@ -1152,8 +1154,7 @@ export class CrankAudio {
     });
     at(this._nodes.dynGain.gain, clamp(dyn.dynVol, 0, 1.2), t, 0.05);
 
-    const scale = this._masterScale;
-    const master = (this._masterOverride != null ? this._masterOverride : sq(this._mixer.master)) * scale;
+    const master = this._masterOverride != null ? this._masterOverride : sq(this._mixer.master);
     at(this._nodes.master.gain, master, t, 0.04);
   }
 
@@ -1192,14 +1193,27 @@ export class CrankAudio {
   setMasterVolume(v) {
     this._masterOverride = clamp(v, 0, 1.2);
     if (!this._nodes || !this.ctx) return;
-    at(this._nodes.master.gain, this._masterOverride * this._masterScale, this.ctx.currentTime, 0.03);
+    at(this._nodes.master.gain, this._masterOverride, this.ctx.currentTime, 0.03);
   }
 
-  /** SOUND PROFILE — cabin body. Neutral at 0.5 = the prototype's balance. */
+  /**
+   * SOUND PROFILE — cabin body. Neutral at 0.5 = the prototype's balance.
+   *
+   * A shelf that adds energy has to pay for it in headroom. Turning this to 100
+   * puts +5 dB into the band the engine already lives in, and measured, that
+   * took the share of samples being shaped by the brick wall from 15% to 20% —
+   * audible as the sound breaking up. So the bus gives back part of what the
+   * shelf adds: the low end still rises clearly against everything else, which
+   * is the point of the control, without the peak running away with it.
+   */
   setBass(v) {
     this._bass = clamp(v, 0, 1);
     if (!this._nodes || !this.ctx) return;
-    this._nodes.low.gain.setTargetAtTime((this._bass - 0.5) * 10, this.ctx.currentTime, 0.05);
+    const t = this.ctx.currentTime;
+    const shelfDb = (this._bass - 0.5) * 10;
+    this._nodes.low.gain.setTargetAtTime(shelfDb, t, 0.05);
+    const compDb = shelfDb > 0 ? -shelfDb * 0.6 : 0;
+    at(this._nodes.compressor.gain, this._outputTrim * Math.pow(10, compDb / 20), t, 0.05);
   }
 
   /** SOUND PROFILE — top-end bite. Neutral at 0.5. */
