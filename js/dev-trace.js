@@ -49,7 +49,22 @@ export function startDevTrace(getAudio, state, physics) {
   const stall = new Uint16Array(N);      // running count of late ticks
   const STATES = ['idle', 'cruise', 'pull', 'overrun', 'shift'];
 
+  // The owner cannot watch numbers: driving takes 80-85% of his attention, so
+  // a design that needs him to notice the fault AND tap within two seconds is
+  // a design that asks the wrong person to do the work. The recorder keeps the
+  // worst moments of the whole drive by itself. Nothing to press, nothing to
+  // watch, nothing to remember — park, tap once, and it is all there.
+  //
+  // No threshold, deliberately. We do not yet know what the judder looks like,
+  // and a threshold can only catch what someone already guessed. Keeping the
+  // top few by score catches it whatever shape it turns out to be.
+  const KEEP = 8;
+  const CAPTURE_S = 1.5;
+  const COOLDOWN_S = 4;
+  const worstKept = [];
+  let coolUntil = 0;
   let buf = null;
+  let pendingCapture = null;
   let i = 0;
   let wrapped = false;
   const t0 = performance.now();
@@ -108,6 +123,55 @@ export function startDevTrace(getAudio, state, physics) {
       if (x > 1e-5) { if (x < lo) lo = x; if (x > hi) hi = x; }
     }
     rough[i] = (hi > 0 && lo < Infinity && lo > 0) ? 20 * Math.log10(hi / lo) : 0;
+    // Score this instant. Level modulation, a late tick, and a pitch jump are
+    // the three things that can BE the judder, so any of them can nominate a
+    // moment; they are kept separate in the payload because they need
+    // different fixes.
+    const prevK = (i - 1 + N) % N;
+    const dPitchNow = (pitch[i] > 1e-4 && pitch[prevK] > 1e-4)
+      ? Math.abs(12 * Math.log2(pitch[i] / pitch[prevK])) : 0;
+    const score = rough[i] + dPitchNow * 3 + Math.max(0, (tick[i] - 40) / 10);
+    const nowS = t[i] / 1000;
+    // The engine start outscores everything that follows — the first run of
+    // this filled the top two slots with it and squeezed the actual drive out.
+    // Nothing before the car has moved is what he is asking about.
+    const warm = nowS > 8 && (active[i] > 2 || wrapped);
+    // A pinned moment must survive to be captured. Clearing the cooldown in
+    // mark() let the scorer overwrite it on the very next tick, so the window
+    // was taken but arrived unflagged.
+    if (warm && nowS > coolUntil && !(pendingCapture && pendingCapture.marked)) {
+      const weakest = worstKept.length < KEEP
+        ? -1
+        : worstKept.reduce((lo, w, n2, arr) => {
+          if (w.marked) return lo;                    // a human said this one matters
+          if (arr[lo].marked) return n2;
+          return w.score < arr[lo].score ? n2 : lo;
+        }, 0);
+      if (worstKept.length < KEEP || score > worstKept[weakest].score) {
+        pendingCapture = { at: i, atS: nowS, score, slot: weakest };
+        coolUntil = nowS + COOLDOWN_S;
+      }
+    }
+    // A capture needs the samples AFTER the moment too, so it is taken half a
+    // window later rather than on the spot.
+    if (pendingCapture && nowS >= pendingCapture.atS + CAPTURE_S) {
+      const c2 = pendingCapture; pendingCapture = null;
+      const half = Math.round(CAPTURE_S * HZ);
+      const rowsOut = [];
+      for (let q = -half; q <= half; q++) {
+        const k2 = (c2.at + q + N) % N;
+        if (!wrapped && (c2.at + q < 0 || c2.at + q > i)) continue;
+        rowsOut.push({
+          t: +(t[k2] / 1000).toFixed(2), v: +active[k2].toFixed(1),
+          a: +accel[k2].toFixed(2), rpm: Math.round(rpm[k2]), g: gear[k2],
+          dyn: +dyn[k2].toFixed(3), hz: +pitch[k2].toFixed(2),
+          s: STATES[st[k2]], rough: +rough[k2].toFixed(1), tick: +tick[k2].toFixed(0),
+        });
+      }
+      const entry = { atS: +c2.atS.toFixed(1), score: +c2.score.toFixed(1), rows: rowsOut };
+      if (c2.marked) entry.marked = c2.marked;
+      if (c2.slot < 0) worstKept.push(entry); else worstKept[c2.slot] = entry;
+    }
     const s = STATES.indexOf(a._driveState || a.driveState || 'idle');
     st[i] = s < 0 ? 0 : s;
     i = (i + 1) % N;
@@ -222,6 +286,9 @@ export function startDevTrace(getAudio, state, physics) {
         // Always. He taps just after hearing it, so this is the evidence;
         // the ranked list is context.
         tail: JSON.stringify(api.tail(6)),
+        // Caught unattended — this is the part that does not depend on him
+        // noticing anything.
+        auto: JSON.stringify(api.worst().slice(0, 5)),
         windows: JSON.stringify(around),
       };
       const res = await fetch('https://api.web3forms.com/submit', {
@@ -232,6 +299,7 @@ export function startDevTrace(getAudio, state, physics) {
       return {
         ok: res.ok, events: s.events, seconds: s.seconds,
         gain: s.gainJumps, pitch: s.pitchJumps, rough: s.roughP95,
+        caught: api.worst().length,
         flip: s.accelSignFlips, gear: s.gearChanges,
       };
     },
@@ -246,6 +314,23 @@ export function startDevTrace(getAudio, state, physics) {
      * that has to be crossed cannot report the thing it is failing to see;
      * this reports it regardless.
      */
+    /**
+     * Pin this moment. He asked to keep a button for the times he can watch —
+     * and he is right that it should stay: a tap is a human saying THIS one,
+     * which no score can infer. Marked windows are never evicted by scoring.
+     */
+    mark(why) {
+      const nowS = t[i === 0 ? N - 1 : i - 1] / 1000;
+      pendingCapture = { at: (i - 1 + N) % N, atS: nowS, score: 1e6, slot: -1, marked: why || 'tapped' };
+      coolUntil = 0;
+      return +nowS.toFixed(1);
+    },
+
+    /** The worst moments of the drive, caught without anyone watching. */
+    worst() {
+      return worstKept.slice().sort((x, y) => y.score - x.score);
+    },
+
     tail(seconds = 6) {
       const idx = order();
       const take = Math.min(idx.length, Math.round(seconds * HZ));
@@ -286,9 +371,17 @@ export function startDevTrace(getAudio, state, physics) {
     verdict() {
       const s = api.summary();
       if (typeof s === 'string') return s;
+      // Lead with what was caught unattended. The tail only matters if he
+      // happened to tap at the right moment, and he cannot — driving takes
+      // 80-85% of his attention.
+      const w = api.worst();
+      const top = w.length ? w[0] : null;
+      const caught = top
+        ? `caught ${w.length} · worst ${top.score} @${top.atS}s · `
+        : 'caught 0 · ';
       const tl = api.tail(6);
-      const tail = tl ? `last6s rough ${tl.roughP95}/${tl.roughMax}dB · tick ${tl.tickWorstMs}ms/${tl.tickStalls} · ` : '';
-      return tail + `${s.seconds}s · rough ${s.roughP95}/${s.roughMax}dB · gain ${s.gainJumps} · ` +
+      const tail = tl ? `tick ${tl.tickWorstMs}ms/${tl.tickStalls} · ` : '';
+      return caught + tail + `${s.seconds}s · rough ${s.roughP95}/${s.roughMax}dB · gain ${s.gainJumps} · ` +
              `pitch ${s.pitchJumps} · flip ${s.accelSignFlips} · gear ${s.gearChanges}`;
     },
   };
