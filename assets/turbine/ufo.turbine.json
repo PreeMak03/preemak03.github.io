@@ -1,0 +1,75 @@
+{
+  "format": "turbine/1",
+  "id": "turbine-ufo",
+  "name": "UFO",
+  "car": "Flying saucer \u00b7 gearless",
+  "notes": "Two detuned partials beating, bent by a pair of LFOs that never line up.",
+  "spec": {
+    "partials": 20,
+    "tilt": 1.5,
+    "shaftGain": 0.62,
+    "shaftLpHz": {
+      "lo": 320,
+      "hi": 2600
+    },
+    "spool": {
+      "idleHz": 62,
+      "topHz": 210,
+      "topSpeedKmh": 140,
+      "curve": 0.75,
+      "accelLift": 0.2,
+      "lagSec": 1.1,
+      "decaySec": 1.8
+    },
+    "blade": {
+      "mul": 2.5,
+      "gain": 0.26
+    },
+    "whine": {
+      "mul": 6,
+      "gain": 0.2,
+      "riseFrom": 0.3
+    },
+    "roar": {
+      "loHz": 260,
+      "hiHz": 1400,
+      "q": 1.4,
+      "gain": 0.22
+    },
+    "hiss": {
+      "hz": 5200,
+      "gain": 0.08
+    },
+    "stereo": {
+      "detuneCents": 14,
+      "spread": 0.7
+    },
+    "wander": 0.03,
+    "outputTrim": 1,
+    "makeup": 1.3,
+    "shaftRpmTop": 30000,
+    "gears": false,
+    "shaftQ": 3.2,
+    "lfo": {
+      "rateHz": 5.2,
+      "depthCents": 55,
+      "shape": "sine",
+      "speedRate": 1.6
+    },
+    "cruise": {
+      "duckTo": 0.45,
+      "attack": 7,
+      "release": 1.0,
+      "holdSec": 0.8
+    }
+  },
+  "dynamics": {
+    "dynDb": 16,
+    "dynCeiling": 0.92,
+    "shiftDuck": 1,
+    "overrunDuck": 0.85,
+    "idlePresence": 0.6,
+    "loadBoost": 0.2,
+    "floorBias": 0.8
+  }
+}

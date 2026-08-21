@@ -1,0 +1,76 @@
+{
+  "format": "turbine/1",
+  "id": "turbine-supersonic",
+  "name": "Supersonic",
+  "car": "Afterburner \u00b7 5 gears",
+  "notes": "Air-forward. The shaft rebuilds inside every gear, so each upshift lands a boom.",
+  "spec": {
+    "partials": 32,
+    "tilt": 1.05,
+    "shaftGain": 0.34,
+    "shaftLpHz": {
+      "lo": 500,
+      "hi": 6000
+    },
+    "spool": {
+      "idleHz": 44,
+      "topHz": 300,
+      "gearFloor": 0.22,
+      "accelLift": 0.26,
+      "lagSec": 0.55,
+      "decaySec": 1.0
+    },
+    "blade": {
+      "mul": 5.0,
+      "gain": 0.2
+    },
+    "whine": {
+      "mul": 13,
+      "gain": 0.22,
+      "riseFrom": 0.28
+    },
+    "roar": {
+      "loHz": 150,
+      "hiHz": 3400,
+      "q": 0.55,
+      "gain": 0.95
+    },
+    "hiss": {
+      "hz": 3600,
+      "gain": 0.4
+    },
+    "stereo": {
+      "detuneCents": 7,
+      "spread": 0.5
+    },
+    "wander": 0.01,
+    "outputTrim": 1,
+    "makeup": 1.3,
+    "shaftRpmTop": 48000,
+    "gears": true,
+    "boom": {
+      "level": 0.62,
+      "startHz": 900,
+      "endHz": 85,
+      "decaySec": 0.55
+    },
+    "lfo": {
+      "depthCents": 0
+    },
+    "cruise": {
+      "duckTo": 0.38,
+      "attack": 9,
+      "release": 1.2,
+      "holdSec": 0.6
+    }
+  },
+  "dynamics": {
+    "dynDb": 16,
+    "dynCeiling": 0.92,
+    "shiftDuck": 1,
+    "overrunDuck": 0.85,
+    "idlePresence": 0.6,
+    "loadBoost": 0.2,
+    "floorBias": 0.8
+  }
+}

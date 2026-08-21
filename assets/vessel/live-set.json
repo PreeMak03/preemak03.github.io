@@ -3,7 +3,7 @@
   "updatedAt": "2026-08-20T00:00:00.000Z",
   "source": "manual-lineup",
   "status": "online",
-  "message": "7 Online · public: classic-muscle, jz-crank, civic-crank",
+  "message": "3 public · 10 live (dev sees all)",
   "site": "https://preemak03.github.io/",
   "live": [
     "classic-muscle",
@@ -13,7 +13,9 @@
     "2jz",
     "jz-crank",
     "civic-crank",
-    "turbine-jet"
+    "turbine-jet",
+    "turbine-ufo",
+    "turbine-supersonic"
   ],
   "versions": {
     "camaro-vessel": "v1.1-fp-cabin",

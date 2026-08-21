@@ -1,41 +1,37 @@
 /**
- * TURBINE — fourth TAS sound engine. A gas turbine, not a piston engine.
+ * TURBINE — fourth TAS sound engine. Not a piston engine, by design.
  *
  * WHY IT IS ITS OWN ENGINE
  *   Everything hard about CRANK comes from combustion: a firing order, a
  *   frequency that has to stay above where the ear resolves separate thuds, and
  *   a listener who knows exactly what a four-cylinder is supposed to sound like.
- *   A turbine has none of that. There are no firings — just a shaft spinning,
- *   blades passing, and air roaring — so there is no reference in anyone's head
- *   for it to be wrong against.
+ *   These profiles have none of that — there is no reference in anyone's head
+ *   for them to be wrong against, which is the whole point of a gimmick sound.
  *
- *   And it needs no gearbox. Shaft speed follows road speed continuously, which
- *   removes the upshift rev-snap, the overrun state machine and the gear
- *   hysteresis in one go — the three things that have caused every judder so far.
+ * THREE MODES, one runtime, all configured from JSON:
+ *   jet         gearless. Shaft speed follows road speed continuously.
+ *   ufo         gearless, and warbling — an LFO bends the shaft while two
+ *               detuned partials beat against each other.
+ *   supersonic  WITH gears. Air-forward, and the shaft rebuilds inside every
+ *               gear so each upshift lands a boom and starts the climb again.
  *
- * WHAT MAKES IT SOUND LIKE A TURBINE
- *   spool   the shaft tone, rich in harmonics, sweeping with speed. It LAGS the
- *           demand, which is the signature: a jet does not answer instantly.
- *   blade   blade-passing tone, a fixed multiple of shaft speed — the metallic
- *           edge that says turbine rather than motor.
- *   whine   a high pure partial that only appears once the shaft is up, so the
- *           top end opens out instead of just getting louder.
- *   roar    filtered noise, the air itself. Carries most of the loudness.
- *   hiss    bright air noise on top, so the sound has some sparkle.
- *
- *   Stereo is real here, unlike a piston engine: the two shaft oscillators are
- *   genuinely detuned from each other, so panning them apart produces an actual
- *   L/R difference rather than the same signal twice.
+ * CRUISE
+ *   The layers are driven by EFFORT, not just speed. Holding a steady speed lets
+ *   them fall back to `cruise.duckTo`, the way the classic profiles go quiet
+ *   when you stop asking anything of the car. Without that a turbine simply
+ *   screams for the whole journey.
  *
  * COST
- *   5 oscillators, 2 looping noise buffers, ~12 filters. The shaft wave is ~32
- *   partials built once at start (not the 384-partial tables CRANK compiles
- *   offline — a turbine's spectrum is smooth and does not need them). Nothing is
+ *   6-7 oscillators, 2 looping noise buffers, ~14 filters. The shaft wave is ~32
+ *   partials built once at start — a turbine's spectrum is smooth and needs
+ *   nothing like the 384-partial tables CRANK compiles offline. Booms are an
+ *   envelope on a permanent noise bed, never freshly created nodes. Nothing is
  *   allocated per tick.
  */
 
 import { clamp, damp } from './animations.js';
 import { computeDynamicVolume } from './dynamic-volume.js';
+import { GEAR_COUNT, resolveGear, gearProgress } from './gearbox.js';
 import { TURBINE_RIGS } from './turbine-rigs.js';
 
 export { hasTurbine, listTurbineRigs } from './turbine-rigs.js';
@@ -50,9 +46,8 @@ function tasUrl(rel) {
 }
 
 const at = (param, v, t, tau = 0.05) => param.setTargetAtTime(Math.max(0, v), t, tau);
-const cents = (c) => c;   // AudioParam.detune is already in cents
 
-/** Shaft tone: a smooth falling harmonic series with a lift on the blade partial. */
+/** Shaft tone: a falling harmonic series with a lift on the blade partial. */
 function shaftWave(ctx, partials, tilt, bladeMul) {
   const n = partials + 1;
   const real = new Float32Array(n);
@@ -101,8 +96,8 @@ function ceilingCurve(knee = 0.82, ceil = 0.985) {
 }
 
 const DEFAULT_DYN = {
-  dynDb: 16, dynCeiling: 0.92, shiftDuck: 1, overrunDuck: 0.85,
-  idlePresence: 0.6, loadBoost: 0.2, floorBias: 0.8,
+  dynDb: 18, dynCeiling: 0.92, shiftDuck: 0.9, overrunDuck: 0.9,
+  idlePresence: 0.5, loadBoost: 0.22, floorBias: 0.7,
 };
 
 export class TurbineAudio {
@@ -124,11 +119,16 @@ export class TurbineAudio {
     this._accel = 0; this._accelSmooth = 0;
     this._throttle = 0; this._brake = 0;
 
-    /** Shaft speed, 0..1. Lags the demand — the spool. */
-    this._n = 0;
+    this._n = 0;              // shaft speed 0..1, lags the demand
+    this._effort = 0;         // how hard the car is being asked to work
+    this._effortHold = 0;
     this._load = 0;
     this._driveState = 'idle';
+    this._gear = 1;
+    this._sinceShift = 0;
+    this._boomCooldown = 0;
     this._holdRpm = null;
+    this._revTimer = null;
     this._masterOverride = null;
     this._bass = 0.5;
     this._edge = 0.5;
@@ -148,9 +148,9 @@ export class TurbineAudio {
 
   getTuneLayers() {
     return {
-      engine: 'Turbine spec -> .turbine.json (spool / blade / roar)',
+      engine: 'Turbine spec -> .turbine.json',
       cabin: 'Bass / Edge (this card)',
-      vehicle: 'Speed -> shaft, no gearbox',
+      vehicle: this._spec && this._spec.gears ? 'Speed -> gear -> shaft' : 'Speed -> shaft, no gearbox',
       app: 'App system (global)',
     };
   }
@@ -207,6 +207,8 @@ export class TurbineAudio {
 
   stop() {
     this.running = false;
+    if (this._revTimer) { window.clearTimeout(this._revTimer); this._revTimer = null; }
+    this._holdRpm = null;
     if (this._timer) { clearInterval(this._timer); this._timer = null; }
     if (this.ctx) { try { this.ctx.close(); } catch (_) {} this.ctx = null; }
     this._nodes = null;
@@ -223,36 +225,57 @@ export class TurbineAudio {
     // piston engine's banks (which carry the same wave and collapse back to
     // mono when summed), these differ, so the width is real.
     const wave = shaftWave(ctx, s.partials ?? 32, s.tilt ?? 1.15, s.blade.mul);
+    const spread = s.stereo?.spread ?? 0.5;
+    const det = s.stereo?.detuneCents ?? 9;
     const mkShaft = (detune, pan) => {
       const osc = ctx.createOscillator();
       osc.setPeriodicWave(wave);
-      osc.detune.value = cents(detune);
+      osc.detune.value = detune;
       const lp = ctx.createBiquadFilter();
-      lp.type = 'lowpass'; lp.Q.value = 0.8;
-      const p = ctx.createStereoPanner();
-      p.pan.value = pan;
+      lp.type = 'lowpass'; lp.Q.value = s.shaftQ ?? 0.8;
+      const p = ctx.createStereoPanner(); p.pan.value = pan;
       const g = ctx.createGain(); g.gain.value = 0;
       osc.connect(lp).connect(g).connect(p).connect(bus);
       return { osc, lp, g, p };
     };
-    const spread = s.stereo?.spread ?? 0.5;
-    const det = s.stereo?.detuneCents ?? 9;
     const shaftL = mkShaft(-det, -spread);
     const shaftR = mkShaft(+det, +spread);
 
-    // --- blade tone: metallic edge at a multiple of shaft speed
+    // --- warble LFO (UFO). Bends both shafts, and the two are already detuned,
+    // so they wobble against each other rather than in lockstep.
+    let lfo = null, lfoGain = null, lfo2 = null, lfo2Gain = null;
+    if (s.lfo && s.lfo.depthCents > 0) {
+      lfo = ctx.createOscillator();
+      lfo.type = s.lfo.shape || 'sine';
+      lfo.frequency.value = s.lfo.rateHz ?? 5.5;
+      lfoGain = ctx.createGain();
+      lfoGain.gain.value = s.lfo.depthCents;
+      lfo.connect(lfoGain);
+      lfoGain.connect(shaftL.osc.detune);
+      lfoGain.connect(shaftR.osc.detune);
+      // A second, slower and deeper bend so the warble never repeats exactly.
+      lfo2 = ctx.createOscillator();
+      lfo2.type = 'sine';
+      lfo2.frequency.value = (s.lfo.rateHz ?? 5.5) * 0.37;
+      lfo2Gain = ctx.createGain();
+      lfo2Gain.gain.value = (s.lfo.depthCents ?? 0) * 1.7;
+      lfo2.connect(lfo2Gain);
+      lfo2Gain.connect(shaftL.osc.detune);
+      lfo2Gain.connect(shaftR.osc.detune);
+    }
+
     const bladeOsc = ctx.createOscillator();
     bladeOsc.type = 'sine';
     const bladeGain = ctx.createGain(); bladeGain.gain.value = 0;
     bladeOsc.connect(bladeGain).connect(bus);
+    if (lfoGain) lfoGain.connect(bladeOsc.detune);
 
-    // --- whine: only opens up once the shaft is spinning
     const whineOsc = ctx.createOscillator();
     whineOsc.type = 'sine';
     const whineGain = ctx.createGain(); whineGain.gain.value = 0;
     whineOsc.connect(whineGain).connect(bus);
 
-    // --- roar + hiss: the air. Carries most of the loudness.
+    // --- air
     const pink = noiseBuffer(ctx, 2, 'pink');
     const white = noiseBuffer(ctx, 2, 'white');
     const loop = (buf) => {
@@ -271,6 +294,14 @@ export class TurbineAudio {
     hissHp.type = 'highpass'; hissHp.frequency.value = s.hiss.hz ?? 4200; hissHp.Q.value = 0.7;
     const hissGain = ctx.createGain(); hissGain.gain.value = 0;
     hissSrc.connect(hissHp).connect(hissGain).connect(bus);
+
+    // --- boom (supersonic). Permanent bed, enveloped — never new nodes, so a
+    // gear change can never cost an allocation on the audio thread.
+    const boomSrc = loop(white);
+    const boomBp = ctx.createBiquadFilter();
+    boomBp.type = 'bandpass'; boomBp.frequency.value = 140; boomBp.Q.value = 0.6;
+    const boomGain = ctx.createGain(); boomGain.gain.value = 0.0001;
+    boomSrc.connect(boomBp).connect(boomGain).connect(bus);
 
     // --- cabin + output, same staging as the other engines
     const low = ctx.createBiquadFilter();
@@ -300,10 +331,13 @@ export class TurbineAudio {
 
     const t0 = ctx.currentTime + 0.02;
     shaftL.osc.start(t0); shaftR.osc.start(t0); bladeOsc.start(t0); whineOsc.start(t0);
+    if (lfo) lfo.start(t0);
+    if (lfo2) lfo2.start(t0);
 
     this._nodes = {
       bus, shaftL, shaftR, bladeOsc, bladeGain, whineOsc, whineGain,
       roarSrc, roarBp, roarGain, hissSrc, hissHp, hissGain,
+      boomSrc, boomBp, boomGain, lfo, lfoGain, lfo2, lfo2Gain,
       low, high, dynGain, makeup, limiter, safety, master, analyser,
     };
     this.setBass(this._bass);
@@ -311,6 +345,21 @@ export class TurbineAudio {
   }
 
   getAnalyser() { return this._nodes ? this._nodes.analyser : null; }
+
+  /** Sonic boom / afterburner thump on an upshift. Envelope only. */
+  _fireBoom(t, level) {
+    const b = this._spec.boom;
+    const g = this._nodes.boomGain.gain;
+    const f = this._nodes.boomBp.frequency;
+    g.cancelScheduledValues(t);
+    f.cancelScheduledValues(t);
+    // Falls in pitch as it decays — the crack, then the roll-off behind it.
+    f.setValueAtTime(b.startHz ?? 900, t);
+    f.exponentialRampToValueAtTime(b.endHz ?? 90, t + (b.decaySec ?? 0.5));
+    g.setValueAtTime(0.0001, t);
+    g.exponentialRampToValueAtTime(Math.max(0.002, (b.level ?? 0.5) * level), t + 0.012);
+    g.exponentialRampToValueAtTime(0.0001, t + (b.decaySec ?? 0.5));
+  }
 
   _tick(dt) {
     if (!this.running || !this._nodes) return;
@@ -328,15 +377,49 @@ export class TurbineAudio {
     const aNorm = clamp(accelForLoad / this.accelRefKmhps, -1.4, 1.4);
     const accelLoad = clamp(aNorm, 0, 1);
     const decelLoad = clamp(-aNorm, 0, 1);
-
     const speed = this._speedSmooth;
-    // Demand: how hard the turbine is being asked to work. Road speed sets the
-    // floor, acceleration lifts it — the same idea as the piston profiles, but
-    // it drives ONE continuous shaft instead of a rev target inside a gear.
-    let demand = clamp(speed / (s.spool.topSpeedKmh ?? 140), 0, 1.05);
-    demand = Math.pow(demand, s.spool.curve ?? 0.8);
+
+    // Effort, with the rev-hang the classic engine uses: punch in fast, hold,
+    // then fall away. This is what makes a steady cruise go quiet instead of
+    // screaming for the whole journey.
+    const c = s.cruise || {};
+    if (accelLoad > this._effort) {
+      this._effort = damp(this._effort, accelLoad, c.attack ?? 8, dt);
+      this._effortHold = c.holdSec ?? 0.7;
+    } else {
+      this._effortHold -= dt;
+      if (this._effortHold <= 0) this._effort = damp(this._effort, accelLoad, c.release ?? 1.1, dt);
+    }
+
+    // --- demand -----------------------------------------------------------
+    this._boomCooldown -= dt;
+    let demand;
+    if (s.gears) {
+      // Geared: the shaft rebuilds inside every gear, so each upshift resets
+      // the climb and lands a boom. Gear itself comes from the shared gearbox.
+      this._sinceShift += dt;
+      let next = resolveGear(speed, this._gear, accelLoad, decelLoad);
+      if (next > this._gear + 1) next = this._gear + 1;
+      else if (next < this._gear - 1) next = this._gear - 1;
+      if (next !== this._gear && this._sinceShift > 0.26) {
+        const up = next > this._gear;
+        this._gear = next;
+        this._sinceShift = 0;
+        if (up && s.boom && this._boomCooldown <= 0 && speed > 8) {
+          this._fireBoom(t, clamp(0.35 + accelLoad * 0.65, 0, 1));
+          this._boomCooldown = 0.3;
+        }
+      }
+      const gp = clamp(gearProgress(speed, this._gear), 0, 1.1);
+      demand = clamp((s.spool.gearFloor ?? 0.25) + gp * (1 - (s.spool.gearFloor ?? 0.25)), 0, 1.08);
+    } else {
+      demand = clamp(speed / (s.spool.topSpeedKmh ?? 140), 0, 1.05);
+      demand = Math.pow(demand, s.spool.curve ?? 0.8);
+    }
     demand = clamp(demand + accelLoad * (s.spool.accelLift ?? 0.22) - decelLoad * 0.06, 0, 1.08);
-    if (this._holdRpm != null) demand = clamp(this._holdRpm / 8000, 0, 1.08);
+    // 1.08 let the shaft run past its own stated top; a turbine has no
+    // over-rev to model, so 1.0 is the ceiling.
+    if (this._holdRpm != null) demand = clamp(this._holdRpm / 8000, 0, 1);
 
     // Spool inertia — a turbine does not answer instantly, and the lag IS the
     // sound. Slower to wind up than to wind down, like the real thing.
@@ -344,16 +427,19 @@ export class TurbineAudio {
     const lag = rising ? (s.spool.lagSec ?? 0.9) : (s.spool.decaySec ?? 1.4);
     this._n += (demand - this._n) * (1 - Math.exp(-dt / lag));
 
-    // Slow wander so it never sits perfectly still.
     this._wanderPhase += dt;
     const wp = this._wanderPhase;
     const wander = 1 + (s.wander ?? 0.012) *
       (0.6 * Math.sin(wp * 0.9) + 0.4 * Math.sin(wp * 2.3));
 
     const n = clamp(this._n * wander, 0, 1.1);
-    this._load = clamp(n * 0.75 + accelLoad * 0.25, 0, 1);
+    this._load = clamp(n * 0.6 + this._effort * 0.4, 0, 1);
     this._driveState = accelLoad > 0.22 ? 'pull' : decelLoad > 0.3 ? 'overrun'
       : speed < 1.5 ? 'idle' : 'cruise';
+
+    // Cruise duck: at a steady speed the layers fall back toward `duckTo`.
+    const duckTo = c.duckTo ?? 0.4;
+    const drive = duckTo + (1 - duckTo) * this._effort;
 
     // --- frequencies ------------------------------------------------------
     const hz = s.spool.idleHz + (s.spool.topHz - s.spool.idleHz) * n;
@@ -362,29 +448,29 @@ export class TurbineAudio {
     N.shaftR.osc.frequency.setTargetAtTime(hz, t, tau);
     N.bladeOsc.frequency.setTargetAtTime(hz * s.blade.mul, t, tau);
     N.whineOsc.frequency.setTargetAtTime(hz * s.whine.mul, t, tau);
+    if (N.lfo && s.lfo.speedRate) {
+      // Warble speeds up with the shaft, so the UFO "revs" as well as rises.
+      N.lfo.frequency.setTargetAtTime((s.lfo.rateHz ?? 5.5) * (0.6 + n * s.lfo.speedRate), t, 0.1);
+    }
 
-    // Shaft brightness opens with speed
     const lp = s.shaftLpHz.lo + (s.shaftLpHz.hi - s.shaftLpHz.lo) * Math.pow(n, 0.7);
     N.shaftL.lp.frequency.setTargetAtTime(lp, t, 0.06);
     N.shaftR.lp.frequency.setTargetAtTime(lp, t, 0.06);
     N.roarBp.frequency.setTargetAtTime(s.roar.loHz + (s.roar.hiHz - s.roar.loHz) * n, t, 0.06);
 
     // --- levels -----------------------------------------------------------
-    const shaftG = s.shaftGain * (0.25 + 0.75 * n);
-    at(N.shaftL.g.gain, shaftG, t, 0.05);
-    at(N.shaftR.g.gain, shaftG, t, 0.05);
-    at(N.bladeGain.gain, s.blade.gain * Math.pow(n, 1.3), t, 0.05);
-    // The whine only arrives once the shaft is up, so the top end OPENS rather
-    // than simply getting louder.
+    at(N.shaftL.g.gain, s.shaftGain * (0.25 + 0.75 * n) * drive, t, 0.05);
+    at(N.shaftR.g.gain, s.shaftGain * (0.25 + 0.75 * n) * drive, t, 0.05);
+    at(N.bladeGain.gain, s.blade.gain * Math.pow(n, 1.3) * drive, t, 0.05);
     const whineOn = clamp((n - (s.whine.riseFrom ?? 0.35)) / 0.4, 0, 1);
-    at(N.whineGain.gain, s.whine.gain * whineOn * whineOn, t, 0.06);
-    at(N.roarGain.gain, s.roar.gain * (0.2 + 0.8 * n), t, 0.05);
-    at(N.hissGain.gain, s.hiss.gain * Math.pow(n, 1.5), t, 0.06);
+    at(N.whineGain.gain, s.whine.gain * whineOn * whineOn * drive, t, 0.06);
+    at(N.roarGain.gain, s.roar.gain * (0.2 + 0.8 * n) * drive, t, 0.05);
+    at(N.hissGain.gain, s.hiss.gain * Math.pow(n, 1.5) * drive, t, 0.06);
 
     // --- in-car loudness ---------------------------------------------------
     const dyn = computeDynamicVolume({
-      effort: accelLoad, rpmNorm: n, accelLoad, decelLoad, speed,
-      idlePresence: this._dyn.idlePresence, gear: 1, gearCount: 1,
+      effort: this._effort, rpmNorm: n, accelLoad, decelLoad, speed,
+      idlePresence: this._dyn.idlePresence, gear: this._gear, gearCount: s.gears ? GEAR_COUNT : 1,
       dynDb: this._dyn.dynDb, curveMul: 1, loadBoost: this._dyn.loadBoost,
       floorBias: this._dyn.floorBias, load: this._load,
       softCeiling: this._dyn.dynCeiling,
@@ -424,19 +510,38 @@ export class TurbineAudio {
     this._nodes.high.gain.setTargetAtTime((this._edge - 0.5) * 10, this.ctx.currentTime, 0.05);
   }
 
-  /** No gearbox to script, so a rev test is just a full spool and release. */
-  startRevTest(seconds = 5) {
+  /**
+   * A spool and release — a gesture, not a hold.
+   *
+   * A piston rev test has gearchanges in it, so five seconds of it has shape.
+   * A turbine has no gears and nothing to break the note up, so holding full
+   * power for five seconds is one sustained scream that reads as the app
+   * having locked up. Measured: it pinned the shaft at 48,000 rpm — on a
+   * shaft whose top is 42,000 — and sat there.
+   *
+   * Up, a beat at the top, and back down. The requested duration is ignored
+   * on purpose: what makes this satisfying is the shape, and the shape is
+   * short.
+   */
+  startRevTest() {
     if (!this.running) return false;
-    const hold = clamp(seconds, 2, 10) * 1000;
+    const top = this._spec?.shaftRpmTop ?? 42000;
+    // demand is holdRpm/8000 downstream, and it must not exceed the shaft's
+    // own ceiling — 1.08 of it was 6,000 rpm past the top.
     this._holdRpm = 8000;
-    window.setTimeout(() => { this._holdRpm = null; }, hold);
+    this._effort = 1;
+    this._effortHold = 1.4;
+    if (this._revTimer) window.clearTimeout(this._revTimer);
+    this._revTimer = window.setTimeout(() => {
+      this._holdRpm = null;
+      this._revTimer = null;
+    }, 1400);   // long enough for the shaft to actually get there
     return true;
   }
 
-  /** Reported as a shaft speed so the readout has something to show. */
   get rpm() { return Math.round(this._n * (this._spec?.shaftRpmTop ?? 42000)); }
-  get gearIndex() { return 1; }
-  get gearCount() { return 1; }
+  get gearIndex() { return this._spec && this._spec.gears ? this._gear : 1; }
+  get gearCount() { return this._spec && this._spec.gears ? GEAR_COUNT : 1; }
   get driveState() { return this._driveState; }
   get load() { return this._load; }
   get shaftN() { return this._n; }

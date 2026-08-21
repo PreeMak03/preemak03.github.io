@@ -972,6 +972,45 @@ export const SOUND_PROFILES = [
     },
     mix: { master: 100, bass: 50, edge: 55 },
   },
+  /*
+   * The other two gimmicks, same engine as the jet. engine{} exists only so
+   * the shared UI has a range to label, and tone{} is the classic fallback if
+   * the turbine runtime fails to load — neither is what you hear.
+   */
+  {
+    id: 'turbine-ufo',
+    name: 'UFO',
+    tag: 'Sci-fi · gearless',
+    car: 'Flying saucer · pure gimmick',
+    accent: 'rgba(160, 130, 255, 0.55)',
+    turbine: true,
+    engine: { type: 'ice', cylinders: 1, idleRpm: 0, redlineRpm: 42000, gears: [1], rpmCurve: 1 },
+    tone: {
+      harmonics: [0, 1, 0.5, 0.3, 0.24, 0.2, 0.16, 0.13, 0.1, 0.08, 0.06, 0.05, 0.04],
+      body: 0.35, mid: 0.55, high: 0.7, sub: 0.35, noise: 0.3, metallic: 0.5, scream: 0.4,
+      turbo: 0.2, turboLag: 0.5, crackle: 0, lope: 0, boxer: 0, rotary: 0, electric: 0.6,
+      exhaustPulse: 0.05, drive: 0.25, filterIdle: 420, filterRedline: 5200, resonance: 0.6,
+      volume: 1, idlePresence: 0.6, characterMid: 0.6,
+    },
+    mix: { master: 100, bass: 50, edge: 50 },
+  },
+  {
+    id: 'turbine-supersonic',
+    name: 'Supersonic',
+    tag: 'Afterburner · 5 gears',
+    car: 'Sonic boom · pure gimmick',
+    accent: 'rgba(255, 150, 110, 0.55)',
+    turbine: true,
+    engine: { type: 'ice', cylinders: 1, idleRpm: 0, redlineRpm: 42000, gears: [1, 2, 3, 4, 5], rpmCurve: 1 },
+    tone: {
+      harmonics: [0, 1, 0.55, 0.4, 0.34, 0.3, 0.26, 0.22, 0.19, 0.16, 0.13, 0.1, 0.08],
+      body: 0.4, mid: 0.6, high: 0.9, sub: 0.3, noise: 0.7, metallic: 0.75, scream: 0.7,
+      turbo: 0.5, turboLag: 0.55, crackle: 0.2, lope: 0, boxer: 0, rotary: 0, electric: 0.2,
+      exhaustPulse: 0.1, drive: 0.35, filterIdle: 560, filterRedline: 6600, resonance: 0.5,
+      volume: 1, idlePresence: 0.6, characterMid: 0.62,
+    },
+    mix: { master: 100, bass: 50, edge: 60 },
+  },
 ];
 
 export function getProfileById(id) {
