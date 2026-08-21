@@ -194,7 +194,7 @@ function render() {
   ui.root.classList.toggle('ms-on', on);
   ui.paddles.classList.toggle('ms-on', on);
   ui.gear.textContent = on ? String(manualGear()) : 'A';
-  ui.src.textContent = on ? lastSource : '';
+  ui.src.textContent = lastSource || (on ? '—' : '');
   ui.toggle.textContent = on ? 'MANUAL' : 'AUTO';
   ui.toggle.setAttribute('aria-pressed', on ? 'true' : 'false');
 }
@@ -374,33 +374,75 @@ export function startManualShift({ getGear, onGearChange, sim: simRefs, pedal: w
 
   // The scroll wheel. Accumulated, because a detent can arrive as several
   // events and a trackpad as a continuous stream.
+  // WHAT THE WHEEL ACTUALLY SENDS.
+  //
+  // Guessed once already and got it wrong: the plan assumed `wheel` events and
+  // the car reported `key`. Now the on-screen buttons work and the wheel does
+  // not, so the guess is wrong again. Rather than guess a third time, every
+  // input that arrives is NAMED on screen — in the same slot that already
+  // shows which source last moved a gear — whether or not it shifts anything.
+  // Turn the wheel, read the line, and the question is answered.
+  const probe = (what) => {
+    // Only when the text actually changes. A wheel can fire dozens of events a
+    // second and repainting the same string for each of them is the waste that
+    // was just taken out of the tacho.
+    if (what === lastSource) return;
+    lastSource = what;
+    if (ui) ui.src.textContent = what;
+  };
+
   const onWheel = (e) => {
+    const dy = e.deltaY || 0;
+    const dx = e.deltaX || 0;
+    const d = Math.abs(dy) >= Math.abs(dx) ? dy : dx;
+    probe(`wheel ${d > 0 ? '+' : ''}${Math.round(d)}/${e.deltaMode}`);
     if (!isManual()) return;
-    // Leave the profile carousel alone — that is a horizontal scroller.
-    if (e.target && e.target.closest && e.target.closest('#profile-scroller')) return;
-    wheelAcc += e.deltaY;
+    // The carousel exclusion is gone. It was there so a wheel over the profile
+    // strip would scroll it, but manual mode is engaged deliberately and a
+    // driver turning the wheel means gears, not browsing.
+    //
+    // deltaMode 1 is LINES and 2 is PAGES — one of those is a single detent,
+    // not 40 of anything, so a threshold in pixels would swallow it whole.
+    if (e.deltaMode !== 0) {
+      if (d !== 0) { doShift(d > 0 ? -1 : 1, 'wheel'); e.preventDefault(); }
+      return;
+    }
+    wheelAcc += d;
     if (Math.abs(wheelAcc) >= WHEEL_STEP) {
-      // Wheel DOWN (positive deltaY) shifts DOWN, which matches every paddle
-      // convention: pull toward you for a lower gear.
+      // Wheel DOWN (positive delta) shifts DOWN: pull toward you for a lower
+      // gear, the way every paddle works.
       doShift(wheelAcc > 0 ? -1 : 1, 'wheel');
       wheelAcc = 0;
       e.preventDefault();
     }
   };
+
+  // Anything that could plausibly be a wheel detent on a car's own hardware.
+  // Named rather than filtered, so an unexpected code shows up on screen
+  // instead of vanishing.
+  const UP_KEYS = new Set(['ArrowUp', 'PageUp', '+', '=', ']', 'AudioVolumeUp', 'MediaTrackNext']);
+  const DOWN_KEYS = new Set(['ArrowDown', 'PageDown', '-', '_', '[', 'AudioVolumeDown', 'MediaTrackPrevious']);
+
   const onKey = (e) => {
-    // The pedal works whenever the harness is mounted — it is how you drive
-    // the sim at a desk, manual or not.
+    // The pedal works whenever the harness is mounted — it is how the sim is
+    // driven at a desk, manual or not.
     if (e.code === 'Space' && !e.repeat) { pressPedal(); e.preventDefault(); return; }
+    probe(`key ${e.key === ' ' ? 'Space' : e.key}${e.key !== e.code ? '/' + e.code : ''}`);
     if (!isManual()) return;
-    if (e.key === 'ArrowUp' || e.key === '+' || e.key === '=') { doShift(1, 'key'); e.preventDefault(); }
-    else if (e.key === 'ArrowDown' || e.key === '-' || e.key === '_') { doShift(-1, 'key'); e.preventDefault(); }
+    if (UP_KEYS.has(e.key) || UP_KEYS.has(e.code)) { doShift(1, 'key'); e.preventDefault(); }
+    else if (DOWN_KEYS.has(e.key) || DOWN_KEYS.has(e.code)) { doShift(-1, 'key'); e.preventDefault(); }
   };
-  window.addEventListener('wheel', onWheel, { passive: false });
+
   const onKeyUp = (e) => {
     if (e.code === 'Space') { releasePedal(); e.preventDefault(); }
   };
-  window.addEventListener('keydown', onKey);
-  window.addEventListener('keyup', onKeyUp);
+
+  // Capture phase and on document as well as window: if something on the page
+  // takes the event first and stops it, this still sees it and can still name
+  // it. That is the whole point of the probe.
+  window.addEventListener('wheel', onWheel, { passive: false, capture: true });
+  window.addEventListener('keydown', onKey, true);
+  window.addEventListener('keyup', onKeyUp, true);
   // Losing focus mid-throttle must not leave the pedal stuck down.
   const onBlur = () => releasePedal();
   window.addEventListener('blur', onBlur);

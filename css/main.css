@@ -1825,13 +1825,19 @@ body:not(.dev-mode) .dev-only {
   border-color: rgba(214, 220, 228, 0.3);
 }
 
+/* It names whatever input just arrived, so it has to be readable from the
+   driver's seat — this is how the steering wheel's actual event gets
+   identified without a console the car does not have. */
 .ms-src {
   text-align: center;
-  font-size: 8px;
-  letter-spacing: 0.05em;
-  color: var(--text-secondary);
-  opacity: 0.65;
-  min-height: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.15;
+  color: var(--text-primary);
+  opacity: 0.8;
+  min-height: 12px;
+  word-break: break-all;
 }
 
 /* Pedal state — the only thing worth showing while a hand is on the keyboard:
