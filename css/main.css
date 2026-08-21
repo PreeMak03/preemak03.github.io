@@ -686,28 +686,34 @@ button {
 
 /* Still-being-tuned marker. Small enough not to fight the card, legible
    enough that nobody has to discover it by ear. */
+/* Still-being-tuned marker.
+
+   .pcard clips its children — the silhouette art is inset past the edges and
+   needs that — so a badge centred ON the top border gets its upper half cut
+   off and reads as jammed into the frame. It hangs FROM the edge instead:
+   flush to the top, square where it meets it, rounded where it leaves. A tag
+   pinned to the header, which is the job. */
 .pcard-wip {
   position: absolute;
-  /* Centred ON the card's top edge, straddling it, rather than tucked into
-     a corner — it reads as a label belonging to the card. */
   top: 0;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   z-index: 2;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 6px;
-  border-radius: 999px;
+  gap: 4px;
+  padding: 3px 9px 4px;
+  border-radius: 0 0 8px 8px;
   font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   line-height: 1;
   white-space: nowrap;
-  color: color-mix(in srgb, var(--profile-accent, var(--accent)) 55%, var(--text-primary) 45%);
-  background: color-mix(in srgb, var(--profile-accent, var(--accent)) 14%, var(--bg-elevated, #14161a));
-  border: 1px solid color-mix(in srgb, var(--profile-accent, var(--accent)) 34%, transparent);
-  opacity: 0.75;
+  color: color-mix(in srgb, var(--profile-accent, var(--accent)) 62%, var(--text-primary) 38%);
+  background: color-mix(in srgb, var(--profile-accent, var(--accent)) 20%, rgba(0, 0, 0, 0.45));
+  border: 1px solid color-mix(in srgb, var(--profile-accent, var(--accent)) 38%, transparent);
+  border-top: none;
+  opacity: 0.8;
   pointer-events: none;
 }
 
