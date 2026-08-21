@@ -199,7 +199,7 @@ function render() {
   ui.toggle.setAttribute('aria-pressed', on ? 'true' : 'false');
 }
 
-function build(getGear) {
+function build(getGear, withPedal) {
   // The readout belongs with the other instruments, not floating over the
   // profile carousel and the rev button — which is where a fixed, centred
   // overlay inevitably lands. The accel column already IS the instrument
@@ -268,13 +268,13 @@ function build(getGear) {
   `;
   if (side) side.prepend(root); else document.body.appendChild(root);
 
-  const dock = document.querySelector('.start-dock');
+  const dock = withPedal ? document.querySelector('.start-dock') : null;
   const gas = document.createElement('button');
   gas.type = 'button';
   gas.className = 'ms-gas';
   gas.setAttribute('aria-label', 'คันเร่ง (กดค้าง)');
   gas.innerHTML = '<span class="ms-gas-eyebrow">Throttle</span><span class="ms-gas-main">GAS</span>';
-  if (dock) dock.prepend(gas);
+  if (dock) dock.prepend(gas);   // otherwise it is never in the document
 
   ui = {
     root,
@@ -307,11 +307,16 @@ function build(getGear) {
   render();
 }
 
-export function startManualShift({ getGear, onGearChange, sim: simRefs } = {}) {
+/**
+ * @param {object}  o
+ * @param {boolean} o.pedal  build the on-screen throttle. Dev only: it drives
+ *   the SIMULATOR, so in a real car it would be a button that lies.
+ */
+export function startManualShift({ getGear, onGearChange, sim: simRefs, pedal: withPedal = false } = {}) {
   if (ui) return { destroy() {} };
   onChange = onGearChange || null;
   sim = simRefs || null;
-  build(getGear);
+  build(getGear, withPedal);
 
   // The scroll wheel. Accumulated, because a detent can arrive as several
   // events and a trackpad as a continuous stream.

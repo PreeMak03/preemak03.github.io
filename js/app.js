@@ -672,6 +672,30 @@ async function init() {
   // dev-only class. Enable dev once and the cost stayed for the rest of the
   // session — on a car that is sometimes smooth and sometimes not, that is
   // exactly the kind of thing to rule out first.
+  // MANUAL GEARBOX — everyone, not just dev.
+  //
+  // The paddles are the feature. The on-screen throttle is not: it drives the
+  // SIMULATOR, so in a real car it would be a button that lies about what the
+  // car is doing. That one stays behind dev mode.
+  import('./manual-shift.js')
+    .then((m) => {
+      window.TAS.manual = m.startManualShift({
+        getGear: () => (audio && (audio.gearIndex || audio._gear)) || 1,
+        onGearChange: (g, src) => showToast(`เกียร์ ${g} · ${src}`),
+        pedal: document.body.classList.contains('dev-mode'),
+        sim: {
+          state,
+          physics,
+          rate: SIM_RATE.maxDeltaKmhPerSec,
+          getRpm: () => (audio && audio.rpm) || 0,
+          getRedline: () => (audio && audio._spec && audio._spec.redlineRpm)
+            || (audio && audio.profile && audio.profile.engine && audio.profile.engine.redlineRpm)
+            || 7000,
+        },
+      });
+    })
+    .catch(() => {});
+
   let devTools = null;
 
   /**
@@ -707,26 +731,7 @@ async function init() {
 
   async function startDevTools() {
     if (devTools) return;
-    devTools = { manual: null, trace: null, perf: null, traceEl: null };
-    try {
-      const m = await import('./manual-shift.js');
-      devTools.manual = m.startManualShift({
-        getGear: () => (audio && (audio.gearIndex || audio._gear)) || 1,
-        onGearChange: (g, src) => showToast(`เกียร์ ${g} · ${src}`),
-        // The pedal drives the sim directly and needs the redline to know
-        // when the throttle stops buying speed.
-        sim: {
-          state,
-          physics,
-          rate: SIM_RATE.maxDeltaKmhPerSec,
-          getRpm: () => (audio && audio.rpm) || 0,
-          getRedline: () => (audio && audio._spec && audio._spec.redlineRpm)
-            || (audio && audio.profile && audio.profile.engine && audio.profile.engine.redlineRpm)
-            || 7000,
-        },
-      });
-      window.TAS.manual = devTools.manual;
-    } catch (_) { /* diagnostics must never break the app */ }
+    devTools = { trace: null, perf: null, traceEl: null, profile: null };
 
     try {
       const m = await import('./dev-perf.js');
@@ -764,13 +769,11 @@ async function init() {
 
   function stopDevTools() {
     if (!devTools) return;
-    try { if (devTools.manual) devTools.manual.destroy(); } catch (_) {}
     try { if (devTools.perf) devTools.perf(); } catch (_) {}
     try { if (devTools.trace) devTools.trace.stop(); } catch (_) {}
     try { if (devTools.traceEl) devTools.traceEl.remove(); } catch (_) {}
     try { if (devTools.profile) devTools.profile.stop(); } catch (_) {}
     window.TAS.profile = null;
-    window.TAS.manual = null;
     window.TAS.trace = null;
     devTools = null;
   }
