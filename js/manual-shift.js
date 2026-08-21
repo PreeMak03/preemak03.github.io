@@ -239,7 +239,7 @@ function build(getGear) {
       <!-- Centred on the blade: mid-radius is (111+130)/2, so 120 +- 120.5. -->
       <text class="ms-pad-glyph" x="-0.5" y="119">−</text>
       <text class="ms-pad-glyph" x="240.5" y="119">+</text>
-      <text class="ms-pad-tag" x="-0.5" y="133">DOWN</text>
+      <text class="ms-pad-tag" x="-0.5" y="133">DN</text>
       <text class="ms-pad-tag" x="240.5" y="133">UP</text>
     </svg>
   `;

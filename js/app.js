@@ -196,8 +196,11 @@ function drawRevRing() {
     const k = (t - 0.62) / 0.26;
     col = `rgb(${Math.round(62 + k * 193)}, ${Math.round(207 - k * 33)}, ${Math.round(255 - k * 199)})`;
   } else {
-    const k = Math.min(1, (t - 0.88) / 0.12);
-    col = `rgb(255, ${Math.round(174 - k * 67)}, 56)`;
+    // Amber is a warning; the cut is not a warning, it is the end of the road.
+    // Drive it all the way to red so the last stretch reads as one colour
+    // rather than a slightly hotter orange.
+    const k = Math.min(1, (t - 0.88) / 0.09);
+    col = `rgb(255, ${Math.round(174 - k * 148)}, ${Math.round(56 - k * 18)})`;
   }
   revWater.setAttribute('fill', col);
   // Flashed by the engine's own cut flag, not a timer, so what the eye sees is

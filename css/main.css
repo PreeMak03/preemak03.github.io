@@ -1674,9 +1674,13 @@ body:not(.dev-mode) .dev-only {
   transition: border-color 0.2s var(--ease-soft), background 0.2s var(--ease-soft);
 }
 
+/* Plain, untinted. The tacho ring carries every bit of colour meaning in this
+   screen; a gear number that also changes hue is a second voice saying the
+   same thing, and it makes the readout harder to read at a glance rather than
+   easier. */
 .ms-root.ms-on {
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-color: rgba(214, 220, 228, 0.28);
+  background: rgba(214, 220, 228, 0.05);
 }
 
 /* Paddle shifters — curved blades on the rim of the dial.
@@ -1731,11 +1735,12 @@ body:not(.dev-mode) .dev-only {
 
 .ms-pad-glyph { font-size: 19px; font-weight: 300; }
 
+/* Short enough to sit inside the blade. DOWN ran off the end of it. */
 .ms-pad-tag {
-  font-size: 6px;
+  font-size: 5.5px;
   font-weight: 700;
-  letter-spacing: 0.14em;
-  opacity: 0.5;
+  letter-spacing: 0.08em;
+  opacity: 0.45;
 }
 
 /* Shift up: the engine is against the cut and the driver has one job. */
@@ -1790,9 +1795,7 @@ body:not(.dev-mode) .dev-only {
   transition: color 0.12s var(--ease-soft);
 }
 
-.ms-root.ms-on .ms-gear { color: var(--accent); }
-.ms-root.ms-pedal .ms-gear { color: #6fe08a; }
-.ms-root.ms-limit .ms-gear { color: #ff6b6b; }
+.ms-root.ms-on .ms-gear { color: #ffffff; }
 
 .ms-toggle {
   padding: 3px 0;
@@ -1806,8 +1809,8 @@ body:not(.dev-mode) .dev-only {
 }
 
 .ms-root.ms-on .ms-toggle {
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  color: rgba(236, 240, 245, 0.9);
+  border-color: rgba(214, 220, 228, 0.3);
 }
 
 .ms-src {
@@ -1852,13 +1855,18 @@ body:not(.dev-mode) .dev-only {
 
 /* The limiter cut, seen. Short and hard, not a gentle pulse — it is a fuel
    cut, and it should read as the engine hitting something. */
+.speed-ring.at-redline .rpm-jar { opacity: 0.25; }
+
 .speed-ring.at-redline .rpm-water {
   animation: rpmCut 0.1s steps(1, end) infinite;
 }
 
+/* Blacked out on the off phase, not merely faded. A fuel cut is the engine
+   going away and coming back, and half a beat of nothing reads as that far
+   harder than a dimmer version of the same ring. */
 @keyframes rpmCut {
   0%, 49% { opacity: 1; }
-  50%, 100% { opacity: 0.2; }
+  50%, 100% { opacity: 0; }
 }
 
 .speed-ring.at-redline .speed-value {
