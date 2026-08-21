@@ -559,6 +559,17 @@ async function init() {
         window.TAS.manual = m.startManualShift({
           getGear: () => (audio && (audio.gearIndex || audio._gear)) || 1,
           onGearChange: (g, src) => showToast(`เกียร์ ${g} · ${src}`),
+          // The spacebar pedal drives the sim directly, and needs the redline
+          // to know when to stop buying speed.
+          sim: {
+            state,
+            physics,
+            rate: SIM_RATE.maxDeltaKmhPerSec,
+            getRpm: () => (audio && audio.rpm) || 0,
+            getRedline: () => (audio && audio._spec && audio._spec.redlineRpm)
+              || (audio && audio.profile && audio.profile.engine && audio.profile.engine.redlineRpm)
+              || 7000,
+          },
         });
       })
       .catch(() => {});

@@ -1731,3 +1731,12 @@ body:not(.dev-mode) .dev-only {
   opacity: 0.7;
   min-height: 11px;
 }
+
+/* Pedal state — the only thing worth showing while a hand is on the keyboard:
+   throttle open, and whether the limiter is what is holding the car back. */
+.ms-root.ms-pedal .ms-gear { color: #6fe08a; }
+.ms-root.ms-limit .ms-gear { color: #ff6b6b; }
+.ms-root.ms-limit .ms-up {
+  background: color-mix(in srgb, #ff6b6b 30%, rgba(0, 0, 0, 0.45));
+  border-color: color-mix(in srgb, #ff6b6b 60%, transparent);
+}
