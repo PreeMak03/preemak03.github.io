@@ -82,16 +82,26 @@ function updateAccelTube(accelKmhps) {
   }
 }
 
+/**
+ * The gear used to be printed here as G1/5 and it is gone.
+ *
+ * In manual it disagreed with the gear the driver had actually selected,
+ * because this reads the engine's gear while the paddles set the gearbox's —
+ * two sources for one fact, and the readout beside the paddles is the one
+ * that is right. In automatic it was accurate and still not much use: nobody
+ * chose it, nothing acts on it.
+ *
+ * EV profiles keep their tag, because that IS the thing worth saying.
+ */
 function updateRpmLabel(rpm, gear, gearCount = 3) {
   const rpmI = Math.round(rpm || 0);
-  const g = gear || 1;
-  const key = `${rpmI}|${g}|${gearCount}`;
+  const key = `${rpmI}|${gearCount}`;
   if (key === hud._lastRpmKey) return;
   hud._lastRpmKey = key;
   if (hud.rpmEl) {
     hud.rpmEl.textContent =
       gearCount > 1
-        ? `${rpmI.toLocaleString()} RPM · G${g}/${gearCount}`
+        ? `${rpmI.toLocaleString()} RPM`
         : `${rpmI.toLocaleString()} RPM · EV`;
   }
 }
