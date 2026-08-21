@@ -258,6 +258,45 @@ function build(getGear, withPedal) {
     </svg>
   `;
   if (centre) centre.appendChild(paddles);
+
+  // A full rectangle to press, not the blade.
+  //
+  // The visible shape is a thin curved sliver, and hitting a sliver is not
+  // something to ask of a thumb in a moving car. Each blade gets a transparent
+  // rectangle over it.
+  //
+  // Measured from the SAME arc numbers that drew the blade rather than from
+  // getBBox(), because the paddles are display:none until manual is engaged
+  // and a box that is not laid out has no box to get.
+  const svg = paddles.querySelector('.ms-paddle-svg');
+  const hitBox = (fromDeg, toDeg, ri, ro, taper = 7) => {
+    const xs = [];
+    const ys = [];
+    for (const [deg, r] of [[fromDeg - taper, ro], [toDeg + taper, ro],
+                            [fromDeg, ri], [toDeg, ri],
+                            [(fromDeg + toDeg) / 2, ro], [(fromDeg + toDeg) / 2, ri]]) {
+      const a2 = (deg * Math.PI) / 180;
+      xs.push(120 + r * Math.cos(a2));
+      ys.push(120 + r * Math.sin(a2));
+    }
+    const pad = 8;
+    return {
+      x: Math.min(...xs) - pad, y: Math.min(...ys) - pad,
+      w: Math.max(...xs) - Math.min(...xs) + pad * 2,
+      h: Math.max(...ys) - Math.min(...ys) + pad * 2,
+    };
+  };
+  for (const [cls, from, to] of [['ms-down', 151, 209], ['ms-up', -29, 29]]) {
+    const b = hitBox(from, to, 111, 130);
+    const hit = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    hit.setAttribute('x', b.x.toFixed(1));
+    hit.setAttribute('y', b.y.toFixed(1));
+    hit.setAttribute('width', b.w.toFixed(1));
+    hit.setAttribute('height', b.h.toFixed(1));
+    hit.setAttribute('class', 'ms-hit-area');
+    hit.dataset.for = cls;
+    svg.appendChild(hit);          // on top, so it catches the gaps too
+  }
   const side = document.querySelector('.accel-side');
   const root = document.createElement('div');
   root.className = 'ms-root';
@@ -296,8 +335,13 @@ function build(getGear, withPedal) {
   gas.addEventListener('pointerup', gasUp);
   gas.addEventListener('pointercancel', gasUp);
   gas.addEventListener('pointerleave', gasUp);
-  ui.up.addEventListener('click', () => doShift(1, 'paddle'));
-  ui.down.addEventListener('click', () => doShift(-1, 'paddle'));
+  const bindPad = (cls, dir) => {
+    const target = paddles.querySelector(`.ms-hit-area[data-for="${cls}"]`)
+      || paddles.querySelector('.' + cls);
+    if (target) target.addEventListener('click', () => doShift(dir, 'paddle'));
+  };
+  bindPad('ms-up', 1);
+  bindPad('ms-down', -1);
   ui.toggle.addEventListener('click', () => {
     if (isManual()) releaseManual();
     else engageManual(getGear ? getGear() : 1);

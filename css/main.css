@@ -1726,6 +1726,15 @@ body:not(.dev-mode) .dev-only {
   stroke: color-mix(in srgb, #ff5a5a 52%, transparent);
 }
 
+/* The press target: the whole rectangle around a blade, invisible. Kept
+   separate from the blade so the shape stays a paddle while the thing you
+   actually hit is a generous box. */
+.ms-hit-area {
+  fill: transparent;
+  pointer-events: all;
+  cursor: pointer;
+}
+
 .ms-pad-glyph, .ms-pad-tag {
   fill: rgba(214, 220, 228, 0.8);
   text-anchor: middle;
