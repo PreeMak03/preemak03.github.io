@@ -142,7 +142,17 @@ function pedalTick(now) {
       ui.hud.classList.toggle('ms-limit', onLimiter);
       ui.root.classList.toggle('ms-limit', onLimiter);   // tints the upshift paddle
     }
-    v = Math.min(Math.min(SPEED_CAP, cap), v + rate * power * dt);
+    // NOT capped at the gear's top speed any more.
+    //
+    // In the car the app has no vote: the driver presses the pedal and the car
+    // goes, whatever gear this thinks it is in. A desk that behaves differently
+    // from the car is a desk that tests the wrong thing, so the pedal keeps
+    // pushing here too and the over-rev protection in crank-audio decides what
+    // happens next — the same code path either way.
+    //
+    // The falloff still bites, so past the top of a gear it crawls rather than
+    // pulls, which is what a driver would feel.
+    v = Math.min(SPEED_CAP, v + rate * power * dt);
   } else {
     if (ui) { ui.hud.classList.remove('ms-limit'); ui.root.classList.remove('ms-limit'); }
     v = Math.max(0, v - COAST_KMH_PER_S * dt);
