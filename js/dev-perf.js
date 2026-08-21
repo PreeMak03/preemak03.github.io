@@ -53,6 +53,19 @@ if (typeof window !== 'undefined' && window.AudioContext && !window.__tasCtxCoun
 }
 
 export function startDevPerf(el, getAudio, getExpectedKind) {
+  // Tapping the readout toggles the GPS booster. It sits in the brand row,
+  // which the driving safety lock does NOT cover, so it stays reachable at
+  // exactly the moment the question matters.
+  let boostOn = true;
+  if (el) {
+    el.style.cursor = 'pointer';
+    el.title = 'แตะเพื่อเปิด/ปิด GPS boost';
+    el.addEventListener('click', () => {
+      if (!window.TAS || typeof window.TAS.gpsBoost !== 'function') return;
+      boostOn = !boostOn;
+      window.TAS.gpsBoost(boostOn);
+    });
+  }
   if (!el) return () => {};
 
   let frames = 0;
@@ -129,6 +142,13 @@ export function startDevPerf(el, getAudio, getExpectedKind) {
     if (ctx) bits.push(`${FMT(ctx.sampleRate / 1000, 1)}k`);
     if (a && a._lite != null) bits.push(a._lite ? 'lite' : 'full');
     if (ctxOpen > 2) bits.push(`ctx ${ctxOpen}/${ctxMade}`);
+    // GPS between-fix poll: the one thing that runs with GPS and not in the
+    // simulator. Shown here because tapping this readout flips it, and a
+    // console is not something a car has.
+    if (window.TAS && typeof window.TAS.gpsBoost === 'function') {
+      const hz = window.TAS.gpsFixHz ? window.TAS.gpsFixHz() : 0;
+      bits.push(`boost ${boostOn ? 'ON' : 'off'}${hz ? ' ' + hz.toFixed(1) + 'Hz' : ''}`);
+    }
     // The invariant the owner had to catch by ear. Say it loudly instead.
     if (typeof getExpectedKind === 'function') {
       try {

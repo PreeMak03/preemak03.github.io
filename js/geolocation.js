@@ -90,15 +90,39 @@ export class GeolocationService {
    * backs off — so it can never turn into load that costs more than it buys.
    * @returns {void}
    */
+  /**
+   * Turn the booster off and on at runtime.
+   *
+   * It is the one thing that runs with GPS and not in the simulator, and the
+   * owner reports judder that follows exactly that line. High accuracy with
+   * maximumAge 0, up to five times a second, asks the receiver for a brand new
+   * fix every time — and the back-off only engages after six DUPLICATES, so a
+   * good receiver that keeps producing novel fixes never triggers it and the
+   * poll stays at 200 ms indefinitely.
+   *
+   * Being able to switch it off in the car turns a theory into a thirty-second
+   * experiment.
+   */
+  setBoost(on) {
+    this.boostEnabled = on !== false;
+    if (!this.boostEnabled && this._boostTimer) {
+      window.clearTimeout(this._boostTimer);
+      this._boostTimer = null;
+    } else if (this.boostEnabled && this.watching && !this._boostTimer) {
+      this._startBoost();
+    }
+    return this.boostEnabled;
+  }
+
   _startBoost() {
     let interval = 250;
     let dupes = 0;
     const schedule = () => {
-      if (!this.watching) return;
+      if (!this.watching || this.boostEnabled === false) return;
       this._boostTimer = window.setTimeout(run, interval);
     };
     const run = () => {
-      if (!this.watching) return;
+      if (!this.watching || this.boostEnabled === false) return;
       if ((this.fixHz || 0) >= 4) { interval = 1000; return schedule(); } // already plenty
       navigator.geolocation.getCurrentPosition(
         (pos) => {

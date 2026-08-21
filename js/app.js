@@ -997,6 +997,13 @@ window.TAS = {
   perf,
   driveLock,
   updateDriveLock,
+  /**
+   * TAS.gpsBoost(false) stops the between-fix poll; true starts it again.
+   * Returns the state. The poll is the only thing that runs with GPS and not
+   * in the simulator, which is the line the reported judder follows.
+   */
+  gpsBoost: (on) => geo.setBoost(on),
+  gpsFixHz: () => geo.fixHz || 0,
   onboard: () => startOnboarding({ force: true }),
 };
 
