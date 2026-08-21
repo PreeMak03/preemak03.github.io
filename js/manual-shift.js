@@ -119,10 +119,13 @@ function pedalTick(now) {
       ? 1
       : Math.max(0.05, 1 - ((through - KNEE) / (1 - KNEE)) ** 0.7 * 0.95);
     const onLimiter = through >= 0.985;
-    if (ui) ui.root.classList.toggle('ms-limit', onLimiter);
+    if (ui) {
+      ui.hud.classList.toggle('ms-limit', onLimiter);
+      ui.root.classList.toggle('ms-limit', onLimiter);   // tints the upshift paddle
+    }
     v = Math.min(Math.min(SPEED_CAP, cap), v + rate * power * dt);
   } else {
-    if (ui) ui.root.classList.remove('ms-limit');
+    if (ui) { ui.hud.classList.remove('ms-limit'); ui.root.classList.remove('ms-limit'); }
     v = Math.max(0, v - COAST_KMH_PER_S * dt);
     if (v <= 0) owns = false;          // rolled to a stop — the slider is free again
   }
@@ -137,6 +140,7 @@ function render() {
   if (!ui) return;
   const on = isManual();
   ui.root.classList.toggle('ms-on', on);
+  ui.hud.classList.toggle('ms-on', on);
   ui.gear.textContent = on ? String(manualGear()) : 'A';
   ui.src.textContent = on ? lastSource : '';
   ui.toggle.textContent = on ? 'MANUAL' : 'AUTO';
@@ -144,20 +148,36 @@ function render() {
 }
 
 function build(getGear) {
+  // The readout belongs with the other instruments, not floating over the
+  // profile carousel and the rev button — which is where a fixed, centred
+  // overlay inevitably lands. The accel column already IS the instrument
+  // column, and the space above its tube was empty, so the gear goes there
+  // and shares its visual language.
+  // One instrument, not three things scattered round the screen.
+  //
+  // The first attempt put the readout here and left the paddles pinned to the
+  // bottom edges, where they landed straight on top of the tune button and the
+  // START button — the same floating-over-things problem, moved. The right
+  // edge is taken by the accel tube for its full height, so there is no free
+  // edge to pin to; the column is the answer for all of it.
+  //
+  // Plus above, gear in the middle, minus below: the control points the way
+  // the gears go.
+  const side = document.querySelector('.accel-side');
   const root = document.createElement('div');
   root.className = 'ms-root';
   root.innerHTML = `
-    <button type="button" class="ms-pad ms-down" aria-label="เกียร์ลง">−</button>
-    <div class="ms-mid">
-      <button type="button" class="ms-toggle" aria-pressed="false">AUTO</button>
-      <span class="ms-gear">A</span>
-      <span class="ms-src"></span>
-    </div>
     <button type="button" class="ms-pad ms-up" aria-label="เกียร์ขึ้น">+</button>
+    <span class="ms-gear">A</span>
+    <button type="button" class="ms-pad ms-down" aria-label="เกียร์ลง">−</button>
+    <button type="button" class="ms-toggle" aria-pressed="false">AUTO</button>
+    <span class="ms-src"></span>
   `;
-  document.body.appendChild(root);
+  if (side) side.prepend(root); else document.body.appendChild(root);
+
   ui = {
     root,
+    hud: root,                  // one element wears both sets of state classes
     up: root.querySelector('.ms-up'),
     down: root.querySelector('.ms-down'),
     gear: root.querySelector('.ms-gear'),
@@ -203,7 +223,7 @@ export function startManualShift({ getGear, onGearChange, sim: simRefs } = {}) {
       pedal = true;
       owns = true;
       pedalLast = 0;                   // do not integrate the idle gap as one step
-      if (ui) ui.root.classList.add('ms-pedal');
+      if (ui) ui.hud.classList.add('ms-pedal');
       e.preventDefault();
       return;
     }
@@ -215,18 +235,18 @@ export function startManualShift({ getGear, onGearChange, sim: simRefs } = {}) {
   const onKeyUp = (e) => {
     if (e.code === 'Space') {
       pedal = false;
-      if (ui) { ui.root.classList.remove('ms-pedal', 'ms-limit'); }
+      if (ui) { ui.hud.classList.remove('ms-pedal', 'ms-limit'); ui.root.classList.remove('ms-limit'); }
       e.preventDefault();
     }
   };
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKeyUp);
   // Losing focus mid-throttle must not leave the pedal stuck down.
-  const onBlur = () => { pedal = false; if (ui) ui.root.classList.remove('ms-pedal', 'ms-limit'); };
+  const onBlur = () => { pedal = false; if (ui) { ui.hud.classList.remove('ms-pedal', 'ms-limit'); ui.root.classList.remove('ms-limit'); } };
   window.addEventListener('blur', onBlur);
   // Touching the slider is the driver taking the speed back by hand.
   const slider = document.querySelector('#sim-speed');
-  const onSlider = () => { owns = false; pedal = false; if (ui) ui.root.classList.remove('ms-pedal', 'ms-limit'); };
+  const onSlider = () => { owns = false; pedal = false; if (ui) { ui.hud.classList.remove('ms-pedal', 'ms-limit'); ui.root.classList.remove('ms-limit'); } };
   if (slider) slider.addEventListener('input', onSlider);
   pedalLast = 0;
   pedalRaf = requestAnimationFrame(pedalTick);
@@ -242,7 +262,7 @@ export function startManualShift({ getGear, onGearChange, sim: simRefs } = {}) {
       cancelAnimationFrame(pedalRaf);
       owns = false;
       pedal = false;
-      if (ui) ui.root.remove();
+      if (ui) { ui.root.remove(); ui.hud.remove(); }
       ui = null;
       releaseManual();
     },
