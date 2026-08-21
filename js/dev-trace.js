@@ -27,7 +27,7 @@
  *   wifi.
  */
 
-const HZ = 20;
+const HZ = 50;   // 25 Hz Nyquist: enough to SEE a flutter, not just a lurch
 const SECONDS = 180;
 const N = HZ * SECONDS;
 
@@ -43,8 +43,11 @@ export function startDevTrace(getAudio, state, physics) {
   const fixHz = new Float32Array(N);
   const acc = new Float32Array(N);
   const st = new Uint8Array(N);
+  const rms = new Float32Array(N);      // the audio itself, not a control value
+  const rough = new Float32Array(N);    // dB of level modulation over the last 0.5 s
   const STATES = ['idle', 'cruise', 'pull', 'overrun', 'shift'];
 
+  let buf = null;
   let i = 0;
   let wrapped = false;
   const t0 = performance.now();
@@ -71,6 +74,31 @@ export function startDevTrace(getAudio, state, physics) {
     pitch[i] = played(a);
     fixHz[i] = state.fixHz || 0;
     acc[i] = state.geoAccuracy || 0;
+    // The control values are what the engine INTENDED. This is what came out.
+    // Judder that lives between control ticks is invisible to everything else
+    // here — the owner's three traces came back with 0 gain jumps while he was
+    // hearing it, which is the instrument failing, not the car behaving.
+    let r = 0;
+    try {
+      const an = a.getAnalyser();
+      if (an) {
+        if (!buf || buf.length !== an.fftSize) buf = new Float32Array(an.fftSize);
+        an.getFloatTimeDomainData(buf);
+        let acc2 = 0;
+        for (let q = 0; q < buf.length; q += 4) acc2 += buf[q] * buf[q];
+        r = Math.sqrt(acc2 / (buf.length / 4));
+      }
+    } catch (_) { /* engine mid-swap */ }
+    rms[i] = r;
+    // modulation depth over the last half second
+    const back = Math.min(HZ >> 1, wrapped ? N : i);
+    let lo = Infinity, hi = 0;
+    for (let q = 1; q <= back; q++) {
+      const k2 = (i - q + N) % N;
+      const x = rms[k2];
+      if (x > 1e-5) { if (x < lo) lo = x; if (x > hi) hi = x; }
+    }
+    rough[i] = (hi > 0 && lo < Infinity && lo > 0) ? 20 * Math.log10(hi / lo) : 0;
     const s = STATES.indexOf(a._driveState || a.driveState || 'idle');
     st[i] = s < 0 ? 0 : s;
     i = (i + 1) % N;
@@ -120,19 +148,22 @@ export function startDevTrace(getAudio, state, physics) {
         const signFlip = (accel[p] > 0.8 && accel[c] < -0.8) || (accel[p] < -0.8 && accel[c] > 0.8);
         const gearFlip = gear[c] !== gear[p];
         const stateFlip = st[c] !== st[p];
-        if (dDyn > 1.5 || dPitch > 2.5 || signFlip || gearFlip) {
+        if (dDyn > 1.5 || dPitch > 2.5 || signFlip || gearFlip || rough[c] > 6) {
           ev.push({
             t: +(t[c] / 1000).toFixed(1), v: +active[c].toFixed(1), a: +accel[c].toFixed(1),
             gainJumpDb: +dDyn.toFixed(1), pitchJumpSt: +dPitch.toFixed(1),
             accelSignFlip: signFlip, gear: gearFlip ? `${gear[p]}->${gear[c]}` : gear[c],
             state: stateFlip ? `${STATES[st[p]]}->${STATES[st[c]]}` : STATES[st[c]],
             fixHz: +fixHz[c].toFixed(1), accM: Math.round(acc[c]),
+            roughDb: +rough[c].toFixed(1),
           });
         }
       }
+      const rs = idx.map((k) => rough[k]).filter((x) => x > 0).sort((x, y) => x - y);
+      const rp = (q) => (rs.length ? +rs[Math.floor(rs.length * q)].toFixed(1) : 0);
       const n = idx.length / HZ;
       const worst = ev.slice().sort((x, y) =>
-        (y.gainJumpDb + y.pitchJumpSt) - (x.gainJumpDb + x.pitchJumpSt)).slice(0, 25);
+        (y.gainJumpDb + y.pitchJumpSt + y.roughDb) - (x.gainJumpDb + x.pitchJumpSt + x.roughDb)).slice(0, 25);
       return {
         seconds: +n.toFixed(0),
         events: ev.length,
@@ -141,6 +172,7 @@ export function startDevTrace(getAudio, state, physics) {
         pitchJumps: ev.filter((e) => e.pitchJumpSt > 2.5).length,
         accelSignFlips: ev.filter((e) => e.accelSignFlip).length,
         gearChanges: ev.filter((e) => String(e.gear).includes('->')).length,
+        roughP50: rp(0.5), roughP95: rp(0.95), roughMax: rs.length ? +rs[rs.length - 1].toFixed(1) : 0,
         worst,
       };
     },
@@ -166,7 +198,7 @@ export function startDevTrace(getAudio, state, physics) {
             t: +(t[k] / 1000).toFixed(2), v: +active[k].toFixed(1),
             a: +accel[k].toFixed(2), rpm: Math.round(rpm[k]), g: gear[k],
             dyn: +dyn[k].toFixed(3), hz: +pitch[k].toFixed(2),
-            s: STATES[st[k]], fix: +fixHz[k].toFixed(1),
+            s: STATES[st[k]], fix: +fixHz[k].toFixed(1), rough: +rough[k].toFixed(1),
           })),
         });
       }
@@ -177,7 +209,10 @@ export function startDevTrace(getAudio, state, physics) {
         category: 'drive-trace',
         message: note || 'drive trace',
         profile: state.profileId,
-        summary: JSON.stringify({ ...s, worst: s.worst.slice(0, 12) }),
+        summary: JSON.stringify({ ...s, worst: s.worst.slice(0, 8) }),
+        // Always. He taps just after hearing it, so this is the evidence;
+        // the ranked list is context.
+        tail: JSON.stringify(api.tail(6)),
         windows: JSON.stringify(around),
       };
       const res = await fetch('https://api.web3forms.com/submit', {
@@ -187,10 +222,45 @@ export function startDevTrace(getAudio, state, physics) {
       });
       return {
         ok: res.ok, events: s.events, seconds: s.seconds,
-        gain: s.gainJumps, pitch: s.pitchJumps,
+        gain: s.gainJumps, pitch: s.pitchJumps, rough: s.roughP95,
         flip: s.accelSignFlips, gear: s.gearChanges,
       };
     },
+    /**
+     * The last few seconds, whatever they contain.
+     *
+     * The owner taps within about 2 s of hearing it, so the evidence is
+     * always at the END of the ring — and ranking by magnitude buried that
+     * under the engine start, which is louder than anything and happens at
+     * t=9. Across three real traces the detector found nothing at all in the
+     * final 23, 6 and 55 seconds, exactly where the judder was. A threshold
+     * that has to be crossed cannot report the thing it is failing to see;
+     * this reports it regardless.
+     */
+    tail(seconds = 6) {
+      const idx = order();
+      const take = Math.min(idx.length, Math.round(seconds * HZ));
+      const slice = idx.slice(idx.length - take);
+      if (!slice.length) return null;
+      const rs = slice.map((k) => rough[k]).filter((x) => x > 0).sort((a, b) => a - b);
+      const rows = slice.map((k) => ({
+        t: +(t[k] / 1000).toFixed(2), v: +active[k].toFixed(1), a: +accel[k].toFixed(2),
+        rpm: Math.round(rpm[k]), g: gear[k], dyn: +dyn[k].toFixed(3),
+        hz: +pitch[k].toFixed(2), s: STATES[st[k]], rough: +rough[k].toFixed(1),
+        fix: +fixHz[k].toFixed(1),
+      }));
+      return {
+        seconds,
+        roughP50: rs.length ? +rs[Math.floor(rs.length * 0.5)].toFixed(1) : 0,
+        roughP95: rs.length ? +rs[Math.floor(rs.length * 0.95)].toFixed(1) : 0,
+        roughMax: rs.length ? +rs[rs.length - 1].toFixed(1) : 0,
+        speedFrom: rows[0].v, speedTo: rows[rows.length - 1].v,
+        gears: [...new Set(rows.map((r) => r.g))],
+        states: [...new Set(rows.map((r) => r.s))],
+        rows,
+      };
+    },
+
     /**
      * The one line the owner can actually read off a car screen and say out
      * loud. Sending the trace was worth building, but it goes to HIS inbox —
@@ -204,8 +274,10 @@ export function startDevTrace(getAudio, state, physics) {
     verdict() {
       const s = api.summary();
       if (typeof s === 'string') return s;
-      return `${s.seconds}s · gain ${s.gainJumps} · pitch ${s.pitchJumps} · ` +
-             `flip ${s.accelSignFlips} · gear ${s.gearChanges}`;
+      const tl = api.tail(6);
+      const tail = tl ? `last6s rough ${tl.roughP95}/${tl.roughMax}dB · ` : '';
+      return tail + `${s.seconds}s · rough ${s.roughP95}/${s.roughMax}dB · gain ${s.gainJumps} · ` +
+             `pitch ${s.pitchJumps} · flip ${s.accelSignFlips} · gear ${s.gearChanges}`;
     },
   };
   return api;
