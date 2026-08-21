@@ -1806,7 +1806,10 @@ body:not(.dev-mode) .dev-only {
 
 .ms-root.ms-on .ms-gear { color: #ffffff; }
 
+/* The pill is a label now; .ms-root takes the press. Kept non-interactive so
+   a thumb landing anywhere in the box behaves the same. */
 .ms-toggle {
+  pointer-events: none;
   padding: 3px 0;
   border-radius: 999px;
   border: 1px solid var(--border-subtle);

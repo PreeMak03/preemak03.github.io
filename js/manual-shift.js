@@ -342,12 +342,22 @@ function build(getGear, withPedal) {
   };
   bindPad('ms-up', 1);
   bindPad('ms-down', -1);
-  ui.toggle.addEventListener('click', () => {
+  // The WHOLE readout switches modes, not the little pill inside it.
+  //
+  // The pill is about 40 x 14 px — a label that happened to be a button, and
+  // nothing anyone should have to aim at from the driver's seat. The box it
+  // sits in is already a single idea (which gear, and who is choosing it), so
+  // the box is the control and the pill is just what it says.
+  const flip = () => {
     if (isManual()) releaseManual();
     else engageManual(getGear ? getGear() : 1);
     wheelAcc = 0;
     render();
-  });
+  };
+  root.addEventListener('click', flip);
+  root.style.cursor = 'pointer';
+  // the pill must not fire it twice
+  ui.toggle.addEventListener('click', (e) => e.stopPropagation());
   render();
 }
 
