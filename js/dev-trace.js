@@ -17,10 +17,14 @@
  *   sample, no DOM work, no audio-thread involvement. Dev mode only.
  *
  * USE
- *   It starts itself. After a drive, in the console:
- *       TAS.trace.summary()   // suspect moments, ranked
- *       TAS.trace.dump()      // the whole ring as JSON
- *       copy(TAS.trace.dump())
+ *   It starts itself and needs nothing while driving. The Tesla browser has no
+ *   console — asking for one was a mistake — so the readout in the top bar
+ *   turns into a SEND button once it has caught something, and one tap posts
+ *   the evidence through the same Web3Forms pipe the feedback button already
+ *   uses. That pipe is the only channel proven to work from the car: the
+ *   CommandRoom server lives on localhost, the car cannot reach it while
+ *   driving, and an HTTPS page may not POST to it even parked on the same
+ *   wifi.
  */
 
 const HZ = 20;
@@ -139,6 +143,49 @@ export function startDevTrace(getAudio, state, physics) {
         gearChanges: ev.filter((e) => String(e.gear).includes('->')).length,
         worst,
       };
+    },
+    /**
+     * Post the evidence. The full ring is ~360 KB, far too big for a form
+     * field and mostly uneventful anyway, so this sends the ranked summary
+     * plus the raw samples immediately around the two worst moments — which is
+     * what actually has to be read to tell the causes apart.
+     */
+    async send(note) {
+      const s = api.summary();
+      if (typeof s === 'string') return { ok: false, why: s };
+      const idx = order();
+      const around = [];
+      for (const w of s.worst.slice(0, 2)) {
+        const centre = idx.findIndex((k) => Math.abs(t[k] / 1000 - w.t) < 0.06);
+        if (centre < 0) continue;
+        const from = Math.max(0, centre - HZ * 1.5);
+        const to = Math.min(idx.length, centre + HZ * 1.5);
+        around.push({
+          at: w.t,
+          rows: idx.slice(from, to).map((k) => ({
+            t: +(t[k] / 1000).toFixed(2), v: +active[k].toFixed(1),
+            a: +accel[k].toFixed(2), rpm: Math.round(rpm[k]), g: gear[k],
+            dyn: +dyn[k].toFixed(3), hz: +pitch[k].toFixed(2),
+            s: STATES[st[k]], fix: +fixHz[k].toFixed(1),
+          })),
+        });
+      }
+      const body = {
+        access_key: 'b0c38acf-3953-4910-9fbb-290ad09af3a5',
+        subject: 'TAS drive trace — ' + (state.profileId || '?'),
+        from_name: 'Tesla Active Sound',
+        category: 'drive-trace',
+        message: note || 'drive trace',
+        profile: state.profileId,
+        summary: JSON.stringify({ ...s, worst: s.worst.slice(0, 12) }),
+        windows: JSON.stringify(around),
+      };
+      const res = await fetch('https://api.web3forms.com/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(body),
+      });
+      return { ok: res.ok, events: s.events, seconds: s.seconds };
     },
   };
   return api;

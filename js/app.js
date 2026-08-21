@@ -556,7 +556,38 @@ async function init() {
     // because judder that only happens in the car cannot be fixed by guessing
     // at what the car is feeding us.
     import('./dev-trace.js')
-      .then((m) => { window.TAS.trace = m.startDevTrace(() => audio, state, physics); })
+      .then((m) => {
+        window.TAS.trace = m.startDevTrace(() => audio, state, physics);
+        // Tapping the readout sends the trace. The car has no console, and
+        // nothing here may need typing: the whole point is that the driver
+        // parks, taps once, and the evidence arrives.
+        const el = $('#app-perf');
+        if (!el) return;
+        // A finger in a car needs a real target, not a 10 px line of text.
+        el.style.cursor = 'pointer';
+        el.style.padding = '6px 10px';
+        el.style.margin = '-6px -10px';
+        el.style.borderRadius = '8px';
+        el.style.border = '1px solid currentColor';
+        el.style.opacity = '0.85';
+        el.title = 'แตะเพื่อส่ง trace การขับ';
+        let busy = false;
+        el.addEventListener('click', async () => {
+          if (busy) return;
+          busy = true;
+          const before = el.textContent;
+          el.textContent = 'ส่ง trace…';
+          try {
+            const r = await window.TAS.trace.send('tapped from the car');
+            el.textContent = r.ok
+              ? `ส่งแล้ว · ${r.events} จุด / ${r.seconds}s`
+              : `ส่งไม่สำเร็จ · ${r.why || 'network'}`;
+          } catch (_) {
+            el.textContent = 'ส่งไม่สำเร็จ';
+          }
+          window.setTimeout(() => { el.textContent = before; busy = false; }, 4000);
+        });
+      })
       .catch(() => {});
   }
 
