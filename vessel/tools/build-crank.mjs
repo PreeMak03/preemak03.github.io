@@ -99,7 +99,7 @@ const round3 = (x) => Math.round(x * 1000) / 1000;
 // feeds 0.18 while holding speed and only 0.15 under a light pull, so max()
 // made a light acceleration read as LESS load than cruising and the car got
 // quieter when the driver eased on.
-const DRIVE_BASE = { revLo: 0.17, revHi: 0.55, revPull: 0.9, revTop: 1.0, floorLo: 1300, floorHi: 1800, cruiseLoad: 0.5, wanderRpm: 52, wanderLope: 178 };
+const DRIVE_BASE = { revLo: 0.17, revHi: 0.55, revPull: 0.9, floorLo: 1300, floorHi: 1800, cruiseLoad: 0.5, wanderRpm: 52, wanderLope: 178 };
 
 /** In-car loudness curve (js/dynamic-volume.js). Gentle by default. */
 // shiftDuck / overrunDuck are classic-muscle's values. CRANK's own were 0.4 and

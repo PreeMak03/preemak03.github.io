@@ -1319,14 +1319,6 @@ export class AudioEngine {
       // Per-gear standing rpm: G1 ≈ floorLo … top gear ≈ floorHi (default 1300 → 1800).
       floorLo: eng.gearFloorLo,
       floorHi: eng.gearFloorHi,
-      // Run the gear out under load, so an upshift arrives after the revs have
-      // climbed rather than wherever the throttle left them. The box picks its
-      // gear from SPEED, so without this the two are unrelated: measured on a
-      // full pull, the four shifts landed at 97, 84, 73 and 75 percent of the
-      // redline. Off the throttle it contributes nothing and the revs still
-      // fall to the gear floor.
-      sweep: gearProgress(speed, this._gear),
-      sweepTo: eng.revTop != null ? eng.revTop : 1.0,
     });
 
     // Cruise = slow follow (GPS speed wobble); pull/shift a bit snappier
