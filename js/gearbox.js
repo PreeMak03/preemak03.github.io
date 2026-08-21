@@ -197,6 +197,21 @@ export function rpmInGear({
   pull = REV_DEFAULT.pull,
   floorLo = 1300, // per-gear standing rpm: G1 base
   floorHi = 1800, // per-gear standing rpm: top gear base
+  // SWEEP — optional, and zero by default so classic and VESSEL are untouched.
+  //
+  // Load alone decides the rev level here, which means the revs never reach
+  // the redline in ordinary driving: at full throttle they sit at `pull` and
+  // stay there until the SPEED crosses a band boundary and the box shifts.
+  // Measured on jz-crank at full throttle, the shifts landed at 88, 88, 73
+  // and 67 percent of the redline and the peak for the whole pull was 89%.
+  // A real automatic holds each gear to the limiter under full throttle and
+  // shifts early and quietly under a light one.
+  //
+  // Passing progress through the gear lets the revs climb toward `sweepTo` as
+  // the gear runs out, scaled by load — so a closed throttle still falls to
+  // the floor, which is the part of this model that must not change.
+  sweep = 0,
+  sweepTo = 0,
 }) {
   const span = redline - idle;
   // Each gear STANDS at a low base rpm that steps up with the gear (floorLo … floorHi,
@@ -208,6 +223,28 @@ export function rpmInGear({
   const floorRpm = floorLo + gt * (floorHi - floorLo);      // 1300 … 1800
   const floorN = clamp((floorRpm - idle) / span, revLo * 0.4, 1);
   let n = floorN + accelLoad * (pull - floorN);             // throttle climbs to pull
+  if (sweep > 0 && sweepTo > 0) {
+    // Scaling this by accelLoad directly meant gentle driving never swept at
+    // all — correct for a docile automatic, and not what an engine note is
+    // for. The weight saturates instead: any real pull runs the gear out, a
+    // closed throttle does nothing, and the cruise floor is untouched either
+    // way. That last part is the rule this model exists to keep.
+    // The usable window is narrow and has to be measured, not guessed. The app
+    // feeds a standing cruise throttle, so accelLoad is never zero while
+    // moving: on jz-crank it sits at 0.09 holding a speed and reaches 0.17
+    // under a real but gentle pull. A window of 0.12 to 0.40 therefore gave
+    // that pull only 19% of the sweep and the shifts landed at 45% of the
+    // redline. Below the cruise figure and the floor breaks; too far above it
+    // and ordinary driving never sweeps at all.
+    // Tight, and it has to be: the gap between holding a speed and a real but
+    // gentle pull is only about 0.08 of load once the profile's own accelRef
+    // is taken into account, and that value is the owner's — tuned by driving
+    // and not to be moved to make this easier. So the window lives inside that
+    // gap instead. Below it the cruise floor breaks; above it and ordinary
+    // driving never sweeps, which is the complaint that started this.
+    const w = clamp((accelLoad - 0.10) / 0.07, 0, 1);
+    n += w * clamp(sweep, 0, 1) * Math.max(0, sweepTo - n);
+  }
   n -= decelLoad * 0.12;                                     // engine-braking dip
   return idle + span * clamp(n, revLo * 0.4, 1.02);
 }

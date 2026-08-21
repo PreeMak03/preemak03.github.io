@@ -90,7 +90,7 @@ const DEFAULT_MIXER = { exhaust: 0.92, intake: 0.58, mechanical: 0.34, induction
  * one frame) hand it step changes that must be walked, not jumped.
  */
 const DEFAULT_DRIVE = {
-  revLo: 0.17, revHi: 0.55, revPull: 0.9, floorLo: 1300, floorHi: 1800,
+  revLo: 0.17, revHi: 0.55, revPull: 0.9, revTop: 1.0, floorLo: 1300, floorHi: 1800,
   cruiseLoad: 0.5, wanderRpm: 52, wanderLope: 178,
   limiterHz: 13, limiterDropTo: 0.93, blipFallMul: 2.4,
 
@@ -1025,6 +1025,12 @@ export class CrankAudio {
             pull: d.revPull,
             floorLo: d.floorLo,
             floorHi: d.floorHi,
+            // Under load the revs climb toward the limiter as the gear runs
+            // out, so an automatic upshift arrives AT something rather than
+            // wherever the throttle happened to leave it. Off the throttle
+            // this contributes nothing and the revs still fall to the floor.
+            sweep: gearProgress(speed, this._gear),
+            sweepTo: d.revTop,
           });
         // Classic's rates, verbatim. CRANK was chasing the target roughly twice as
         // fast (6-15 against 3.6-8.5), which on a single oscillator means it
