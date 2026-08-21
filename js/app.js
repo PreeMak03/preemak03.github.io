@@ -551,6 +551,19 @@ async function init() {
 
   // Dev perf readout — only in Dev mode, loaded on demand. If it fails to load
   // the app is unaffected; it is a diagnostic, not a feature.
+  // Manual gearbox. Dev-mode only until it has been driven — it changes where
+  // the revs come from, and LAW 7 says a drive decides that, not a bench.
+  if (document.body.classList.contains('dev-mode')) {
+    import('./manual-shift.js')
+      .then((m) => {
+        window.TAS.manual = m.startManualShift({
+          getGear: () => (audio && (audio.gearIndex || audio._gear)) || 1,
+          onGearChange: (g, src) => showToast(`เกียร์ ${g} · ${src}`),
+        });
+      })
+      .catch(() => {});
+  }
+
   if (document.body.classList.contains('dev-mode')) {
     import('./dev-perf.js')
       .then((m) => m.startDevPerf($('#app-perf'), () => audio, () => engineKindFor(state.profileId)))

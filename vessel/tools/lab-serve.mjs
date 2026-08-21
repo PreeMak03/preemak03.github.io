@@ -209,6 +209,7 @@ function applyAndPush(action, payload) {
       'assets/turbine/jet.turbine.json',
       'js/dev-perf.js',
       'js/dev-trace.js',
+      'js/manual-shift.js',
       'js/crank-audio.js',
       'js/crank-rigs.js',
       'assets/crank/jz.crank.json',

@@ -1648,3 +1648,86 @@ body:not(.dev-mode) .dev-only {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* --------------------------------------------------------------------------
+   Manual gearbox — paddles.
+
+   Sized for a hand in a moving car, not a mouse: the pads run the full height
+   of the strip and sit hard against the screen edges, which is where a thumb
+   already is. Nothing here needs to be READ while driving; the gear number is
+   for confirmation afterwards.
+   -------------------------------------------------------------------------- */
+.ms-root {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: none;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px;
+  pointer-events: none;
+}
+
+/* The strip is always mounted — the toggle lives in it, so hiding the whole
+   thing when manual is off would hide the only way to turn it on. Only the
+   paddles come and go. */
+.ms-root { display: flex; }
+.ms-root .ms-pad { visibility: hidden; }
+.ms-root.ms-on .ms-pad { visibility: visible; }
+
+.ms-pad {
+  pointer-events: auto;
+  flex: 0 0 88px;
+  min-height: 84px;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, rgba(0, 0, 0, 0.55));
+  color: var(--text-primary);
+  font-size: 34px;
+  font-weight: 300;
+  line-height: 1;
+  transition: transform 0.09s var(--ease-soft), background 0.12s var(--ease-soft);
+}
+
+.ms-pad:active { transform: scale(0.95); }
+.ms-pad.ms-hit { background: color-mix(in srgb, var(--accent) 34%, rgba(0, 0, 0, 0.4)); }
+.ms-pad.ms-blocked { background: color-mix(in srgb, #ff5a5a 26%, rgba(0, 0, 0, 0.5)); }
+
+.ms-mid {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.ms-toggle {
+  pointer-events: auto;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: rgba(0, 0, 0, 0.45);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.ms-gear {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent);
+}
+
+.ms-src {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  opacity: 0.7;
+  min-height: 11px;
+}

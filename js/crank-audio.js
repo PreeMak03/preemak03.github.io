@@ -39,6 +39,8 @@ import {
   GEAR_COUNT,
   resolveGear,
   rpmInGear,
+  rpmInGearManual,
+  isManual,
   gearProgress,
   gearToneBias,
   shiftLandingRpm,
@@ -992,22 +994,39 @@ export class CrankAudio {
         // only once the car is properly rolling; below that, walk up from
         // idle so leaving a standstill is continuous.
         const launch = clamp((speed - 1.5) / (LAUNCH_KMH - 1.5), 0, 1);
-        let targetRpm = rpmInGear({
-          gear: this._gear,
-          idle,
-          redline,
-          accelLoad,
-          decelLoad,
-          revLo: d.revLo,
-          pull: d.revPull,
-          floorLo: d.floorLo,
-          floorHi: d.floorHi,
-        });
+        // Manual mode swaps where the revs COME FROM, not how they move.
+        // Automatic ties them to acceleration, which is right when the box
+        // picks its own gear. Once a human holds one, they have to follow
+        // speed instead or the choice means nothing — second at 90 has to
+        // scream and fifth at 20 has to lug. Everything after this line is
+        // untouched: same glide, same rate caps, same shift handling.
+        let targetRpm = isManual()
+          ? rpmInGearManual({
+            gear: this._gear,
+            speedKmh: speed,
+            idle,
+            redline,
+            accelLoad,
+            decelLoad,
+            revLo: d.revLo,
+            pull: d.revPull,
+          })
+          : rpmInGear({
+            gear: this._gear,
+            idle,
+            redline,
+            accelLoad,
+            decelLoad,
+            revLo: d.revLo,
+            pull: d.revPull,
+            floorLo: d.floorLo,
+            floorHi: d.floorHi,
+          });
         // Classic's rates, verbatim. CRANK was chasing the target roughly twice as
         // fast (6-15 against 3.6-8.5), which on a single oscillator means it
         // tracked GPS scatter straight into the pitch.
         let rpmLambda = this.smoothFilter ? 3.6 : 5.5;
-        if (launch < 1) targetRpm = idle + (targetRpm - idle) * launch;
+        if (launch < 1 && !isManual()) targetRpm = idle + (targetRpm - idle) * launch;
         if (accelLoad > 0.35) rpmLambda = 6 + accelLoad * 2.5;
         if (decelLoad > 0.35) rpmLambda = 5.5 + decelLoad * 2;
         if (this._shifting) {

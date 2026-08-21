@@ -50,7 +50,82 @@ export const LEGACY_BANDS = {
 /** Fallback rev character when a profile doesn't specify one. */
 const REV_DEFAULT = { lo: 0.18, hi: 0.7, pull: 0.96 };
 
+/* ------------------------------------------------------------- manual -- */
+/**
+ * MANUAL GEARBOX.
+ *
+ * resolveGear() is a STRATEGY for choosing a gear, not the gearbox itself, so
+ * a manual mode does not modify it — it replaces the choice ahead of it and
+ * leaves the automatic path byte-for-byte alone. Everything downstream (tone
+ * bias, shift landing, dynamic volume per gear) already takes a gear number
+ * and does not care who picked it.
+ */
+let _manualGear = null;          // null = automatic
+let _manualEvent = null;         // 'up' | 'down' | null, consumed by the engine
+
+export function isManual() { return _manualGear != null; }
+export function manualGear() { return _manualGear; }
+
+/** Engage manual, starting from whatever gear the automatic was in. */
+export function engageManual(fromGear = 1) {
+  _manualGear = clamp(Math.round(fromGear) || 1, 1, GEAR_COUNT);
+  return _manualGear;
+}
+
+export function releaseManual() { _manualGear = null; _manualEvent = null; }
+
+/** One gear up or down. Returns the new gear, or null when not engaged. */
+export function shiftManual(dir) {
+  if (_manualGear == null) return null;
+  const next = clamp(_manualGear + (dir > 0 ? 1 : -1), 1, GEAR_COUNT);
+  if (next !== _manualGear) _manualEvent = dir > 0 ? 'up' : 'down';
+  _manualGear = next;
+  return _manualGear;
+}
+
+/** Read and clear the pending shift, so the engine fires its sound once. */
+export function takeManualEvent() {
+  const e = _manualEvent; _manualEvent = null; return e;
+}
+
+/**
+ * RPM from SPEED and the chosen gear — the real relationship.
+ *
+ * The automatic model deliberately ties revs to ACCELERATION, which is right
+ * when the box picks its own gear: at a steady speed a real automatic has
+ * already shifted up and settled. The moment a human holds a gear that stops
+ * being true. Holding second at 90 has to scream, and fifth at 20 has to lug,
+ * or choosing a gear means nothing.
+ *
+ * So progress through the gear's speed band is NOT clamped here the way
+ * gearProgress() clamps it — running past the top of the band is the point.
+ */
+export function rpmInGearManual({
+  gear, speedKmh, idle, redline,
+  accelLoad = 0, decelLoad = 0,
+  bands = DEFAULT_BANDS,
+}) {
+  const g = clamp(Math.round(gear) || 1, 1, GEAR_COUNT);
+  // A gear is a RATIO, so rpm is proportional to speed: at the top of the
+  // gear the engine is at the redline, and everything else follows a straight
+  // line from there.
+  //
+  // The first version used the automatic's SHIFT BANDS as if they were ratios
+  // and that is not the same thing at all — third does not begin until 71 km/h
+  // on the automatic's schedule, so holding third at 60 came out at 700 rpm,
+  // lugging, when a real manual sits at mid revs there. Measured before the
+  // fix: 2nd at 90 hit the limiter correctly and 5th at 20 lugged correctly,
+  // but 3rd at 60 read 10% of redline. Two right answers hid a broken model.
+  const vmax = Math.max(1, bands.vmax[g - 1]);
+  let rpm = redline * (Math.max(0, speedKmh) / vmax);
+  rpm += (redline - idle) * (accelLoad * 0.06 - decelLoad * 0.05);
+  // Below idle the clutch is slipping or the driver is about to stall it;
+  // above the redline the limiter has it. Both ends are the point of manual.
+  return clamp(rpm, idle * 0.92, redline * 1.04);
+}
+
 export function resolveGear(speedKmh, currentGear = 1, accelLoad = 0, decelLoad = 0, bands = DEFAULT_BANDS) {
+  if (_manualGear != null) return _manualGear;
   const UP = bands.up, DOWN = bands.down;
   let g = clamp(Math.round(currentGear) || 1, 1, GEAR_COUNT);
   const v = Math.max(0, speedKmh);
