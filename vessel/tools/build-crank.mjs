@@ -129,7 +129,7 @@ const DYN_BASE = {
 // revs climbing too fast. Raising the reference by roughly the same factor
 // puts the mid-range back where it was while leaving cruise, which is set by
 // cruiseLoad alone, exactly where he says it is right.
-const ACCEL_REF_KMHPS = 40;
+const ACCEL_REF_KMHPS = 48;
 
 /**
  * Shapes how light acceleration lands. accelLoad ** this, so a value below 1
