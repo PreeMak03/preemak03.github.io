@@ -123,7 +123,13 @@ const DYN_BASE = {
  * one oscillator turns load straight into pitch and level with nothing masking
  * it, so it gets a slacker reference.
  */
-const ACCEL_REF_KMHPS = 28;
+// 40, not 28, since cruiseLoad started ADDING to this instead of competing
+// with it. At 15 km/h/s the old max() gave 0.536 and the sum gives 0.763 --
+// 42% more load for the same pedal, which the owner felt in the car as the
+// revs climbing too fast. Raising the reference by roughly the same factor
+// puts the mid-range back where it was while leaving cruise, which is set by
+// cruiseLoad alone, exactly where he says it is right.
+const ACCEL_REF_KMHPS = 40;
 
 /**
  * Shapes how light acceleration lands. accelLoad ** this, so a value below 1
