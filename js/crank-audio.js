@@ -95,7 +95,7 @@ const DEFAULT_DRIVE = {
   revLo: 0.17, revHi: 0.55, revPull: 0.9, floorLo: 1300, floorHi: 1800,
   cruiseLoad: 0.5, wanderRpm: 52, wanderLope: 178,
   limiterHz: 13, limiterDropTo: 0.93, blipFallMul: 2.4,
-  limiterGraceSec: 1.5, lugGraceSec: 1.2,
+  lugGraceSec: 1.2,
   glideSec: 0.03, shiftGlideSec: 0.09, glideHoldSec: 0.2,
   riseRpmPerSec: 8000, fallRpmPerSec: 10000,
   maxRiseStPerSec: 46, maxFallStPerSec: 57, accelRef: 48, accelCurve: 0.65,
@@ -1046,18 +1046,6 @@ export class CrankAudio {
         // nothing in this block can run unless a human is holding the gear.
         this._onLimiter = false;
 
-        // Two different questions, and conflating them broke the protection.
-        //
-        // "Is the injector cut right now" flips at 13 Hz — that is the sound.
-        // "Has this engine been sitting on its limiter" is a state that lasts
-        // seconds. The first version counted the second using the first, so
-        // every un-cut frame reset the timer and it never once reached the
-        // grace period: measured, the car sat pinned for 4.6 s in first at
-        // 120 km/h and never upshifted.
-        //
-        // The cut pulls the revs to 93% by design, so the band has to be wide
-        // enough to contain its own oscillation.
-        const nearLimit = isManual() && this._rpm >= redline * 0.95;
         if (isManual() && this._rpm >= redline * 0.975) {
           this._limPhase += dt;
           const cut = Math.sin(this._limPhase * Math.PI * 2 * d.limiterHz) > -0.15;
@@ -1068,39 +1056,21 @@ export class CrankAudio {
           this._limPhase = 0;
         }
 
-        // OVER-REV PROTECTION.
+        // NO AUTO-UPSHIFT. It was built and then taken out on the owner's call,
+        // and he is right: the car keeps gaining speed while the box changes
+        // gear on its own, and those two happening together read as the app
+        // fighting the driver. Sitting on the limiter is unambiguous — it is
+        // the engine saying one thing, loudly, and the driver already knows
+        // what to do about it.
         //
-        // In the car the app does not get a vote on how fast the car goes — the
-        // driver presses the pedal and it goes. A gear held past its ratio
-        // therefore does not stop pulling the way a real manual would; the revs
-        // pin against the cut and STAY there for as long as the driver keeps
-        // going. Correct by the physics, unlistenable in practice, and it tells
-        // the driver nothing.
-        //
-        // Real paddle boxes settled this long ago: hold the redline and they
-        // upshift for you. The bounce is the drama and it is kept — a beat and
-        // a half of it — and then the box does its job.
-        if (nearLimit) {
-          this._limHold += dt;
-          this._lugHold = 0;
-          if (this._limHold > d.limiterGraceSec && manualGear() < GEAR_COUNT) {
-            shiftManual(1);
-            this._limHold = 0;
-          }
+        // Left in: the lugging drop. A tall gear at walking pace makes no sound
+        // worth hearing, so there is nothing there for a driver to react TO.
+        // Say so rather than assume it should match.
+        if (isManual() && manualGear() > 1 && speed > 2 && this._rpm <= idle * 1.25) {
+          this._lugHold += dt;
+          if (this._lugHold > d.lugGraceSec) { shiftManual(-1); this._lugHold = 0; }
         } else {
-          this._limHold = 0;
-
-          // AND THE OTHER END. A tall gear at walking pace lugs, and in a real
-          // car you would stall; here it just drones at the floor. The band has
-          // to clear the gear BELOW's idle too, or it stops halfway down the
-          // box — measured, it went 5th to 2nd and stuck there at 823 rpm.
-          if (isManual() && manualGear() > 1 && speed > 2
-              && this._rpm <= idle * 1.25) {
-            this._lugHold += dt;
-            if (this._lugHold > d.lugGraceSec) { shiftManual(-1); this._lugHold = 0; }
-          } else {
-            this._lugHold = 0;
-          }
+          this._lugHold = 0;
         }
         if (accelLoad > 0.35) rpmLambda = 6 + accelLoad * 2.5;
         if (decelLoad > 0.35) rpmLambda = 5.5 + decelLoad * 2;
