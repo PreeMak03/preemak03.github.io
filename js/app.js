@@ -182,6 +182,9 @@ const REV_BOTTOM = 215;
 let revWater = null;
 let revHost = null;
 let revJar = null;
+let revLastLevel = -1;
+let revLastFill = null;
+let revLastCut = null;
 function drawRevRing() {
   if (!revWater) revWater = document.getElementById('rpm-water');
   if (!revHost) revHost = document.getElementById('speed-ring');
@@ -198,13 +201,24 @@ function drawRevRing() {
     if (!revJar) revJar = document.querySelector('.rpm-jar');
     if (revJar) revJar.style.opacity = '';
     revHost.classList.remove('at-redline');
+    revLastLevel = -1; revLastFill = null; revLastCut = null;
     return;
   }
 
+  // Only write when something actually changed.
+  //
+  // This ran three setAttribute calls every animation frame — 540 a second at
+  // this refresh rate — and the fill colour was measured unchanged across 313
+  // consecutive samples. Every one of those invalidates layout on an SVG
+  // element for nothing. The needle cannot resolve a fifth of a unit and the
+  // eye cannot see it, so anything smaller than that is not worth a repaint.
   const t = Math.max(0, Math.min(1, (audio.rpm || 0) / redline));
   const level = REV_BOTTOM - t * (REV_BOTTOM - REV_TOP);
-  revWater.setAttribute('y', String(level));
-  revWater.setAttribute('height', String(REV_BOTTOM - level));
+  if (Math.abs(level - revLastLevel) > 0.2) {
+    revLastLevel = level;
+    revWater.setAttribute('y', String(level));
+    revWater.setAttribute('height', String(REV_BOTTOM - level));
+  }
 
   // Colour does nothing for the first two thirds and then means something —
   // accent while there is room, amber as the band comes up, red at the top.
@@ -221,7 +235,7 @@ function drawRevRing() {
     const k = Math.min(1, (t - 0.88) / 0.09);
     col = `rgb(255, ${Math.round(174 - k * 148)}, ${Math.round(56 - k * 18)})`;
   }
-  revWater.setAttribute('fill', col);
+  if (col !== revLastFill) { revLastFill = col; revWater.setAttribute('fill', col); }
 
   // THE CUT, blacked out in step with the audio.
   //
@@ -232,9 +246,12 @@ function drawRevRing() {
   // means the eye and the ear get the identical square wave, which was the
   // point of using the engine's own flag rather than a timer.
   const cutting = !!(audio && audio._onLimiter);
-  revWater.style.opacity = cutting ? '0' : '1';
-  if (!revJar) revJar = document.querySelector('.rpm-jar');
-  if (revJar) revJar.style.opacity = cutting ? '0.05' : '1';
+  if (cutting !== revLastCut) {
+    revLastCut = cutting;
+    revWater.style.opacity = cutting ? '0' : '1';
+    if (!revJar) revJar = document.querySelector('.rpm-jar');
+    if (revJar) revJar.style.opacity = cutting ? '0.05' : '1';
+  }
 
   // The glow is LATCHED rather than strobed: a text-shadow flickering at 13 Hz
   // is noise, and it is the ring that should carry the beat.

@@ -94,6 +94,11 @@ function flash(which, blocked) {
 }
 
 function pedalTick(now) {
+  // Scheduled only while the pedal is doing something. It used to run every
+  // animation frame for the life of the page and return immediately — cheap
+  // per call and 180 calls a second for nothing, which is a cost a phone or a
+  // car MCU feels and a desktop does not.
+  if (!owns) { pedalRaf = 0; return; }
   pedalRaf = requestAnimationFrame(pedalTick);
   if (!sim || !sim.state) return;
   const dt = pedalLast ? Math.min(0.1, (now - pedalLast) / 1000) : 0;
@@ -103,8 +108,6 @@ function pedalTick(now) {
 
   const rate = sim.rate || 33;
   let v = sim.state.targetSpeed || 0;
-  if (!owns) return;
-
   if (pedal) {
     // The limiter is a SPEED in a given gear, so cap the speed — do not wait
     // for the revs to report it. The first version watched the smoothed rpm,
@@ -169,6 +172,7 @@ function pressPedal() {
   if (pedal) return;
   pedal = true;
   owns = true;
+  if (!pedalRaf) { pedalLast = 0; pedalRaf = requestAnimationFrame(pedalTick); }
   pressedAt = performance.now();
   pedalLast = 0;
   if (ui) { ui.hud.classList.add('ms-pedal'); ui.gas.classList.add('ms-gas-on'); }
@@ -345,8 +349,6 @@ export function startManualShift({ getGear, onGearChange, sim: simRefs } = {}) {
   const slider = document.querySelector('#sim-speed');
   const onSlider = () => { owns = false; releasePedal(); };
   if (slider) slider.addEventListener('input', onSlider);
-  pedalLast = 0;
-  pedalRaf = requestAnimationFrame(pedalTick);
 
   return {
     render,
