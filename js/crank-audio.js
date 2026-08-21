@@ -59,6 +59,9 @@ function tasUrl(rel) {
   return rel;
 }
 
+/** Speed by which a launch is over and the gear floor applies in full. */
+const LAUNCH_KMH = 12;
+
 const DEFAULT_MIXER = { exhaust: 0.92, intake: 0.58, mechanical: 0.34, induction: 0.46, master: 0.72 };
 
 /**
@@ -250,6 +253,7 @@ export class CrankAudio {
 
     // Engine state
     this._rpm = 800;
+    this._idleLatch = true;
     this._gear = 1;
     this._prevGear = 1;
     this._gearBias = gearToneBias(1);
@@ -878,7 +882,28 @@ export class CrankAudio {
       if (this._postShift > 0) this._postShift -= dt;
       if (this._glideHold > 0) this._glideHold -= dt;
 
-      if (speed < 1.5 && accelLoad < 0.1) {
+      // Pulling away is a RAMP, not a step.
+      //
+      // This used to be a bare threshold: under it the revs sat at idle, over
+      // it they sat on the gear-1 floor. For a six that is 750 against 1300 —
+      // 9.6 semitones, and the exhaust note an octave with it, crossed every
+      // time a crawling car wobbles past 1.5 km/h. Recorded in traffic at
+      // 0-7 km/h: state flipping idle <-> cruise, revs 747 -> 1690, level
+      // modulation 13.5 dB where a steady cruise measures 1.4.
+      //
+      // Two things were wrong and both are here. The boundary now latches the
+      // way classic's overrun does — enter deep, leave shallow — so a wobble
+      // cannot flap it. And leaving it no longer steps: the gear-1 floor
+      // blends up from idle across the launch, which is what a real engine
+      // does as the clutch takes up.
+      //
+      // Also why raising accelRef did nothing for this: the boundary is on
+      // SPEED. A slacker accelRef makes accelLoad smaller, which makes the
+      // idle side EASIER to satisfy — if anything it flapped more.
+      const idleEnter = speed < 1.5 && accelLoad < 0.1;
+      const idleStay = speed < 3.2 && accelLoad < 0.16;
+      this._idleLatch = this._idleLatch ? idleStay : idleEnter;
+      if (this._idleLatch) {
         // Idle — hunt the idle speed a little (prototype's idleHunt)
         load = 0.05;
         this._gear = 1;
@@ -911,6 +936,10 @@ export class CrankAudio {
         }
         this._gearBias = gearToneBias(this._gear);
 
+        // LAUNCH BLEND — see the comment on the latch above. Full gear floor
+        // only once the car is properly rolling; below that, walk up from
+        // idle so leaving a standstill is continuous.
+        const launch = clamp((speed - 1.5) / (LAUNCH_KMH - 1.5), 0, 1);
         let targetRpm = rpmInGear({
           gear: this._gear,
           idle,
@@ -926,6 +955,7 @@ export class CrankAudio {
         // fast (6-15 against 3.6-8.5), which on a single oscillator means it
         // tracked GPS scatter straight into the pitch.
         let rpmLambda = this.smoothFilter ? 3.6 : 5.5;
+        if (launch < 1) targetRpm = idle + (targetRpm - idle) * launch;
         if (accelLoad > 0.35) rpmLambda = 6 + accelLoad * 2.5;
         if (decelLoad > 0.35) rpmLambda = 5.5 + decelLoad * 2;
         if (this._shifting) {
