@@ -688,8 +688,11 @@ button {
    enough that nobody has to discover it by ear. */
 .pcard-wip {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  /* Centred ON the card's top edge, straddling it, rather than tucked into
+     a corner — it reads as a label belonging to the card. */
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -50%);
   z-index: 2;
   display: inline-flex;
   align-items: center;
@@ -702,7 +705,7 @@ button {
   line-height: 1;
   white-space: nowrap;
   color: color-mix(in srgb, var(--profile-accent, var(--accent)) 55%, var(--text-primary) 45%);
-  background: color-mix(in srgb, var(--profile-accent, var(--accent)) 14%, transparent);
+  background: color-mix(in srgb, var(--profile-accent, var(--accent)) 14%, var(--bg-elevated, #14161a));
   border: 1px solid color-mix(in srgb, var(--profile-accent, var(--accent)) 34%, transparent);
   opacity: 0.75;
   pointer-events: none;
