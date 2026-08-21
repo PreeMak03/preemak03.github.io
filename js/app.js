@@ -551,6 +551,13 @@ async function init() {
     import('./dev-perf.js')
       .then((m) => m.startDevPerf($('#app-perf'), () => audio))
       .catch(() => {});
+    // Drive recorder. Same deal as the perf readout: dev mode only, loaded on
+    // demand, and a failure to load must never touch the app. It exists
+    // because judder that only happens in the car cannot be fixed by guessing
+    // at what the car is feeding us.
+    import('./dev-trace.js')
+      .then((m) => { window.TAS.trace = m.startDevTrace(() => audio, state, physics); })
+      .catch(() => {});
   }
 
   bindSliders({
@@ -587,6 +594,7 @@ async function init() {
     state.lastGeoMs = nowMs;
     state.geoSpeed = newSpeed;
     state.geoAccuracy = payload.accuracy;
+    state.fixHz = payload.fixHz;          // recorded by the drive trace: gdt is the suspect
     setGpsStatus(payload.status);
     // What the receiver actually gives us — the ceiling on how live the readout can be.
     const summary = `${payload.speedSource || '—'} · ${
