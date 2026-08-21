@@ -310,6 +310,8 @@ export class CrankAudio {
     this._timer = null;
     this._lite = false;
     this._tickJitterMs = 0;
+    this._tickWorstMs = 0;
+    this._tickStalls = 0;
     this._swapToken = 0;
   }
 
@@ -467,6 +469,14 @@ export class CrankAudio {
       // Rolling mean |interval - nominal|, for the Dev perf readout. If this
       // grows on a device, the main thread is starving the parameter updates.
       this._tickJitterMs = this._tickJitterMs * 0.9 + Math.abs(dt * 1000 - tickMs) * 0.1;
+      // The mean above hides exactly what matters. One 150 ms stall barely
+      // moves a 0.9/0.1 rolling average, and one 150 ms stall is a lurch: dt
+      // passes through unclamped up to 250 ms, so damp() integrates as much as
+      // 7.5 ticks' worth in a single step. On a single-oscillator engine that
+      // lands straight in the pitch. Keep the worst and a count instead.
+      const ms = dt * 1000;
+      if (ms > this._tickWorstMs) this._tickWorstMs = ms;
+      if (ms > tickMs * 2) this._tickStalls++;
       if (!(dt > 0) || dt > 0.25) dt = tickMs / 1000;
       this._tick(dt);
     }, tickMs);

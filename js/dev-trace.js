@@ -45,6 +45,8 @@ export function startDevTrace(getAudio, state, physics) {
   const st = new Uint8Array(N);
   const rms = new Float32Array(N);      // the audio itself, not a control value
   const rough = new Float32Array(N);    // dB of level modulation over the last 0.5 s
+  const tick = new Float32Array(N);      // worst engine tick interval, ms
+  const stall = new Uint16Array(N);      // running count of late ticks
   const STATES = ['idle', 'cruise', 'pull', 'overrun', 'shift'];
 
   let buf = null;
@@ -89,6 +91,13 @@ export function startDevTrace(getAudio, state, physics) {
         r = Math.sqrt(acc2 / (buf.length / 4));
       }
     } catch (_) { /* engine mid-swap */ }
+    // Is the main thread starving the parameter updates? The owner noticed
+    // that VESSEL's waveguide juddered badly too — different synthesis, same
+    // symptom — and what those two share, and classic does not, is a single
+    // source whose parameter IS the pitch. A late tick lands there directly.
+    tick[i] = a._tickWorstMs || 0;
+    stall[i] = Math.min(65535, a._tickStalls || 0);
+    if (a._tickWorstMs != null) a._tickWorstMs = 0;   // peak-hold, read and reset
     rms[i] = r;
     // modulation depth over the last half second
     const back = Math.min(HZ >> 1, wrapped ? N : i);
@@ -247,6 +256,7 @@ export function startDevTrace(getAudio, state, physics) {
         t: +(t[k] / 1000).toFixed(2), v: +active[k].toFixed(1), a: +accel[k].toFixed(2),
         rpm: Math.round(rpm[k]), g: gear[k], dyn: +dyn[k].toFixed(3),
         hz: +pitch[k].toFixed(2), s: STATES[st[k]], rough: +rough[k].toFixed(1),
+        tick: +tick[k].toFixed(0),
         fix: +fixHz[k].toFixed(1),
       }));
       return {
@@ -254,6 +264,8 @@ export function startDevTrace(getAudio, state, physics) {
         roughP50: rs.length ? +rs[Math.floor(rs.length * 0.5)].toFixed(1) : 0,
         roughP95: rs.length ? +rs[Math.floor(rs.length * 0.95)].toFixed(1) : 0,
         roughMax: rs.length ? +rs[rs.length - 1].toFixed(1) : 0,
+        tickWorstMs: +Math.max(...slice.map((k) => tick[k])).toFixed(0),
+        tickStalls: slice.length ? stall[slice[slice.length - 1]] - stall[slice[0]] : 0,
         speedFrom: rows[0].v, speedTo: rows[rows.length - 1].v,
         gears: [...new Set(rows.map((r) => r.g))],
         states: [...new Set(rows.map((r) => r.s))],
@@ -275,7 +287,7 @@ export function startDevTrace(getAudio, state, physics) {
       const s = api.summary();
       if (typeof s === 'string') return s;
       const tl = api.tail(6);
-      const tail = tl ? `last6s rough ${tl.roughP95}/${tl.roughMax}dB · ` : '';
+      const tail = tl ? `last6s rough ${tl.roughP95}/${tl.roughMax}dB · tick ${tl.tickWorstMs}ms/${tl.tickStalls} · ` : '';
       return tail + `${s.seconds}s · rough ${s.roughP95}/${s.roughMax}dB · gain ${s.gainJumps} · ` +
              `pitch ${s.pitchJumps} · flip ${s.accelSignFlips} · gear ${s.gearChanges}`;
     },
