@@ -41,8 +41,6 @@ import {
   rpmInGear,
   rpmInGearManual,
   isManual,
-  manualGear,
-  shiftManual,
   gearProgress,
   gearToneBias,
   shiftLandingRpm,
@@ -95,7 +93,7 @@ const DEFAULT_DRIVE = {
   revLo: 0.17, revHi: 0.55, revPull: 0.9, floorLo: 1300, floorHi: 1800,
   cruiseLoad: 0.5, wanderRpm: 52, wanderLope: 178,
   limiterHz: 13, limiterDropTo: 0.93, blipFallMul: 2.4,
-  lugGraceSec: 1.2,
+
   glideSec: 0.03, shiftGlideSec: 0.09, glideHoldSec: 0.2,
   riseRpmPerSec: 8000, fallRpmPerSec: 10000,
   maxRiseStPerSec: 46, maxFallStPerSec: 57, accelRef: 48, accelCurve: 0.65,
@@ -1056,22 +1054,15 @@ export class CrankAudio {
           this._limPhase = 0;
         }
 
-        // NO AUTO-UPSHIFT. It was built and then taken out on the owner's call,
-        // and he is right: the car keeps gaining speed while the box changes
-        // gear on its own, and those two happening together read as the app
-        // fighting the driver. Sitting on the limiter is unambiguous — it is
-        // the engine saying one thing, loudly, and the driver already knows
-        // what to do about it.
+        // NOTHING SHIFTS ITSELF IN MANUAL. Both halves of this were built and
+        // both came out on the owner's call, and the reasoning holds either
+        // way round: an upshift at the limiter arrives while the car is still
+        // gaining speed, which reads as the app fighting the driver, and a
+        // downshift out of lugging takes away the very thing someone might be
+        // trying to do — pull away in fifth, because a real manual lets you.
         //
-        // Left in: the lugging drop. A tall gear at walking pace makes no sound
-        // worth hearing, so there is nothing there for a driver to react TO.
-        // Say so rather than assume it should match.
-        if (isManual() && manualGear() > 1 && speed > 2 && this._rpm <= idle * 1.25) {
-          this._lugHold += dt;
-          if (this._lugHold > d.lugGraceSec) { shiftManual(-1); this._lugHold = 0; }
-        } else {
-          this._lugHold = 0;
-        }
+        // The engine reports what it is doing and the driver decides. That is
+        // the whole point of the mode.
         if (accelLoad > 0.35) rpmLambda = 6 + accelLoad * 2.5;
         if (decelLoad > 0.35) rpmLambda = 5.5 + decelLoad * 2;
         if (isManual() && accelLoad < 0.12) rpmLambda = Math.max(rpmLambda, 13);
