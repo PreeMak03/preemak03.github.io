@@ -171,6 +171,7 @@ const REV_TOP = 25;
 const REV_BOTTOM = 215;
 let revWater = null;
 let revHost = null;
+let revJar = null;
 function drawRevRing() {
   if (!revWater) revWater = document.getElementById('rpm-water');
   if (!revHost) revHost = document.getElementById('speed-ring');
@@ -180,7 +181,15 @@ function drawRevRing() {
     || 0;
   const running = !!(audio && audio.running) && redline > 0;
   revHost.classList.toggle('has-rpm', running);
-  if (!running) return;
+  if (!running) {
+    // Hand the opacity back to the stylesheet, or the inline value left over
+    // from the last cut keeps the ring on screen after the engine stops.
+    revWater.style.opacity = '';
+    if (!revJar) revJar = document.querySelector('.rpm-jar');
+    if (revJar) revJar.style.opacity = '';
+    revHost.classList.remove('at-redline');
+    return;
+  }
 
   const t = Math.max(0, Math.min(1, (audio.rpm || 0) / redline));
   const level = REV_BOTTOM - t * (REV_BOTTOM - REV_TOP);
@@ -203,9 +212,23 @@ function drawRevRing() {
     col = `rgb(255, ${Math.round(174 - k * 148)}, ${Math.round(56 - k * 18)})`;
   }
   revWater.setAttribute('fill', col);
-  // Flashed by the engine's own cut flag, not a timer, so what the eye sees is
-  // the same event the ear hears.
-  revHost.classList.toggle('at-redline', !!(audio && audio._onLimiter));
+
+  // THE CUT, blacked out in step with the audio.
+  //
+  // This was a CSS animation toggled by a class — and the class was being
+  // toggled at the same 13 Hz the animation was meant to run at, so every add
+  // restarted it from frame zero and it never reached the dark half. All that
+  // showed was the water level twitching. Driving the opacity here instead
+  // means the eye and the ear get the identical square wave, which was the
+  // point of using the engine's own flag rather than a timer.
+  const cutting = !!(audio && audio._onLimiter);
+  revWater.style.opacity = cutting ? '0' : '1';
+  if (!revJar) revJar = document.querySelector('.rpm-jar');
+  if (revJar) revJar.style.opacity = cutting ? '0.05' : '1';
+
+  // The glow is LATCHED rather than strobed: a text-shadow flickering at 13 Hz
+  // is noise, and it is the ring that should carry the beat.
+  revHost.classList.toggle('at-redline', t >= 0.95);
 }
 
 function engineKindFor(id) {

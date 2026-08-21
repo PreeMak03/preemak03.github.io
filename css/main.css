@@ -1861,6 +1861,13 @@ body:not(.dev-mode) .dev-only {
   animation: rpmCut 0.1s steps(1, end) infinite;
 }
 
+/* The cut itself is drawn from JS, in step with the audio — see drawRevRing().
+   A CSS animation cannot do it: the flag it would key off toggles at the same
+   rate the animation runs, so every restart cancelled the dark half. What is
+   left here is the transition, which has to be OFF or it would smear the
+   square wave into a wobble. */
+.rpm-water, .rpm-jar { transition: none; }
+
 /* Blacked out on the off phase, not merely faded. A fuel cut is the engine
    going away and coming back, and half a beat of nothing reads as that far
    harder than a dimmer version of the same ring. */
