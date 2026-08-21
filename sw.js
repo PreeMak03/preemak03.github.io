@@ -6,7 +6,7 @@
  */
 
 // Bump when ship assets change so cars drop stale offline shells
-const CACHE = 'tas-v51';
+const CACHE = 'tas-v52';
 
 const ASSETS = [
   './',

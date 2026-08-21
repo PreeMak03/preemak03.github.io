@@ -185,7 +185,27 @@ export function startDevTrace(getAudio, state, physics) {
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify(body),
       });
-      return { ok: res.ok, events: s.events, seconds: s.seconds };
+      return {
+        ok: res.ok, events: s.events, seconds: s.seconds,
+        gain: s.gainJumps, pitch: s.pitchJumps,
+        flip: s.accelSignFlips, gear: s.gearChanges,
+      };
+    },
+    /**
+     * The one line the owner can actually read off a car screen and say out
+     * loud. Sending the trace was worth building, but it goes to HIS inbox —
+     * which I cannot read, so on its own it moved nothing. These four counts
+     * separate the causes, and each one points somewhere different:
+     *   gain  -> the level is jumping (dynamic volume / duck / drive state)
+     *   pitch -> the revs are jumping (rpm target, rate caps, glide)
+     *   flip  -> the app is inventing acceleration that reverses sign
+     *   gear  -> the gearbox is changing its mind
+     */
+    verdict() {
+      const s = api.summary();
+      if (typeof s === 'string') return s;
+      return `${s.seconds}s · gain ${s.gainJumps} · pitch ${s.pitchJumps} · ` +
+             `flip ${s.accelSignFlips} · gear ${s.gearChanges}`;
     },
   };
   return api;

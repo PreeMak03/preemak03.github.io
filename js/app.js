@@ -561,8 +561,16 @@ async function init() {
         // Tapping the readout sends the trace. The car has no console, and
         // nothing here may need typing: the whole point is that the driver
         // parks, taps once, and the evidence arrives.
-        const el = $('#app-perf');
-        if (!el) return;
+        // Its OWN element. dev-perf.js rewrites #app-perf every animation
+        // frame, so anything written there is gone before it can be read —
+        // two writers, one node, exactly the failure docs/FANOUT.md is about.
+        const host = $('#app-perf');
+        if (!host || !host.parentNode) return;
+        const el = document.createElement('span');
+        el.id = 'app-trace';
+        el.className = 'brand-build dev-only';
+        el.textContent = 'trace';
+        host.parentNode.insertBefore(el, host.nextSibling);
         // A finger in a car needs a real target, not a 10 px line of text.
         el.style.cursor = 'pointer';
         el.style.padding = '6px 10px';
@@ -575,17 +583,19 @@ async function init() {
         el.addEventListener('click', async () => {
           if (busy) return;
           busy = true;
-          const before = el.textContent;
           el.textContent = 'ส่ง trace…';
           try {
-            const r = await window.TAS.trace.send('tapped from the car');
-            el.textContent = r.ok
-              ? `ส่งแล้ว · ${r.events} จุด / ${r.seconds}s`
-              : `ส่งไม่สำเร็จ · ${r.why || 'network'}`;
+            // Show the counts on screen regardless. The mail goes to the
+            // owner's inbox, which I cannot read — so the screen has to be
+            // able to answer the question on its own.
+            const v = window.TAS.trace.verdict();
+            const r = await window.TAS.trace.send('tapped from the car').catch(() => ({ ok: false }));
+            el.textContent = (r.ok ? '✓ ' : '✗ ') + v;
           } catch (_) {
             el.textContent = 'ส่งไม่สำเร็จ';
           }
-          window.setTimeout(() => { el.textContent = before; busy = false; }, 4000);
+          // 25 s, not 4: this is meant to be read and repeated back.
+          window.setTimeout(() => { el.textContent = 'trace'; busy = false; }, 25000);
         });
       })
       .catch(() => {});
