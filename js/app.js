@@ -572,6 +572,10 @@ async function init() {
       if (vis.length && !vis.some((p) => p.id === state.profileId)) selectProfile(vis[0].id);
     }
     renderCarousel(); // dev-only cards appear / disappear immediately
+    // Start and stop for real. Leaving these running after dev is switched off
+    // is a cost the user never asked for and cannot see.
+    if (on) window.TAS.startDevTools();
+    else window.TAS.stopDevTools();
   };
 
   // Debounce the sheet-open by 1s with a spinner ring around the button, so it reads as
@@ -631,85 +635,123 @@ async function init() {
   // the app is unaffected; it is a diagnostic, not a feature.
   // Manual gearbox. Dev-mode only until it has been driven — it changes where
   // the revs come from, and LAW 7 says a drive decides that, not a bench.
-  if (document.body.classList.contains('dev-mode')) {
-    import('./manual-shift.js')
-      .then((m) => {
-        window.TAS.manual = m.startManualShift({
-          getGear: () => (audio && (audio.gearIndex || audio._gear)) || 1,
-          onGearChange: (g, src) => showToast(`เกียร์ ${g} · ${src}`),
-          // The spacebar pedal drives the sim directly, and needs the redline
-          // to know when to stop buying speed.
-          sim: {
-            state,
-            physics,
-            rate: SIM_RATE.maxDeltaKmhPerSec,
-            getRpm: () => (audio && audio.rpm) || 0,
-            getRedline: () => (audio && audio._spec && audio._spec.redlineRpm)
-              || (audio && audio.profile && audio.profile.engine && audio.profile.engine.redlineRpm)
-              || 7000,
-          },
-        });
-      })
-      .catch(() => {});
+  // DEV TOOLS — started and STOPPED together.
+  //
+  // These were only ever started. Turning dev mode off toggled a class and
+  // re-rendered the carousel and left everything else running: the drive
+  // recorder still sampling at 50 Hz and reading 2048 analyser samples each
+  // time, the pedal's animation frame loop still spinning, and the paddles,
+  // gear readout and throttle still on screen because none of them carried the
+  // dev-only class. Enable dev once and the cost stayed for the rest of the
+  // session — on a car that is sometimes smooth and sometimes not, that is
+  // exactly the kind of thing to rule out first.
+  let devTools = null;
+
+  /**
+   * Tapping the readout sends the drive trace. The car has no console and
+   * nothing here may need typing: the driver parks, taps once, and the counts
+   * appear on screen for reading back.
+   */
+  function wireTraceTap(el) {
+    el.style.cursor = 'pointer';
+    el.style.padding = '6px 10px';
+    el.style.margin = '-6px -10px';
+    el.style.borderRadius = '8px';
+    el.style.border = '1px solid currentColor';
+    el.style.opacity = '0.85';
+    el.title = 'แตะเพื่อส่ง trace การขับ';
+    let busy = false;
+    el.addEventListener('click', async () => {
+      if (busy || !window.TAS.trace) return;
+      busy = true;
+      el.textContent = 'ส่ง trace…';
+      try {
+        window.TAS.trace.mark('tapped');
+        const v = window.TAS.trace.verdict();
+        const r = await window.TAS.trace.send('tapped from the car').catch(() => ({ ok: false }));
+        el.textContent = (r.ok ? '✓ ' : '✗ ') + v;
+      } catch (_) {
+        el.textContent = 'ส่งไม่สำเร็จ';
+      }
+      // 25 s, not 4: this is meant to be read and repeated back.
+      window.setTimeout(() => { el.textContent = 'trace'; busy = false; }, 25000);
+    });
   }
 
-  if (document.body.classList.contains('dev-mode')) {
-    import('./dev-perf.js')
-      .then((m) => m.startDevPerf($('#app-perf'), () => audio, () => engineKindFor(state.profileId)))
-      .catch(() => {});
-    // Drive recorder. Same deal as the perf readout: dev mode only, loaded on
-    // demand, and a failure to load must never touch the app. It exists
-    // because judder that only happens in the car cannot be fixed by guessing
-    // at what the car is feeding us.
-    import('./dev-trace.js')
-      .then((m) => {
-        window.TAS.trace = m.startDevTrace(() => audio, state, physics);
-        // Tapping the readout sends the trace. The car has no console, and
-        // nothing here may need typing: the whole point is that the driver
-        // parks, taps once, and the evidence arrives.
-        // Its OWN element. dev-perf.js rewrites #app-perf every animation
-        // frame, so anything written there is gone before it can be read —
-        // two writers, one node, exactly the failure docs/FANOUT.md is about.
-        const host = $('#app-perf');
-        if (!host || !host.parentNode) return;
+  async function startDevTools() {
+    if (devTools) return;
+    devTools = { manual: null, trace: null, perf: null, traceEl: null };
+    try {
+      const m = await import('./manual-shift.js');
+      devTools.manual = m.startManualShift({
+        getGear: () => (audio && (audio.gearIndex || audio._gear)) || 1,
+        onGearChange: (g, src) => showToast(`เกียร์ ${g} · ${src}`),
+        // The pedal drives the sim directly and needs the redline to know
+        // when the throttle stops buying speed.
+        sim: {
+          state,
+          physics,
+          rate: SIM_RATE.maxDeltaKmhPerSec,
+          getRpm: () => (audio && audio.rpm) || 0,
+          getRedline: () => (audio && audio._spec && audio._spec.redlineRpm)
+            || (audio && audio.profile && audio.profile.engine && audio.profile.engine.redlineRpm)
+            || 7000,
+        },
+      });
+      window.TAS.manual = devTools.manual;
+    } catch (_) { /* diagnostics must never break the app */ }
+
+    try {
+      const m = await import('./dev-perf.js');
+      devTools.perf = m.startDevPerf($('#app-perf'), () => audio,
+        () => engineKindFor(state.profileId));
+    } catch (_) { /* ignore */ }
+
+    try {
+      const m = await import('./dev-trace.js');
+      devTools.trace = m.startDevTrace(() => audio, state, physics);
+      window.TAS.trace = devTools.trace;
+      // Its OWN element: dev-perf rewrites #app-perf every animation frame,
+      // so anything written there is gone before it can be read.
+      const host = $('#app-perf');
+      if (host && host.parentNode) {
         const el = document.createElement('span');
         el.id = 'app-trace';
         el.className = 'brand-build dev-only';
         el.textContent = 'trace';
         host.parentNode.insertBefore(el, host.nextSibling);
-        // A finger in a car needs a real target, not a 10 px line of text.
-        el.style.cursor = 'pointer';
-        el.style.padding = '6px 10px';
-        el.style.margin = '-6px -10px';
-        el.style.borderRadius = '8px';
-        el.style.border = '1px solid currentColor';
-        el.style.opacity = '0.85';
-        el.title = 'แตะเพื่อส่ง trace การขับ';
-        let busy = false;
-        el.addEventListener('click', async () => {
-          if (busy) return;
-          busy = true;
-          el.textContent = 'ส่ง trace…';
-          try {
-            // Show the counts on screen regardless. The mail goes to the
-            // owner's inbox, which I cannot read — so the screen has to be
-            // able to answer the question on its own.
-            // Pin the moment first. He keeps this button for the times he can
-            // actually watch, and a tap is a human saying THIS one — worth more
-            // than any score, so it is marked and never evicted.
-            try { window.TAS.trace.mark('tapped'); } catch (_) {}
-            const v = window.TAS.trace.verdict();
-            const r = await window.TAS.trace.send('tapped from the car').catch(() => ({ ok: false }));
-            el.textContent = (r.ok ? '✓ ' : '✗ ') + v;
-          } catch (_) {
-            el.textContent = 'ส่งไม่สำเร็จ';
-          }
-          // 25 s, not 4: this is meant to be read and repeated back.
-          window.setTimeout(() => { el.textContent = 'trace'; busy = false; }, 25000);
-        });
-      })
-      .catch(() => {});
+        devTools.traceEl = el;
+        wireTraceTap(el);
+      }
+    } catch (_) { /* ignore */ }
+
+    // Loaded but NOT started: the profiler wraps the schedulers and captures a
+    // stack per registration, so it costs something itself. It waits to be
+    // asked — TAS.profile.run(10).
+    try {
+      const m = await import('./dev-profile.js');
+      devTools.profile = m.default;
+      window.TAS.profile = m.default;
+    } catch (_) { /* ignore */ }
   }
+
+  function stopDevTools() {
+    if (!devTools) return;
+    try { if (devTools.manual) devTools.manual.destroy(); } catch (_) {}
+    try { if (devTools.perf) devTools.perf(); } catch (_) {}
+    try { if (devTools.trace) devTools.trace.stop(); } catch (_) {}
+    try { if (devTools.traceEl) devTools.traceEl.remove(); } catch (_) {}
+    try { if (devTools.profile) devTools.profile.stop(); } catch (_) {}
+    window.TAS.profile = null;
+    window.TAS.manual = null;
+    window.TAS.trace = null;
+    devTools = null;
+  }
+  window.TAS.startDevTools = startDevTools;
+  window.TAS.stopDevTools = stopDevTools;
+  window.TAS.devToolsLive = () => !!devTools;
+
+  if (document.body.classList.contains('dev-mode')) startDevTools();
 
   bindSliders({
     master: (v) => audio.setMasterVolume(v),

@@ -210,6 +210,7 @@ function applyAndPush(action, payload) {
       'js/dev-perf.js',
       'js/dev-trace.js',
       'js/manual-shift.js',
+      'js/dev-profile.js',
       'js/crank-audio.js',
       'js/crank-rigs.js',
       'assets/crank/jz.crank.json',
