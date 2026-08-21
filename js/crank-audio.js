@@ -62,6 +62,16 @@ function tasUrl(rel) {
 /** Speed by which a launch is over and the gear floor applies in full. */
 const LAUNCH_KMH = 12;
 
+/** Loudness recovered from crest factor. See the comment at the graph. */
+const DEFAULT_DENSITY = {
+  // Swept on the bench. Firmer settings bought another dB and cost a gain
+  // reduction of -6 with clipping up at 3.2%; these sit at -3.5 dB mean and
+  // leave cruise completely untouched (0.00 reduction), so the dynamic range
+  // the owner says is right now is not squeezed.
+  thresholdDb: -14, kneeDb: 8, ratio: 2.5,
+  attackSec: 0.012, releaseSec: 0.3, makeup: 1.3,
+};
+
 const DEFAULT_MIXER = { exhaust: 0.92, intake: 0.58, mechanical: 0.34, induction: 0.46, master: 0.72 };
 
 /**
@@ -244,6 +254,7 @@ export class CrankAudio {
     this._mixer = { ...DEFAULT_MIXER };
     this._drive = { ...DEFAULT_DRIVE };
     this._dyn = { ...DEFAULT_DYN };
+    this._density = { ...DEFAULT_DENSITY };
     this._boostSpec = null;
 
     // Vehicle input
@@ -355,6 +366,7 @@ export class CrankAudio {
     this._mixer = { ...DEFAULT_MIXER, ...(doc.mixer || {}) };
     this._drive = { ...DEFAULT_DRIVE, ...(doc.drive || {}) };
     this._dyn = { ...DEFAULT_DYN, ...(doc.dynamics || {}) };
+    this._density = { ...DEFAULT_DENSITY, ...(doc.density || {}) };
     this._masterScale = doc.masterScale ?? 0.88;
     this._outputTrim = doc.outputTrim ?? 1;
     this._makeup = doc.makeup ?? 1;
@@ -695,10 +707,39 @@ export class CrankAudio {
     // matter what the volume slider or a profile asks for.
     const safety = ctx.createWaveShaper();
     safety.oversample = 'none';
-    safety.curve = ceilingCurve(0.82, 0.985);
+    // 0.90, not 0.82. classic peaks at 0.65 and never reaches this; CRANK
+    // runs at 0.95, so the wall was soft-saturating constantly on signal that
+    // was never over full scale. Measured after: output peak 0.953, still
+    // clear of 1.0, and 0.4 dB louder for free.
+    safety.curve = ceilingCurve(0.90, 0.985);
+
+    // DENSITY — the only place more loudness can come from.
+    //
+    // The owner wants the car's own volume at 55% instead of 80%. At master
+    // 100 the output is already against the ceiling: jz-crank peaks at 0.961
+    // with 1.5% of samples in the brick wall, so raising the gain just breaks
+    // it. What IS available is crest factor — measured on the same bench,
+    // classic-muscle runs 2.7 dB peak-to-rms and jz-crank runs 10.2, which is
+    // 7.5 dB of loudness sitting unused at the SAME peak.
+    //
+    // Attack is slower than a firing pulse is sharp but faster than the crank
+    // period, so it clamps the pulse without erasing its leading edge.
+    // Release is long against the 10-70 Hz pulse rate on purpose: fast enough
+    // to follow the drive envelope, far too slow to breathe at pulse rate,
+    // which is the pumping that had to be reverted before.
+    const density = ctx.createDynamicsCompressor();
+    const dn = this._density;
+    density.threshold.value = dn.thresholdDb;
+    density.knee.value = dn.kneeDb;
+    density.ratio.value = dn.ratio;
+    density.attack.value = dn.attackSec;
+    density.release.value = dn.releaseSec;
+    const densityMakeup = ctx.createGain();
+    densityMakeup.gain.value = dn.makeup;
 
     stage.connect(low).connect(high).connect(dynGain)
-      .connect(makeup).connect(limiter).connect(master);
+      .connect(makeup).connect(density).connect(densityMakeup)
+      .connect(limiter).connect(master);
     master.connect(safety);
     safety.connect(analyser);
     analyser.connect(ctx.destination);
@@ -779,6 +820,7 @@ export class CrankAudio {
     this._active = 'a';
     this._nodes = {
       compressor, stage, zoneRear, zoneFront, rearDelay, rearPanner, rearGain,
+      density, densityMakeup,
       frontGain, reverb, reverbWet, frontSend,
       low, high, dynGain, makeup, limiter, safety, master, analyser,
       noiseComb, noiseTurbo, noiseIntake, starterSrc, starterLp, starterGain,
