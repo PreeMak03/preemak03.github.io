@@ -92,6 +92,7 @@ const DEFAULT_MIXER = { exhaust: 0.92, intake: 0.58, mechanical: 0.34, induction
 const DEFAULT_DRIVE = {
   revLo: 0.17, revHi: 0.55, revPull: 0.9, floorLo: 1300, floorHi: 1800,
   cruiseLoad: 0.5, wanderRpm: 52, wanderLope: 178,
+  limiterHz: 13, limiterDropTo: 0.93,
   glideSec: 0.03, shiftGlideSec: 0.09, glideHoldSec: 0.2,
   riseRpmPerSec: 8000, fallRpmPerSec: 10000,
   maxRiseStPerSec: 46, maxFallStPerSec: 57, accelRef: 48, accelCurve: 0.65,
@@ -285,6 +286,8 @@ export class CrankAudio {
     this._effortHold = 0;
     this._idlePhase = 0;
     this._breathePhase = 0;
+    this._limPhase = 0;
+    this._onLimiter = false;
     this._rpmDisplay = null;
     this._paramTick = 0;
     this._lastParam = new WeakMap();
@@ -1027,6 +1030,27 @@ export class CrankAudio {
         // tracked GPS scatter straight into the pitch.
         let rpmLambda = this.smoothFilter ? 3.6 : 5.5;
         if (launch < 1 && !isManual()) targetRpm = idle + (targetRpm - idle) * launch;
+
+        // REV LIMITER — a fuel cut, not a ceiling.
+        //
+        // A limiter does not hold the engine at a number, it stops firing and
+        // lets it fall, then fires again: revs hammer up and down against the
+        // cut at roughly 12-15 Hz and the exhaust cracks on every re-light.
+        // Holding a clean line at the redline is silent and dull, which is
+        // exactly what it sounded like.
+        //
+        // Manual only. The automatic upshifts before it ever gets here, and
+        // nothing in this block can run unless a human is holding the gear.
+        this._onLimiter = false;
+        if (isManual() && this._rpm >= redline * 0.975) {
+          this._limPhase += dt;
+          const cut = Math.sin(this._limPhase * Math.PI * 2 * d.limiterHz) > -0.15;
+          this._onLimiter = cut;
+          if (cut) targetRpm = redline * d.limiterDropTo;
+          rpmLambda = 22;                  // the cut bites fast, it does not glide
+        } else {
+          this._limPhase = 0;
+        }
         if (accelLoad > 0.35) rpmLambda = 6 + accelLoad * 2.5;
         if (decelLoad > 0.35) rpmLambda = 5.5 + decelLoad * 2;
         if (this._shifting) {
@@ -1051,6 +1075,10 @@ export class CrankAudio {
         this._rpm += delta >= 0 ? Math.min(delta, riseCap) : Math.max(delta, -fallCap);
 
         load = clamp(accelVoice * 0.85 + decelVoice * 0.25 + (speed > 5 ? 0.08 : 0), 0, 1);
+        // Fuel cut means no combustion, so the voice has to go with the revs.
+        // Dropping the rev line alone was inaudible — the engine sat at the
+        // redline sounding perfectly happy.
+        if (this._onLimiter) load = clamp(load * 0.34, 0, 1);
         const gPos = gearProgress(speed, this._gear);
         if (accelLoad > 0.3 && gPos > 0.75) load = clamp(load + 0.15, 0, 1);
         // Torque interruption. This used to take load down to 12% on an upshift,
@@ -1287,6 +1315,13 @@ export class CrankAudio {
     if (s.overrun > 0.1 && rpm > 3800 && dLoad < -0.14 && this._popCooldown <= 0) {
       this._firePops(t, s.overrun);
       this._popCooldown = 0.22;
+    }
+    // The limiter's own crack. Same envelope as an overrun pop because it is
+    // the same event — unburnt fuel lighting in the pipe — just triggered by
+    // the cut instead of a lift.
+    if (this._onLimiter && this._popCooldown <= 0) {
+      this._firePops(t, Math.max(0.5, s.overrun));
+      this._popCooldown = 0.09;
     }
 
     // --- in-car loudness ---------------------------------------------------

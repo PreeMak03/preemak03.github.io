@@ -46,6 +46,12 @@ let onChange = null;
  * the limiter and the gear choice would once again mean nothing.
  */
 let pedal = false;
+// The pedal only OWNS the speed while it is doing something. Without this it
+// coasts targetSpeed toward zero on every frame it is mounted, which quietly
+// makes the sim slider useless for anyone in dev mode — set 40, watch it sink
+// straight back to 0. It takes ownership on press, keeps it while coasting,
+// and hands it back the moment it reaches a stop or the slider is touched.
+let owns = false;
 let pedalRaf = 0;
 let pedalLast = 0;
 let sim = null;          // { state, physics, getRpm, getRedline }
@@ -87,6 +93,8 @@ function pedalTick(now) {
 
   const rate = sim.rate || 33;
   let v = sim.state.targetSpeed || 0;
+  if (!owns) return;
+
   if (pedal) {
     // The limiter is a SPEED in a given gear, so cap the speed — do not wait
     // for the revs to report it. The first version watched the smoothed rpm,
@@ -96,12 +104,27 @@ function pedalTick(now) {
     const cap = isManual()
       ? gearSpeedSpan(manualGear()).vmax
       : SPEED_CAP;
-    const onLimiter = v >= cap - 0.05;
+    // Power falls off past peak power, so the top of a gear does not arrive —
+    // it is approached. Freezing the speed dead on the cap was clinically
+    // correct and felt like a wall: the ratio does lock wheel speed to engine
+    // speed with the clutch in, but what a driver FEELS is the pull draining
+    // away while the engine hammers the cut, not a barrier.
+    //
+    // Full pull to 82% of the gear, then it bleeds to almost nothing, so the
+    // last stretch takes far longer than the first and shifting up is
+    // something you WANT rather than something a rule makes you do.
+    const through = cap > 0 ? v / cap : 0;
+    const KNEE = 0.82;
+    const power = through < KNEE
+      ? 1
+      : Math.max(0.05, 1 - ((through - KNEE) / (1 - KNEE)) ** 0.7 * 0.95);
+    const onLimiter = through >= 0.985;
     if (ui) ui.root.classList.toggle('ms-limit', onLimiter);
-    v = Math.min(Math.min(SPEED_CAP, cap), v + rate * dt);
+    v = Math.min(Math.min(SPEED_CAP, cap), v + rate * power * dt);
   } else {
     if (ui) ui.root.classList.remove('ms-limit');
     v = Math.max(0, v - COAST_KMH_PER_S * dt);
+    if (v <= 0) owns = false;          // rolled to a stop — the slider is free again
   }
   if (v !== sim.state.targetSpeed) {
     sim.state.targetSpeed = v;
@@ -178,6 +201,8 @@ export function startManualShift({ getGear, onGearChange, sim: simRefs } = {}) {
     // the sim at a desk, manual or not.
     if (e.code === 'Space' && !e.repeat) {
       pedal = true;
+      owns = true;
+      pedalLast = 0;                   // do not integrate the idle gap as one step
       if (ui) ui.root.classList.add('ms-pedal');
       e.preventDefault();
       return;
@@ -199,6 +224,10 @@ export function startManualShift({ getGear, onGearChange, sim: simRefs } = {}) {
   // Losing focus mid-throttle must not leave the pedal stuck down.
   const onBlur = () => { pedal = false; if (ui) ui.root.classList.remove('ms-pedal', 'ms-limit'); };
   window.addEventListener('blur', onBlur);
+  // Touching the slider is the driver taking the speed back by hand.
+  const slider = document.querySelector('#sim-speed');
+  const onSlider = () => { owns = false; pedal = false; if (ui) ui.root.classList.remove('ms-pedal', 'ms-limit'); };
+  if (slider) slider.addEventListener('input', onSlider);
   pedalLast = 0;
   pedalRaf = requestAnimationFrame(pedalTick);
 
@@ -209,7 +238,9 @@ export function startManualShift({ getGear, onGearChange, sim: simRefs } = {}) {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
+      if (slider) slider.removeEventListener('input', onSlider);
       cancelAnimationFrame(pedalRaf);
+      owns = false;
       pedal = false;
       if (ui) ui.root.remove();
       ui = null;
