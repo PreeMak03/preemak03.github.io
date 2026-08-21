@@ -681,7 +681,10 @@ async function init() {
     .then((m) => {
       window.TAS.manual = m.startManualShift({
         getGear: () => (audio && (audio.gearIndex || audio._gear)) || 1,
-        onGearChange: (g, src) => showToast(`เกียร์ ${g} · ${src}`),
+        // No toast. Shifting quickly stacks them until they cover half the
+        // screen, and they were saying what the readout already says —
+        // the gear number is on screen the whole time, next to the paddles.
+        onGearChange: null,
         pedal: document.body.classList.contains('dev-mode'),
         sim: {
           state,
