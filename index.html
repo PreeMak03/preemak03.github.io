@@ -85,6 +85,25 @@
             <circle class="ring-track" cx="120" cy="120" r="104" />
             <circle class="ring-progress" id="ring-progress" cx="120" cy="120" r="104"
               stroke="url(#ringGrad)" />
+            <!-- Rev counter — a donut that FILLS, like water rising in a jar,
+                 rather than a needle sweeping round. The level is a plain
+                 rectangle whose top edge rises with the revs; the ring shape
+                 comes from clipping it to an annulus, so the waterline stays
+                 flat and horizontal the way a liquid surface actually is.
+                 Colour is set from JS so it can interpolate rather than step. -->
+            <defs>
+              <clipPath id="rpmJar" clipPathUnits="userSpaceOnUse">
+                <path clip-rule="evenodd" d="M120 25a95 95 0 1 1-0.01 0Z M120 34a86 86 0 1 0 0.01 0Z" />
+              </clipPath>
+            </defs>
+            <!-- The parent svg is rotated -90deg so the speed ring starts at
+                 twelve o'clock. Water has to be level with the WORLD, not with
+                 that rotation, so the jar and its fill are turned back. -->
+            <g transform="rotate(90 120 120)">
+              <path class="rpm-jar" d="M120 25a95 95 0 1 1-0.01 0Z M120 34a86 86 0 1 0 0.01 0Z" clip-rule="evenodd" />
+              <rect class="rpm-water" id="rpm-water" x="20" y="215" width="200" height="0"
+                clip-path="url(#rpmJar)" />
+            </g>
           </svg>
           <div class="speed-core">
             <div class="speed-value" id="speed-value">0</div>

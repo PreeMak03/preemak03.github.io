@@ -153,6 +153,58 @@ const state = {
 let audio = new AudioEngine();
 
 /** Which of the three sound engines a profile id belongs to. */
+/**
+ * Rev counter ring.
+ *
+ * Colour does nothing for the first two thirds of the sweep and then means
+ * something — accent while there is room, amber as the band comes up, red at
+ * the limiter — because a tachometer that is dramatic everywhere is dramatic
+ * nowhere. Interpolated in JS rather than stepped in CSS so the change reads
+ * as the needle arriving, not as a state switch.
+ *
+ * The flash is driven by the engine's own cut flag, not a timer, so what the
+ * eye sees is the same event the ear hears.
+ */
+// The jar runs from the bottom of the donut to the top, in the ring SVG's own
+// 240-unit coordinates: outer radius 95 about a centre at 120.
+const REV_TOP = 25;
+const REV_BOTTOM = 215;
+let revWater = null;
+let revHost = null;
+function drawRevRing() {
+  if (!revWater) revWater = document.getElementById('rpm-water');
+  if (!revHost) revHost = document.getElementById('speed-ring');
+  if (!revWater || !revHost) return;
+  const redline = (audio && audio._spec && audio._spec.redlineRpm)
+    || (audio && audio.profile && audio.profile.engine && audio.profile.engine.redlineRpm)
+    || 0;
+  const running = !!(audio && audio.running) && redline > 0;
+  revHost.classList.toggle('has-rpm', running);
+  if (!running) return;
+
+  const t = Math.max(0, Math.min(1, (audio.rpm || 0) / redline));
+  const level = REV_BOTTOM - t * (REV_BOTTOM - REV_TOP);
+  revWater.setAttribute('y', String(level));
+  revWater.setAttribute('height', String(REV_BOTTOM - level));
+
+  // Colour does nothing for the first two thirds and then means something —
+  // accent while there is room, amber as the band comes up, red at the top.
+  // A tachometer that is dramatic everywhere is dramatic nowhere.
+  let col;
+  if (t < 0.62) col = 'rgb(62, 207, 255)';
+  else if (t < 0.88) {
+    const k = (t - 0.62) / 0.26;
+    col = `rgb(${Math.round(62 + k * 193)}, ${Math.round(207 - k * 33)}, ${Math.round(255 - k * 199)})`;
+  } else {
+    const k = Math.min(1, (t - 0.88) / 0.12);
+    col = `rgb(255, ${Math.round(174 - k * 67)}, 56)`;
+  }
+  revWater.setAttribute('fill', col);
+  // Flashed by the engine's own cut flag, not a timer, so what the eye sees is
+  // the same event the ear hears.
+  revHost.classList.toggle('at-redline', !!(audio && audio._onLimiter));
+}
+
 function engineKindFor(id) {
   if (hasRig(id)) return 'vessel';
   if (hasCrank(id)) return 'crank';
@@ -805,6 +857,15 @@ function tick(dt) {
   // of pulling. Measured over the fix interval the value persists, as it physically should.
   // (The reason this path once read ~0 was maximumAge:500 replaying the same fix; that is gone
   // now — maximumAge is 0 and identical timestamps are deduped before they ever reach here.)
+  // The dev pedal, when it is open, outranks the throttle physics inferred
+  // from the speed trace — see throttleOverride().
+  const pedalWants = window.TAS.manual && window.TAS.manual.throttleOverride
+    ? window.TAS.manual.throttleOverride()
+    : null;
+  if (pedalWants != null) {
+    state.throttle = Math.max(state.throttle, pedalWants);
+    state.brake = 0;
+  }
   audio.setSpeed(state.activeSpeed, {
     throttle: state.throttle,
     brake: state.brake,
@@ -823,6 +884,7 @@ function tick(dt) {
   speedUI.step(dt);
 
   updateRpmLabel(audio.rpm || 0, audio.gearIndex || 1, audio.gearCount || 3);
+  drawRevRing();
   updateDriveState(audio.driveState || 'idle');
   updateAccelTube(state.accelKmhps || 0);
   updateDriveLock(now);

@@ -92,7 +92,7 @@ const DEFAULT_MIXER = { exhaust: 0.92, intake: 0.58, mechanical: 0.34, induction
 const DEFAULT_DRIVE = {
   revLo: 0.17, revHi: 0.55, revPull: 0.9, floorLo: 1300, floorHi: 1800,
   cruiseLoad: 0.5, wanderRpm: 52, wanderLope: 178,
-  limiterHz: 13, limiterDropTo: 0.93,
+  limiterHz: 13, limiterDropTo: 0.93, blipFallMul: 2.4,
   glideSec: 0.03, shiftGlideSec: 0.09, glideHoldSec: 0.2,
   riseRpmPerSec: 8000, fallRpmPerSec: 10000,
   maxRiseStPerSec: 46, maxFallStPerSec: 57, accelRef: 48, accelCurve: 0.65,
@@ -1053,6 +1053,7 @@ export class CrankAudio {
         }
         if (accelLoad > 0.35) rpmLambda = 6 + accelLoad * 2.5;
         if (decelLoad > 0.35) rpmLambda = 5.5 + decelLoad * 2;
+        if (isManual() && accelLoad < 0.12) rpmLambda = Math.max(rpmLambda, 13);
         if (this._shifting) {
           rpmLambda = 18;
           targetRpm = this._rpm * 0.94 + targetRpm * 0.06;
@@ -1071,7 +1072,20 @@ export class CrankAudio {
         // rate too — it only binds at low rpm, which is exactly where it should.
         const byPitch = Math.max(idle, this._rpm) * d.maxRiseStPerSec / ST;
         const riseCap = Math.min(engineRise, byPitch) * dt;
-        const fallCap = Math.min(d.fallRpmPerSec, Math.max(idle, this._rpm) * d.maxFallStPerSec / ST) * dt;
+        // Blipping — on, off, on, off, listening to the engine — lives or dies
+        // on how fast the revs COME DOWN, and the automatic's fall is tuned for
+        // a car that is still driving: it lifts between gears, not to nothing.
+        // maxFallStPerSec also went 72 -> 57 when the pitch roughness was
+        // fixed, which slowed exactly this.
+        //
+        // A closed throttle in manual is a driver asking for the revs back, so
+        // it gets the engine's real overrun rate: no combustion, just a
+        // flywheel against its own friction, which falls a great deal faster
+        // than a part-throttle lift.
+        const blipping = isManual() && accelLoad < 0.12 && delta < 0;
+        const fallSt = blipping ? d.maxFallStPerSec * d.blipFallMul : d.maxFallStPerSec;
+        const fallRpm = blipping ? d.fallRpmPerSec * d.blipFallMul : d.fallRpmPerSec;
+        const fallCap = Math.min(fallRpm, Math.max(idle, this._rpm) * fallSt / ST) * dt;
         this._rpm += delta >= 0 ? Math.min(delta, riseCap) : Math.max(delta, -fallCap);
 
         load = clamp(accelVoice * 0.85 + decelVoice * 0.25 + (speed > 5 ? 0.08 : 0), 0, 1);

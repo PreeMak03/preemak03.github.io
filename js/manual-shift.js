@@ -52,10 +52,20 @@ let pedal = false;
 // straight back to 0. It takes ownership on press, keeps it while coasting,
 // and hands it back the moment it reaches a stop or the slider is touched.
 let owns = false;
+// How long the throttle revs the engine WITHOUT moving the car from a stop.
+// A blip is a stab at the pedal with the clutch out; a launch is the same
+// stab held until the clutch bites. One timer covers both, so a tap revs and
+// nothing else, and holding flares first and then pulls away — which is what
+// a standing start actually feels like.
+const CLUTCH_BITE_S = 0.7;
+let pressedAt = 0;
 let pedalRaf = 0;
 let pedalLast = 0;
 let sim = null;          // { state, physics, getRpm, getRedline }
-const COAST_KMH_PER_S = 9;
+// 9 read as freewheeling downhill. A car off the throttle in gear slows on
+// engine braking and drag, and the owner wants to get back to a standstill
+// quickly enough to blip and try again.
+const COAST_KMH_PER_S = 22;
 const SPEED_CAP = 260;
 
 const now = () => performance.now();
@@ -113,6 +123,15 @@ function pedalTick(now) {
     // Full pull to 82% of the gear, then it bleeds to almost nothing, so the
     // last stretch takes far longer than the first and shifting up is
     // something you WANT rather than something a rule makes you do.
+    // Clutch still out: rev, do not roll.
+    const ph = sim.physics;
+    const stopped = ph ? ph.vehicleSpeed < 3 : v < 3;
+    if (isManual() && stopped && (performance.now() - pressedAt) / 1000 < CLUTCH_BITE_S) {
+      if (ui) ui.root.classList.add('ms-blip');
+      return;
+    }
+    if (ui) ui.root.classList.remove('ms-blip');
+
     const through = cap > 0 ? v / cap : 0;
     const KNEE = 0.82;
     const power = through < KNEE
@@ -136,11 +155,30 @@ function pedalTick(now) {
   }
 }
 
+function pressPedal() {
+  if (pedal) return;
+  pedal = true;
+  owns = true;
+  pressedAt = performance.now();
+  pedalLast = 0;
+  if (ui) { ui.hud.classList.add('ms-pedal'); ui.gas.classList.add('ms-gas-on'); }
+}
+
+function releasePedal() {
+  if (!pedal) return;
+  pedal = false;
+  if (ui) {
+    ui.hud.classList.remove('ms-pedal', 'ms-limit', 'ms-blip');
+    ui.root.classList.remove('ms-limit');
+    ui.gas.classList.remove('ms-gas-on');
+  }
+}
+
 function render() {
   if (!ui) return;
   const on = isManual();
   ui.root.classList.toggle('ms-on', on);
-  ui.hud.classList.toggle('ms-on', on);
+  ui.paddles.classList.toggle('ms-on', on);
   ui.gear.textContent = on ? String(manualGear()) : 'A';
   ui.src.textContent = on ? lastSource : '';
   ui.toggle.textContent = on ? 'MANUAL' : 'AUTO';
@@ -153,37 +191,97 @@ function build(getGear) {
   // overlay inevitably lands. The accel column already IS the instrument
   // column, and the space above its tube was empty, so the gear goes there
   // and shares its visual language.
-  // One instrument, not three things scattered round the screen.
+  // Three parts, each where the hand or the eye already is.
   //
-  // The first attempt put the readout here and left the paddles pinned to the
-  // bottom edges, where they landed straight on top of the tune button and the
-  // START button — the same floating-over-things problem, moved. The right
-  // edge is taken by the accel tube for its full height, so there is no free
-  // edge to pin to; the column is the answer for all of it.
+  //   paddles   flanking the speed dial, where a real car puts them: behind
+  //             the wheel, left down and right up, thumbs already there.
+  //             Brushed grey rather than accent — a paddle is a piece of
+  //             hardware, not a readout, and it should sit back.
+  //   readout   head of the accel column, with the other instruments.
+  //   throttle  above REV in the start dock, big, because it is a pedal being
+  //             pressed by a finger in a moving car.
+  // Mounted on the DIAL, not the section around it. Anchored to the section
+  // the paddles drifted out to the screen edges — which is not 'flanking the
+  // gauge', and on a narrow screen the right one landed on the accel tube.
+  // PADDLES — arcs that follow the rim of the dial.
   //
-  // Plus above, gear in the middle, minus below: the control points the way
-  // the gears go.
+  // A real paddle is a curved blade behind the wheel, thickest in the middle
+  // and tapering to its ends, and a rounded rectangle beside a circle never
+  // reads as one. Drawn instead as an annulus sector in the dial's OWN
+  // coordinates — same viewBox as the speed ring, so it tracks the gauge at
+  // every screen size with no arithmetic — and given the taper by sweeping the
+  // outer edge through a wider angle than the inner one, which points both
+  // ends without any extra geometry.
+  //
+  // overflow:visible lets the blades sit OUTSIDE the ring's box while keeping
+  // that box's coordinate system.
+  const arc = (fromDeg, toDeg, ri, ro) => {
+    const p = (deg, r) => {
+      const a2 = (deg * Math.PI) / 180;
+      return [120 + r * Math.cos(a2), 120 + r * Math.sin(a2)];
+    };
+    const taper = 7;                       // degrees the outer edge runs on for
+    const [ox1, oy1] = p(fromDeg - taper, ro);
+    const [ox2, oy2] = p(toDeg + taper, ro);
+    const [ix2, iy2] = p(toDeg, ri);
+    const [ix1, iy1] = p(fromDeg, ri);
+    return `M ${ox1} ${oy1} A ${ro} ${ro} 0 0 1 ${ox2} ${oy2}`
+      + ` L ${ix2} ${iy2} A ${ri} ${ri} 0 0 0 ${ix1} ${iy1} Z`;
+  };
+
+  const centre = document.querySelector('.speed-ring');
+  const paddles = document.createElement('div');
+  paddles.className = 'ms-paddles';
+  paddles.innerHTML = `
+    <svg class="ms-paddle-svg" viewBox="0 0 240 240" aria-hidden="true">
+      <path class="ms-pad ms-down" d="${arc(151, 209, 111, 130)}"/>
+      <path class="ms-pad ms-up" d="${arc(-29, 29, 111, 130)}"/>
+      <!-- Centred on the blade: mid-radius is (111+130)/2, so 120 +- 120.5. -->
+      <text class="ms-pad-glyph" x="-0.5" y="119">−</text>
+      <text class="ms-pad-glyph" x="240.5" y="119">+</text>
+      <text class="ms-pad-tag" x="-0.5" y="133">DOWN</text>
+      <text class="ms-pad-tag" x="240.5" y="133">UP</text>
+    </svg>
+  `;
+  if (centre) centre.appendChild(paddles);
   const side = document.querySelector('.accel-side');
   const root = document.createElement('div');
   root.className = 'ms-root';
   root.innerHTML = `
-    <button type="button" class="ms-pad ms-up" aria-label="เกียร์ขึ้น">+</button>
     <span class="ms-gear">A</span>
-    <button type="button" class="ms-pad ms-down" aria-label="เกียร์ลง">−</button>
     <button type="button" class="ms-toggle" aria-pressed="false">AUTO</button>
     <span class="ms-src"></span>
   `;
   if (side) side.prepend(root); else document.body.appendChild(root);
 
+  const dock = document.querySelector('.start-dock');
+  const gas = document.createElement('button');
+  gas.type = 'button';
+  gas.className = 'ms-gas';
+  gas.setAttribute('aria-label', 'คันเร่ง (กดค้าง)');
+  gas.innerHTML = '<span class="ms-gas-eyebrow">Throttle</span><span class="ms-gas-main">GAS</span>';
+  if (dock) dock.prepend(gas);
+
   ui = {
     root,
-    hud: root,                  // one element wears both sets of state classes
-    up: root.querySelector('.ms-up'),
-    down: root.querySelector('.ms-down'),
+    hud: root,
+    paddles,
+    gas,
+    up: paddles.querySelector('.ms-up'),
+    down: paddles.querySelector('.ms-down'),
     gear: root.querySelector('.ms-gear'),
     src: root.querySelector('.ms-src'),
     toggle: root.querySelector('.ms-toggle'),
   };
+
+  // The on-screen pedal is the same pedal as the spacebar, so it goes through
+  // the same press/release path rather than growing a second one.
+  const gasDown = (e) => { e.preventDefault(); pressPedal(); };
+  const gasUp = (e) => { e.preventDefault(); releasePedal(); };
+  gas.addEventListener('pointerdown', gasDown);
+  gas.addEventListener('pointerup', gasUp);
+  gas.addEventListener('pointercancel', gasUp);
+  gas.addEventListener('pointerleave', gasUp);
   ui.up.addEventListener('click', () => doShift(1, 'paddle'));
   ui.down.addEventListener('click', () => doShift(-1, 'paddle'));
   ui.toggle.addEventListener('click', () => {
@@ -219,40 +317,38 @@ export function startManualShift({ getGear, onGearChange, sim: simRefs } = {}) {
   const onKey = (e) => {
     // The pedal works whenever the harness is mounted — it is how you drive
     // the sim at a desk, manual or not.
-    if (e.code === 'Space' && !e.repeat) {
-      pedal = true;
-      owns = true;
-      pedalLast = 0;                   // do not integrate the idle gap as one step
-      if (ui) ui.hud.classList.add('ms-pedal');
-      e.preventDefault();
-      return;
-    }
+    if (e.code === 'Space' && !e.repeat) { pressPedal(); e.preventDefault(); return; }
     if (!isManual()) return;
     if (e.key === 'ArrowUp' || e.key === '+' || e.key === '=') { doShift(1, 'key'); e.preventDefault(); }
     else if (e.key === 'ArrowDown' || e.key === '-' || e.key === '_') { doShift(-1, 'key'); e.preventDefault(); }
   };
   window.addEventListener('wheel', onWheel, { passive: false });
   const onKeyUp = (e) => {
-    if (e.code === 'Space') {
-      pedal = false;
-      if (ui) { ui.hud.classList.remove('ms-pedal', 'ms-limit'); ui.root.classList.remove('ms-limit'); }
-      e.preventDefault();
-    }
+    if (e.code === 'Space') { releasePedal(); e.preventDefault(); }
   };
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKeyUp);
   // Losing focus mid-throttle must not leave the pedal stuck down.
-  const onBlur = () => { pedal = false; if (ui) { ui.hud.classList.remove('ms-pedal', 'ms-limit'); ui.root.classList.remove('ms-limit'); } };
+  const onBlur = () => releasePedal();
   window.addEventListener('blur', onBlur);
   // Touching the slider is the driver taking the speed back by hand.
   const slider = document.querySelector('#sim-speed');
-  const onSlider = () => { owns = false; pedal = false; if (ui) { ui.hud.classList.remove('ms-pedal', 'ms-limit'); ui.root.classList.remove('ms-limit'); } };
+  const onSlider = () => { owns = false; releasePedal(); };
   if (slider) slider.addEventListener('input', onSlider);
   pedalLast = 0;
   pedalRaf = requestAnimationFrame(pedalTick);
 
   return {
     render,
+    /**
+     * What the pedal is asking for, or null when it is not asking.
+     *
+     * physics derives throttle from how fast the speed is CHANGING, so a car
+     * standing still reports zero throttle however hard the pedal is held —
+     * and a blip is precisely the case where the pedal is open and the speed
+     * is not moving. The app applies this over the derived value.
+     */
+    throttleOverride: () => (pedal ? 1 : null),
     destroy() {
       window.removeEventListener('wheel', onWheel);
       window.removeEventListener('keydown', onKey);
@@ -262,7 +358,7 @@ export function startManualShift({ getGear, onGearChange, sim: simRefs } = {}) {
       cancelAnimationFrame(pedalRaf);
       owns = false;
       pedal = false;
-      if (ui) { ui.root.remove(); ui.hud.remove(); }
+      if (ui) { ui.root.remove(); ui.paddles.remove(); ui.gas.remove(); }
       ui = null;
       releaseManual();
     },

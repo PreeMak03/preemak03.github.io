@@ -1679,29 +1679,106 @@ body:not(.dev-mode) .dev-only {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
-/* Nothing to press in automatic, so the paddles collapse and the module
-   shrinks to a plain readout rather than leaving dead buttons on screen. */
-.ms-root .ms-pad { display: none; }
-.ms-root.ms-on .ms-pad { display: block; }
+/* Paddle shifters — curved blades on the rim of the dial.
 
-.ms-pad {
-  height: 40px;
-  border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
-  background: color-mix(in srgb, var(--accent) 10%, rgba(0, 0, 0, 0.4));
-  color: var(--text-primary);
-  font-size: 22px;
-  font-weight: 300;
-  line-height: 1;
-  transition: transform 0.09s var(--ease-soft), background 0.12s var(--ease-soft);
+   Brushed grey, not accent: a paddle is hardware you reach for without
+   looking, and it has no business competing with the numbers it sits beside.
+   Colour arrives on contact, and red only when the upshift is the thing the
+   engine is asking for. */
+.ms-paddles {
+  position: absolute;
+  inset: 0;
+  display: none;
+  pointer-events: none;
 }
 
-.ms-pad:active { transform: scale(0.94); }
-.ms-pad.ms-hit { background: color-mix(in srgb, var(--accent) 34%, rgba(0, 0, 0, 0.35)); }
-.ms-pad.ms-blocked { background: color-mix(in srgb, #ff5a5a 28%, rgba(0, 0, 0, 0.4)); }
-.ms-root.ms-limit .ms-up {
-  background: color-mix(in srgb, #ff6b6b 30%, rgba(0, 0, 0, 0.4));
-  border-color: color-mix(in srgb, #ff6b6b 60%, transparent);
+.ms-paddles.ms-on { display: block; }
+
+.ms-paddle-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;          /* blades sit outside the box, same coordinates */
+}
+
+.ms-pad {
+  pointer-events: auto;
+  cursor: pointer;
+  fill: rgba(190, 196, 204, 0.10);
+  stroke: rgba(190, 196, 204, 0.24);
+  stroke-width: 1;
+  stroke-linejoin: round;
+  transition: fill 0.12s var(--ease-soft), stroke 0.12s var(--ease-soft);
+}
+
+.ms-pad:active { fill: rgba(214, 220, 228, 0.2); }
+
+.ms-pad.ms-hit {
+  fill: rgba(214, 220, 228, 0.3);
+  stroke: rgba(214, 220, 228, 0.6);
+}
+
+.ms-pad.ms-blocked {
+  fill: color-mix(in srgb, #ff5a5a 26%, transparent);
+  stroke: color-mix(in srgb, #ff5a5a 52%, transparent);
+}
+
+.ms-pad-glyph, .ms-pad-tag {
+  fill: rgba(214, 220, 228, 0.8);
+  text-anchor: middle;
+  pointer-events: none;
+  user-select: none;
+}
+
+.ms-pad-glyph { font-size: 19px; font-weight: 300; }
+
+.ms-pad-tag {
+  font-size: 6px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  opacity: 0.5;
+}
+
+/* Shift up: the engine is against the cut and the driver has one job. */
+.ms-root.ms-limit ~ * .ms-up, .speed-ring.at-redline ~ .ms-paddles .ms-up {
+  border-color: color-mix(in srgb, #ff6b6b 62%, transparent);
+  background: color-mix(in srgb, #ff6b6b 22%, transparent);
+  color: #ffd9d9;
+}
+
+/* Throttle — a pedal, so it is the size of something pressed without aiming. */
+.ms-gas {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  width: 84px;
+  height: 84px;
+  border-radius: 24px;
+  border: 1px solid rgba(190, 196, 204, 0.24);
+  background: rgba(190, 196, 204, 0.08);
+  color: rgba(214, 220, 228, 0.85);
+  touch-action: none;
+  user-select: none;
+  transition: transform 0.08s var(--ease-soft), background 0.1s var(--ease-soft),
+    border-color 0.1s var(--ease-soft);
+}
+
+.ms-gas-eyebrow {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+
+.ms-gas-main { font-size: 20px; font-weight: 700; letter-spacing: 0.04em; }
+
+.ms-gas.ms-gas-on {
+  transform: scale(0.96);
+  background: color-mix(in srgb, #6fe08a 22%, transparent);
+  border-color: color-mix(in srgb, #6fe08a 55%, transparent);
+  color: #d8ffe4;
 }
 
 .ms-gear {
@@ -1747,4 +1824,43 @@ body:not(.dev-mode) .dev-only {
 .ms-root.ms-limit .ms-up {
   background: color-mix(in srgb, #ff6b6b 30%, rgba(0, 0, 0, 0.45));
   border-color: color-mix(in srgb, #ff6b6b 60%, transparent);
+}
+
+/* --------------------------------------------------------------------------
+   Rev counter ring — inside the speed ring.
+
+   A tachometer earns its keep in the last third of the sweep, so the colour
+   does nothing for most of it and then means something: accent while there is
+   room, amber as the band approaches, red at the limiter, flashing in time
+   with the cut rather than on a decorative timer.
+   -------------------------------------------------------------------------- */
+.rpm-jar {
+  fill: rgba(127, 127, 127, 0.07);
+  opacity: 0;
+  transition: opacity 0.4s var(--ease-soft);
+}
+
+.rpm-water {
+  opacity: 0;
+  transition: opacity 0.4s var(--ease-soft);
+}
+
+.speed-ring.has-rpm .rpm-jar,
+.speed-ring.has-rpm .rpm-water {
+  opacity: 1;
+}
+
+/* The limiter cut, seen. Short and hard, not a gentle pulse — it is a fuel
+   cut, and it should read as the engine hitting something. */
+.speed-ring.at-redline .rpm-water {
+  animation: rpmCut 0.1s steps(1, end) infinite;
+}
+
+@keyframes rpmCut {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0.2; }
+}
+
+.speed-ring.at-redline .speed-value {
+  text-shadow: 0 0 44px rgba(255, 90, 90, 0.45);
 }

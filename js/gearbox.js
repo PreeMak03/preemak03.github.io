@@ -116,8 +116,22 @@ export function rpmInGearManual({
   // lugging, when a real manual sits at mid revs there. Measured before the
   // fix: 2nd at 90 hit the limiter correctly and 5th at 20 lugged correctly,
   // but 3rd at 60 read 10% of redline. Two right answers hid a broken model.
+  // BLIP. Standing still, the ratio says idle no matter how hard you press —
+  // correct for a car in gear, and wrong for the thing every enthusiast does
+  // first, which is rev it on the spot. That happens with the clutch OUT, so
+  // the ratio is not in the loop at all: the engine is just spinning its own
+  // flywheel against the throttle.
+  //
+  // Below walking pace the throttle owns the revs directly. Above it the gear
+  // does, because then the clutch really is in and speed really does dictate
+  // rpm.
   const vmax = Math.max(1, bands.vmax[g - 1]);
-  let rpm = redline * (Math.max(0, speedKmh) / vmax);
+  const rolling = Math.max(0, speedKmh);
+  if (rolling < 3) {
+    const blipTop = idle + (redline * 0.88 - idle) * clamp(accelLoad, 0, 1);
+    return clamp(blipTop, idle * 0.92, redline * 1.04);
+  }
+  let rpm = redline * (rolling / vmax);
   rpm += (redline - idle) * (accelLoad * 0.06 - decelLoad * 0.05);
   // Below idle the clutch is slipping or the driver is about to stall it;
   // above the redline the limiter has it. Both ends are the point of manual.
