@@ -23,7 +23,36 @@
 
 const FMT = (n, d = 0) => (Number.isFinite(n) ? n.toFixed(d) : '–');
 
-export function startDevPerf(el, getAudio) {
+/**
+ * Count AudioContexts. The owner found the leak by ear — card reading 1JZ
+ * while classic played — and asked the right follow-up: what about the dev
+ * who does not notice? A leaked context is silent by construction, because
+ * the old stop() faded its master to zero and left the graph rendering. It
+ * cannot be heard, so it has to be counted.
+ *
+ * Chrome allows roughly six per page. Anything above two live at once means
+ * something is not closing.
+ */
+let ctxOpen = 0;
+let ctxMade = 0;
+if (typeof window !== 'undefined' && window.AudioContext && !window.__tasCtxCounted) {
+  window.__tasCtxCounted = true;
+  const Real = window.AudioContext;
+  const Patched = function (...args) {
+    const c = new Real(...args);
+    ctxOpen++; ctxMade++;
+    const close = c.close.bind(c);
+    c.close = function () { ctxOpen = Math.max(0, ctxOpen - 1); return close(); };
+    return c;
+  };
+  Patched.prototype = Real.prototype;
+  // Observable, so a leak can be checked rather than argued about.
+  window.__tasCtx = () => ({ open: ctxOpen, made: ctxMade });
+  window.AudioContext = Patched;
+  if (window.webkitAudioContext === Real) window.webkitAudioContext = Patched;
+}
+
+export function startDevPerf(el, getAudio, getExpectedKind) {
   if (!el) return () => {};
 
   let frames = 0;
@@ -99,6 +128,20 @@ export function startDevPerf(el, getAudio) {
     bits.push(`stall ${stalls}`);
     if (ctx) bits.push(`${FMT(ctx.sampleRate / 1000, 1)}k`);
     if (a && a._lite != null) bits.push(a._lite ? 'lite' : 'full');
+    if (ctxOpen > 2) bits.push(`ctx ${ctxOpen}/${ctxMade}`);
+    // The invariant the owner had to catch by ear. Say it loudly instead.
+    if (typeof getExpectedKind === 'function') {
+      try {
+        const want = getExpectedKind();
+        const got = a ? a.constructor.name : null;
+        const ok = !want || !got
+          || (want === 'crank' && got === 'CrankAudio')
+          || (want === 'vessel' && got === 'VesselAudio')
+          || (want === 'turbine' && got === 'TurbineAudio')
+          || (want === 'classic' && got === 'AudioEngine');
+        if (!ok) bits.push(`WRONG ENGINE ${want}!=${got}`);
+      } catch (_) { /* diagnostic only */ }
+    }
     el.textContent = bits.join(' · ');
   };
 

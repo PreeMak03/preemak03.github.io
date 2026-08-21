@@ -114,8 +114,16 @@ export function renderProfiles(scroller, activeId, onSelect) {
     card.setAttribute('aria-selected', p.id === activeId ? 'true' : 'false');
     card.dataset.profileId = p.id;
     card.style.setProperty('--profile-accent', p.accent);
+    // CRANK is a new profile TYPE and is still being tuned against real
+    // drives, so say so on the card rather than letting someone find out by
+    // ear. Keyed off the profile's own kind, so a future CRANK profile gets
+    // the badge without anyone remembering to add it — and drops it by
+    // deleting one field when the type is finished.
+    const wip = (p.engine === 'crank' || p.kind === 'crank' ||
+                 String(p.id).includes('crank')) && p.wip !== false;
     card.innerHTML = `
       ${artSvg(p.id)}
+      ${wip ? '<span class="pcard-wip" title="กำลังพัฒนา">🔧 W.I.P.</span>' : ''}
       <span class="pcard-name">${escapeHtml(p.name)}</span>
       <span class="pcard-car">${escapeHtml(p.car || p.tag)}</span>
     `;

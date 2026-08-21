@@ -684,6 +684,34 @@ button {
   opacity: 0.3;
 }
 
+/* Still-being-tuned marker. Small enough not to fight the card, legible
+   enough that nobody has to discover it by ear. */
+.pcard-wip {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--profile-accent, var(--accent)) 55%, var(--text-primary) 45%);
+  background: color-mix(in srgb, var(--profile-accent, var(--accent)) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--profile-accent, var(--accent)) 34%, transparent);
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.pcard.is-center .pcard-wip {
+  opacity: 1;
+}
+
 .pcard-name {
   position: relative;
   z-index: 1;

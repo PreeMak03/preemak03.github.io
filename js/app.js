@@ -553,7 +553,7 @@ async function init() {
   // the app is unaffected; it is a diagnostic, not a feature.
   if (document.body.classList.contains('dev-mode')) {
     import('./dev-perf.js')
-      .then((m) => m.startDevPerf($('#app-perf'), () => audio))
+      .then((m) => m.startDevPerf($('#app-perf'), () => audio, () => engineKindFor(state.profileId)))
       .catch(() => {});
     // Drive recorder. Same deal as the perf readout: dev mode only, loaded on
     // demand, and a failure to load must never touch the app. It exists
