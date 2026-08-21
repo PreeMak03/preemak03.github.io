@@ -642,7 +642,10 @@ export class CrankAudio {
     high.type = 'highshelf'; high.frequency.value = 3500; high.gain.value = 0;
 
     const dynGain = ctx.createGain();   // in-car loudness curve
-    dynGain.gain.value = 1;
+    // Recorded in the car: this opened at 1.000 and the first tick pulled it
+    // to 0.294 — the engine announcing itself 10.6 dB too loud and then
+    // ducking. Start where a standing engine actually sits.
+    dynGain.gain.value = this._dyn.dynCeiling * 0.55;
     const master = ctx.createGain();
     master.gain.value = 0;
 
@@ -734,6 +737,23 @@ export class CrankAudio {
     const popGain = ctx.createGain(); popGain.gain.value = 0.0001;
     popSrc.connect(popBp).connect(popGain).connect(compressor);
 
+    // An OscillatorNode is born at 440 Hz and keeps singing it until something
+    // says otherwise — and the first tick is up to 20 ms away, plus a glide.
+    // Recorded in the car: the engine came up at 440 Hz and swept down to
+    // 6.23 Hz over about a second. That is 73 semitones of descending whoop on
+    // every start, and nothing in the profile asked for it.
+    //
+    // The crank fundamental is rpm/120 — one cycle per two revolutions, which
+    // is what the 720 deg wavetable spans.
+    const idleHz = Math.max(0.5, (this._spec.idleRpm || 750) / 120);
+    for (const key of ['a', 'b']) {
+      const v = voices[key];
+      v.oscL.frequency.value = idleHz;
+      v.oscR.frequency.value = idleHz;
+      v.oscIntake.frequency.value = idleHz;
+      v.oscMech.frequency.value = idleHz;
+      v.oscWhistle.frequency.value = idleHz * 24;
+    }
     const t0 = ctx.currentTime + 0.02;
     for (const key of ['a', 'b']) {
       const v = voices[key];
