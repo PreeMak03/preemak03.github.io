@@ -197,7 +197,11 @@ async function ensureEngineFor(id) {
     audio.setProfile(getProfileById(id));
     if (wasRunning) await audio.start();
   } catch (e) {
+    // Never silently. The card keeps showing the profile the driver picked
+    // while a different engine plays, and a console.warn is invisible in a
+    // car. Say it on screen.
     console.warn(`[app] ${want} engine unavailable, falling back`, e);
+    try { showToast(`เสียง ${want} โหลดไม่ได้ · กลับไปใช้ classic`); } catch (_) {}
     if (audio) try { audio.stop(); } catch {}
     audio = new AudioEngine();
     audio.setProfile(getProfileById(id));
@@ -588,6 +592,10 @@ async function init() {
             // Show the counts on screen regardless. The mail goes to the
             // owner's inbox, which I cannot read — so the screen has to be
             // able to answer the question on its own.
+            // Pin the moment first. He keeps this button for the times he can
+            // actually watch, and a tap is a human saying THIS one — worth more
+            // than any score, so it is marked and never evicted.
+            try { window.TAS.trace.mark('tapped'); } catch (_) {}
             const v = window.TAS.trace.verdict();
             const r = await window.TAS.trace.send('tapped from the car').catch(() => ({ ok: false }));
             el.textContent = (r.ok ? '✓ ' : '✗ ') + v;

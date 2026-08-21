@@ -934,6 +934,22 @@ export class AudioEngine {
     this.master.gain.cancelScheduledValues(t);
     this.master.gain.setValueAtTime(this.master.gain.value, t);
     this.master.gain.linearRampToValueAtTime(0, t + 0.4);
+
+    // Close it. CRANK, VESSEL and TURBINE all close on stop; this one never
+    // did, so every switch through a classic card leaked an AudioContext.
+    // Chrome allows about six per page, after which new AudioContext() throws
+    // — and ensureEngineFor() catches that and quietly falls back to this
+    // engine while the card still reads jz-crank. Which is exactly the bug the
+    // owner hit: card says 1JZ, sound is classic-muscle.
+    //
+    // After the fade, not during it. resume() rebuilds from init() when ctx is
+    // null, and start() rebuilds layers when they are null, so the engine comes
+    // back cleanly on the next start.
+    const dying = this.ctx;
+    this.ctx = null;
+    this._layers = null;
+    this._sampleLayers = null;
+    setTimeout(() => { try { dying.close(); } catch (_) {} }, 450);
   }
 
   /**
