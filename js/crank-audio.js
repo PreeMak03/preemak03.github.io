@@ -97,6 +97,11 @@ const DEFAULT_DRIVE = {
   glideSec: 0.03, shiftGlideSec: 0.09, glideHoldSec: 0.2,
   riseRpmPerSec: 8000, fallRpmPerSec: 10000,
   maxRiseStPerSec: 46, maxFallStPerSec: 24, accelRef: 60, accelCurve: 0.65,
+  // A gear change legitimately drops the revs far faster than a lift does, so
+  // it gets its own ceiling instead of teleporting past every ceiling. A real
+  // upshift sheds roughly 2500 rpm in a quarter second, which around 4000 rpm
+  // is about 48 st/s; 60 keeps the drop crisp without becoming a step again.
+  shiftFallStPerSec: 60, shiftLandSec: 0.3,
 };
 /**
  * Cabin staging. These are the classic engine's own numbers — the brief was to
@@ -350,6 +355,8 @@ export class CrankAudio {
     // Shift / crank phases
     this._shifting = false;
     this._shiftTimer = 0;
+    this._shiftLand = null;   // rpm the change is heading for
+    this._shiftLandT = 0;     // how long that target still applies
     this._shiftUp = false;
     this._sinceShift = 0;
     this._postShift = 0;
@@ -1076,6 +1083,10 @@ export class CrankAudio {
         }
       }
       if (this._postShift > 0) this._postShift -= dt;
+      if (this._shiftLandT > 0) {
+        this._shiftLandT -= dt;
+        if (this._shiftLandT <= 0) this._shiftLand = null;
+      }
       if (this._glideHold > 0) this._glideHold -= dt;
 
       // Pulling away is a RAMP, not a step.
@@ -1140,12 +1151,27 @@ export class CrankAudio {
           //
           // The gain duck and the glide hold stay: torque really is interrupted
           // in manual too. Only the teleport goes.
+          // A TARGET, NOT AN ASSIGNMENT.
+          //
+          // This used to write this._rpm directly, and that is the judder he
+          // has been reporting since the engine shipped -- the same sound in
+          // automatic that he caught in manual, where it was easier to see.
+          // Measured on the automatic drive it threw the rev line at -568 st/s,
+          // which no rate cap could touch because an assignment is not a rate.
+          //
+          // The drop itself is wanted: rpmInGear only moves its floor 125 rpm
+          // per gear, so without this there is no "coming down between gears"
+          // at all, which is the thing he asked for in the first place. So keep
+          // the destination and take the teleport: hold it as a target for
+          // shiftLandSec and let the limiter walk there at shiftFallStPerSec.
           if (!isManual()) {
             if (up) {
-              this._rpm = shiftLandingRpm(this._gear, idle, redline, d.revLo);
+              this._shiftLand = shiftLandingRpm(this._gear, idle, redline, d.revLo);
+              this._shiftLandT = d.shiftLandSec ?? 0.3;
             } else if (accelLoad > 0.25) {
-              const land = idle + span * Math.min(0.95, d.revHi * 0.9);
-              this._rpm = Math.min(redline * 0.95, Math.max(this._rpm, land));
+              this._shiftLand = Math.min(redline * 0.95,
+                Math.max(this._rpm, idle + span * Math.min(0.95, d.revHi * 0.9)));
+              this._shiftLandT = d.shiftLandSec ?? 0.3;
             }
           }
         }
@@ -1227,6 +1253,15 @@ export class CrankAudio {
           rpmLambda = 18;
           targetRpm = this._rpm * 0.94 + targetRpm * 0.06;
         }
+        // The gear change owns the target while its window is open. An upshift
+        // may only pull the revs DOWN and a downshift only up, so the pull
+        // target can never cancel the drop the way it did before this was a
+        // teleport.
+        if (this._shiftLand != null) {
+          targetRpm = this._shiftUp
+            ? Math.min(targetRpm, this._shiftLand)
+            : Math.max(targetRpm, this._shiftLand);
+        }
         // Angular inertia. damp() alone will happily jump thousands of rpm in one
         // tick when the demand steps; a real crank + flywheel cannot. Off boost a
         // turbo engine is lazier still, which is most of why the 1JZ feels heavy
@@ -1252,7 +1287,9 @@ export class CrankAudio {
         // flywheel against its own friction, which falls a great deal faster
         // than a part-throttle lift.
         const blipping = isManual() && accelLoad < 0.12 && delta < 0;
-        const fallSt = blipping ? d.maxFallStPerSec * d.blipFallMul : d.maxFallStPerSec;
+        const fallSt = this._shiftLand != null
+          ? (d.shiftFallStPerSec ?? d.maxFallStPerSec)
+          : (blipping ? d.maxFallStPerSec * d.blipFallMul : d.maxFallStPerSec);
         const fallRpm = blipping ? d.fallRpmPerSec * d.blipFallMul : d.fallRpmPerSec;
         const fallCap = Math.min(fallRpm, Math.max(idle, this._rpm) * fallSt / ST) * dt;
         this._rpm += delta >= 0 ? Math.min(delta, riseCap) : Math.max(delta, -fallCap);

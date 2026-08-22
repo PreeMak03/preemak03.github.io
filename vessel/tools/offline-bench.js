@@ -46,6 +46,9 @@
  *   crestDb      peak over rms — the ceiling on how loud this engine can ever
  *                be before the wall grabs it.
  *   clipPct      samples at full scale. Classic runs 0.
+ *   revStep      biggest one-tick jump in the rev line, in semitones. Past
+ *                about 2 and something is ASSIGNING the revs rather than
+ *                steering them — the defect that hid for weeks. See maxStep().
  *   offOrder     static wavetable check: energy on harmonics that are not
  *                multiples of the cylinder count. A question, never a verdict —
  *                some of it is deliberate and correct. Read the note on the
@@ -192,6 +195,34 @@ export async function render(profileId, tweak, scriptName = 'owner') {
   return { buf, log, audio, isCrank, script };
 }
 
+/**
+ * TELEPORT GUARD — the biggest single-tick jump in the rev line, in semitones.
+ *
+ * This exists because the judder the owner reported for weeks was exactly this
+ * and nothing here could see it: a gear change ASSIGNED this._rpm instead of
+ * moving it, so it walked through every rate cap. An assignment is not a rate,
+ * and no amount of tuning the caps touches one.
+ *
+ * A tick is ~21 ms. Anything past a couple of semitones in one tick is a step,
+ * not a glide, and the ear hears a step in pitch as a snatch. Reference points
+ * measured on this bench: the shipped teleport threw 12.1 st in a tick; ramped,
+ * the same change moves 0.7; classic's automatic sits near 1.5 at its worst.
+ *
+ * If this number climbs again, something has started writing the rev line
+ * instead of steering it. Look for `this._rpm =` before tuning anything.
+ */
+function maxStep(log) {
+  const ST = 12 / Math.LN2;
+  let worst = 0, at = 0;
+  for (let i = 1; i < log.length; i++) {
+    const a = log[i - 1].rpm, b = log[i].rpm;
+    if (!(a > 0) || !(b > 0)) continue;
+    const st = Math.abs(Math.log(b / a) * ST);
+    if (st > worst) { worst = st; at = log[i].t; }
+  }
+  return { st: +worst.toFixed(2), atS: +at.toFixed(2) };
+}
+
 /** Level-modulation depth over a 0.5 s window — the metric the car reports. */
 function swing(mono, from, to) {
   const N = 2048, hop = SR / 50, win = [];
@@ -293,6 +324,8 @@ export async function run(profileId, tweak, scriptName = 'owner') {
     crestDb: +dbOf(peak / rms).toFixed(1),
     peak: +peak.toFixed(3),
     clipPct: +((clipped / mono.length) * 100).toFixed(3),
+    // Steps past ~2 st in one tick are teleports, not glides. See maxStep().
+    revStep: maxStep(log),
     offOrder: oo,
   };
 }
