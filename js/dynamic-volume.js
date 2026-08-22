@@ -153,8 +153,70 @@ export function computeDynamicVolume(p) {
   };
 }
 
+/**
+ * DYNAMIC VOLUME FOR A HELD GEAR — a separate model on purpose.
+ *
+ * The automatic's model leans on rpm, and for the automatic that is sound: revs
+ * only get high there BECAUSE the driver asked for something, so high revs and
+ * hard work are the same fact. Manual breaks that link. rpm follows road speed
+ * through the ratio, so first gear cruising at 24 km/h sits at 4320 rpm with the
+ * throttle shut — a state the automatic cannot produce at all, and one the old
+ * model reads as "working hard" and holds at full voice. Deafening, and wrong.
+ *
+ * So here LOAD leads and the revs only colour it. That is also what an engine
+ * does: a closed throttle at 4300 rpm is engine braking and it is quiet, while
+ * an open one at the same speed is loud. Same revs, different sound, because
+ * what you hear is combustion and there is barely any.
+ *
+ * Merged into computeDynamicVolume this would have meant a branch inside every
+ * term, and the automatic's numbers are ones the owner tuned on a road. Left
+ * alone is safer than shared.
+ */
+export function computeManualVolume(p) {
+  const effort = clamp(p.effort ?? 0, 0, 1);
+  const rpmNorm = clamp(p.rpmNorm ?? 0, 0, 1.15);
+  const decelLoad = clamp(p.decelLoad ?? 0, 0, 1);
+  const speed = Math.max(0, p.speed ?? 0);
+  const idlePresence = clamp(p.idlePresence ?? 0.75, 0, 1.2);
+  const dynDb = p.dynDb != null ? +p.dynDb : 14;
+  const softCeiling = p.softCeiling != null ? +p.softCeiling : 0.88;
+  const floorBias = p.floorBias != null ? +p.floorBias : 1;
+  const shiftDuck = p.shiftDuck != null ? +p.shiftDuck : 0.9;
+  const overrunDuck = p.overrunDuck != null ? +p.overrunDuck : 0.9;
+
+  // The throttle decides. Shutting it drops the voice however fast the engine
+  // is turning, which is the entire point of this function.
+  const loadEnergy = clamp(0.16 + effort * 0.72 - decelLoad * 0.14, 0, 1);
+  // Revs colour it: at the SAME load, turning faster is somewhat louder.
+  const revColour = 0.85 + Math.min(1, rpmNorm) * 0.28;
+  const driveEnergy = clamp(loadEnergy * revColour, 0, 1);
+
+  let dynVol = Math.pow(10, (-dynDb * (1 - driveEnergy)) / 20);
+  dynVol = softCeilGain(dynVol, softCeiling, 0.22);
+
+  // A held gear still has to be audible off the throttle — engine braking is a
+  // sound, not silence — so the floor rises a little with the revs.
+  const cruiseFloor = (0.09 + Math.min(1, rpmNorm) * 0.05) * floorBias;
+  dynVol = Math.max(dynVol, Math.min(cruiseFloor, softCeiling * 0.55));
+
+  if (speed < 5) {
+    const idleFloor = (0.12 + idlePresence * 0.12) * floorBias;
+    dynVol = Math.max(dynVol, (1 - speed / 5) * (0.14 + idlePresence * 0.12) + idleFloor * 0.6);
+  }
+
+  const gDyn = gearDynVolume(p.gear ?? 1, p.gearCount ?? 5, p.gearScale);
+  dynVol *= gDyn.volScale;
+  if (p.shifting) dynVol *= shiftDuck;
+  if (p.overrun) dynVol *= overrunDuck;
+
+  const lo = 0.05 * floorBias;
+  const hi = Math.max(lo, softCeiling);
+  return { dynVol: clamp(dynVol, lo, hi), driveEnergy, gearScale: gDyn.volScale, softCeiling: hi, curveMul: 1 };
+}
+
 export default {
   computeDynamicVolume,
+  computeManualVolume,
   softCeilGain,
   gearDynVolume,
   sampleVolumeCurve,

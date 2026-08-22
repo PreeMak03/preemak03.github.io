@@ -45,7 +45,7 @@ import {
   gearToneBias,
   shiftLandingRpm,
 } from './gearbox.js';
-import { computeDynamicVolume } from './dynamic-volume.js';
+import { computeDynamicVolume, computeManualVolume } from './dynamic-volume.js';
 import { buildRevScript, stepRevScript } from './launch-rev.js';
 import { CRANK_RIGS } from './crank-rigs.js';
 
@@ -1608,7 +1608,12 @@ export class CrankAudio {
     }
 
     // --- in-car loudness ---------------------------------------------------
-    const dyn = computeDynamicVolume({
+    // A held gear needs its own loudness model — in manual the revs follow road
+    // speed, so "high rpm" no longer implies "working hard" and the automatic's
+    // rpm-led curve holds a low-gear cruise at full voice. See
+    // computeManualVolume.
+    const dynFn = isManual() ? computeManualVolume : computeDynamicVolume;
+    const dyn = dynFn({
       effort: this._effort,
       rpmNorm,
       accelLoad: drv.accelVoice,
