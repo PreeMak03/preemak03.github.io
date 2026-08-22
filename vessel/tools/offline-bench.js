@@ -107,6 +107,15 @@ const SCRIPTS = {
   hold: [
     { from: 1.5, until: 19, phase: 'idle', target: () => 0 },
   ],
+  // A STEP. Idle, then ask for everything at once, and nothing else. This is the
+  // "press play and the music is instantly at full volume" case — how fast the
+  // engine's LEVEL arrives when load appears, measured rather than read off the
+  // damping constants.
+  step: [
+    { from: 1.5, until: 5,  phase: 'idle', target: () => 0 },
+    { from: 5.05, until: 12, phase: 'pull', target: () => 140 },
+    { from: 12.2, until: 19, phase: 'lift', target: () => 0 },
+  ],
   // Everything the physics will give, for headroom questions only. A headroom
   // claim measured on a gentle drive is how "4-8 dB spare" got reported once
   // and was wrong: the loud case was never rendered.
@@ -454,6 +463,83 @@ export async function compare(profileId, before, { repeats = 3 } = {}) {
  * most users actually live and had never been measured this way — the whole
  * judder hunt compared CRANK against a reference nobody had put on a bench.
  */
+/**
+ * HOW FAST THE VOICE ARRIVES when load appears — his "press play and the music
+ * is already at full volume" case.
+ *
+ * Feeds a STEP in accelKmhps straight to the engine, the way a GPS fix does,
+ * with no VehiclePhysics in between: the physics cannot step, so a target-speed
+ * step measures the car accelerating rather than the engine responding.
+ *
+ * Milestones are FIXED dB above the idle level, not a percentage of the rise.
+ * That distinction is the whole reliability of this: measured as a percentage,
+ * jz looked 5.7x faster than classic, but jz only climbs 22.7 dB in total
+ * against classic's 30.8, so "10% of the rise" was +7 dB for one and +12.8 dB
+ * for the other. Comparing the same dB step puts the real figure near 2.6x.
+ *
+ *      +3 dB   +6 dB   +12 dB   steepest
+ *   jz     52      65      161   131.9 dB/100ms
+ *   cls   138     194      387    94.5
+ */
+export async function attack(profileId, tweak) {
+  const profile = getProfileById(profileId);
+  if (!profile) throw new Error(`no such profile: ${profileId}`);
+  const SECS = 12, T0 = 5, ACC = 18;
+  const isCrank = !!profile.crank;
+  const oc = new OfflineAudioContext(2, SR * SECS, SR);
+  const audio = isCrank ? new CrankAudio() : new AudioEngine();
+  audio.setProfile(profile);
+  await audio.start({ ctx: oc, manualTick: true });
+  const tick = isCrank ? (dt) => audio._tick(dt) : (dt) => audio.update(dt);
+  if (tweak) tweak(audio._voices ? audio._voices[audio._active] : null, audio);
+
+  const dt = STEP / SR;
+  let v = 40;
+  for (let f = 0; f + STEP <= SR * SECS; f += STEP) {
+    const t = f / SR;
+    oc.suspend(t).then(() => {
+      const on = t >= T0;
+      const acc = on ? ACC : 0;
+      v += acc * dt;
+      audio.setSpeed(v, { throttle: on ? 0.9 : 0.15, brake: 0, accelKmhps: acc });
+      tick(dt);
+      oc.resume();
+    });
+  }
+  const buf = await oc.startRendering();
+  audio.running = false;
+
+  const L = buf.getChannelData(0), R = buf.getChannelData(1);
+  const win = Math.floor(SR * 0.02);
+  const env = [];
+  for (let t = T0 - 0.4; t < T0 + 3; t += 0.001) {
+    const i = Math.floor(t * SR);
+    let s = 0;
+    for (let k = i; k < i + win; k += 4) { const x = (L[k] + R[k]) * 0.5; s += x * x; }
+    env.push({ t, v: Math.sqrt(s / (win / 4)) });
+  }
+  const pre = env.filter((e) => e.t < T0 - 0.05);
+  const base = pre.reduce((p, c) => p + c.v, 0) / Math.max(1, pre.length);
+  const atDb = (db) => {
+    const want = base * Math.pow(10, db / 20);
+    const hit = env.find((e) => e.t > T0 && e.v >= want);
+    return hit ? +((hit.t - T0) * 1000).toFixed(0) : null;
+  };
+  let steep = 0;
+  for (let i = 1; i < env.length; i++) {
+    if (env[i].t > T0 && env[i].t < T0 + 1.5 && env[i - 1].v > 1e-9) {
+      const d = 20 * Math.log10(env[i].v / env[i - 1].v) * 100;
+      if (d > steep) steep = d;
+    }
+  }
+  return {
+    profile: profileId,
+    idleDb: +dbOf(base).toFixed(1),
+    ms_to_3dB: atDb(3), ms_to_6dB: atDb(6), ms_to_12dB: atDb(12),
+    steepestDbPer100ms: +steep.toFixed(1),
+  };
+}
+
 export async function runAll(ids, scriptName = 'owner') {
   const list = ids || ['classic-muscle', 'jz-crank', 'civic-crank'];
   const out = [];
@@ -465,6 +551,6 @@ export async function runAll(ids, scriptName = 'owner') {
 }
 
 if (typeof window !== 'undefined') {
-  window.offlineBench = { run, runAll, compare, render, offOrder };
+  window.offlineBench = { run, runAll, compare, render, offOrder, loopiness, attack };
 }
-export default { run, runAll, compare, render, offOrder };
+export default { run, runAll, compare, render, offOrder, loopiness, attack };
