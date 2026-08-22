@@ -1018,6 +1018,8 @@ window.TAS = {
    * 2-second buffers on loop and come round at 0.5 Hz whatever the revs do.
    */
   isolate: (what) => (audio && audio.isolate ? audio.isolate(what) : 'not a CRANK profile'),
+  /** TAS.setMix({ noise: 0.4, engine: 1 }) — levels, not switches. 0..1 each. */
+  setMix: (m) => (audio && audio.setMix ? audio.setMix(m) : 'not a CRANK profile'),
 };
 
 if (document.readyState === 'loading') {

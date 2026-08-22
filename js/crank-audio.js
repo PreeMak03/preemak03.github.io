@@ -667,6 +667,9 @@ export class CrankAudio {
     const dry = ctx.createGain(); dry.gain.value = 1;
     const exhaustGain = ctx.createGain(); exhaustGain.gain.value = 0;
 
+    // Same idea on the wavetable side: exhaustGain is rewritten every tick, so
+    // a listening trim has to sit after it.
+    const exhaustTrim = ctx.createGain();
     const panL = ctx.createStereoPanner();
     const panR = ctx.createStereoPanner();
 
@@ -699,8 +702,9 @@ export class CrankAudio {
     dry.connect(exhaustLp);
     delayGain.connect(exhaustLp);
     exhaustLp.connect(peak1).connect(peak2).connect(exhaustGain);
-    exhaustGain.connect(panL);
-    exhaustGain.connect(panR);
+    exhaustGain.connect(exhaustTrim);
+    exhaustTrim.connect(panL);
+    exhaustTrim.connect(panR);
     panL.connect(sum);
     panR.connect(sum);
     oscIntake.connect(intakeBp).connect(intakeGain).connect(sum);
@@ -711,7 +715,7 @@ export class CrankAudio {
     return {
       oscL, oscR, oscIntake, oscMech, oscWhistle,
       preShape, shape, exhaustLp, peak1, peak2, delay, delayGain, dry, exhaustGain,
-      panL, panR, intakeBp, intakeGain, combBp, combGain,
+      exhaustTrim, panL, panR, intakeBp, intakeGain, combBp, combGain,
       mechHp, mechGain, turboBp, turboGain, whistleGain, sum, voiceGain,
     };
   }
@@ -915,13 +919,27 @@ export class CrankAudio {
     const noiseIntake = loopSrc(pink);   // runner air
     const starterSrc = loopSrc(brown);   // starter motor
 
+    // One trim per LOOPED-NOISE source, placed before the fan-out to the voices,
+    // and never written by the tick — so a level set here survives the fifty
+    // gain rewrites a second that happen downstream.
+    //
+    // Only these three are noise. oscMech is a sawtooth and oscWhistle a sine,
+    // and intakeBp is fed by BOTH oscIntake and noiseIntake, so trimming the
+    // node would take the oscillator with it. Trimming the source does not.
+    const combTrim = ctx.createGain();
+    const turboTrim = ctx.createGain();
+    const intakeNoiseTrim = ctx.createGain();
+    noiseComb.connect(combTrim);
+    noiseTurbo.connect(turboTrim);
+    noiseIntake.connect(intakeNoiseTrim);
+
     for (const key of ['a', 'b']) {
       const v = voices[key];
-      noiseComb.connect(v.combBp);
+      combTrim.connect(v.combBp);
       v.combBp.connect(v.combGain).connect(v.voiceGain);
-      noiseTurbo.connect(v.turboBp);
+      turboTrim.connect(v.turboBp);
       v.turboBp.connect(v.turboGain).connect(v.voiceGain);
-      noiseIntake.connect(v.intakeBp);
+      intakeNoiseTrim.connect(v.intakeBp);
     }
 
     const starterLp = ctx.createBiquadFilter();
@@ -975,6 +993,7 @@ export class CrankAudio {
       frontGain, reverb, reverbWet, frontSend,
       low, high, dynGain, makeup, limiter, safety, master, analyser,
       noiseComb, noiseTurbo, noiseIntake, starterSrc, starterLp, starterGain,
+      combTrim, turboTrim, intakeNoiseTrim,
       popSrc, popBp, popGain,
     };
     this.setBass(this._bass);
@@ -1638,26 +1657,44 @@ export class CrankAudio {
    * If the pattern follows the revs it is the table; if it holds the same
    * cadence whatever the engine is doing, it is the loops.
    */
-  isolate(what = 'all') {
-    if (!this._voices) return 'engine not running';
-    const beds = ['combGain', 'turboGain', 'intakeGain', 'whistleGain', 'mechGain'];
-    for (const k of Object.keys(this._voices)) {
-      const v = this._voices[k];
-      const wire = (node, on) => {
-        try { node.disconnect(); } catch (_) { /* already out */ }
-        if (on) { try { node.connect(v.sum); } catch (_) { /* gone */ } }
-      };
-      // the shaped oscillator reaches `sum` through the panners, not directly
-      try { v.exhaustGain.disconnect(); } catch (_) { /* already out */ }
-      if (what !== 'noise') {
-        v.exhaustGain.connect(v.panL);
-        v.exhaustGain.connect(v.panR);
-      }
-      for (const b of beds) wire(v[b], what !== 'engine');
+  /**
+   * Listening levels, 0..1 each, for finding a balance by ear rather than by
+   * switching halves off. Muting outright is what made the first version of
+   * this useless -- his words, it goes "digital". A percentage does not.
+   *
+   *   noise   the three LOOPED-NOISE sources: combustion hash, turbo, and the
+   *           noise half of the intake. Not mech (a sawtooth) and not whistle
+   *           (a sine) -- those are oscillators and never loop.
+   *   engine  the firing wavetable.
+   *
+   * Static gains placed outside the tick's reach, so a setting stays put.
+   */
+  setMix({ noise, engine } = {}) {
+    if (!this._nodes) return 'engine not running';
+    const n = this._nodes;
+    if (noise != null) {
+      const g = Math.max(0, noise);
+      this._mixNoise = g;
+      for (const k of ['combTrim', 'turboTrim', 'intakeNoiseTrim']) if (n[k]) n[k].gain.value = g;
     }
-    this._isolated = what;
-    return `isolate: ${what}`;
+    if (engine != null && this._voices) {
+      const g = Math.max(0, engine);
+      this._mixEngine = g;
+      for (const k of Object.keys(this._voices)) {
+        const t = this._voices[k].exhaustTrim;
+        if (t) t.gain.value = g;
+      }
+    }
+    return { noise: this._mixNoise ?? 1, engine: this._mixEngine ?? 1 };
   }
+
+  /** Shorthand over setMix, kept because it reads well while listening. */
+  isolate(what = 'all') {
+    if (what === 'engine') return this.setMix({ engine: 1, noise: 0 });
+    if (what === 'noise') return this.setMix({ engine: 0, noise: 1 });
+    return this.setMix({ engine: 1, noise: 1 });
+  }
+
 
   /**
    * Body-layer level, live. Starts the oscillator on first use, because an

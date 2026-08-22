@@ -41,9 +41,12 @@
   </div>
 
   <div class="card">
-    <label>ฟังเฉพาะส่วน</label>
-    <div class="row">
-      <button data-iso="all" class="on">ทุกอย่าง</button>
+    <label>ระดับเสียงรบกวน (ลูป 2 วินาที) — <span id="noiseOut">100</span>%</label>
+    <input id="noise" type="range" min="0" max="150" step="5" value="100">
+    <label>ระดับ wavetable — <span id="engOut">100</span>%</label>
+    <input id="eng" type="range" min="0" max="150" step="5" value="100">
+    <div class="row" style="margin-top:14px">
+      <button data-iso="all" class="on">รีเซ็ต 100/100</button>
       <button data-iso="engine">เฉพาะ wavetable</button>
       <button data-iso="noise">เฉพาะเสียงรบกวน</button>
     </div>
@@ -102,7 +105,7 @@ async function start() {
   // listen to a repeat in.
   audio.setSpeed(0, { throttle: 0, brake: 0, accelKmhps: 0 });
   audio.setHoldRpm(+$('#rpm').value);
-  audio.isolate(iso);
+  applyMix();
   draw();
 }
 
@@ -144,10 +147,23 @@ $('#power').addEventListener('click', async () => {
   } catch (e) { err.textContent = String(e && e.stack || e); }
 });
 
+const mix = { noise: 1, engine: 1 };
+const applyMix = () => {
+  $('#noiseOut').textContent = Math.round(mix.noise * 100);
+  $('#engOut').textContent = Math.round(mix.engine * 100);
+  $('#noise').value = String(Math.round(mix.noise * 100));
+  $('#eng').value = String(Math.round(mix.engine * 100));
+  if (audio) audio.setMix(mix);
+};
+$('#noise').addEventListener('input', () => { mix.noise = +$('#noise').value / 100; applyMix(); });
+$('#eng').addEventListener('input',   () => { mix.engine = +$('#eng').value / 100; applyMix(); });
+
 document.querySelectorAll('[data-iso]').forEach((b) => b.addEventListener('click', () => {
   iso = b.dataset.iso;
   document.querySelectorAll('[data-iso]').forEach((o) => o.classList.toggle('on', o === b));
-  if (audio) audio.isolate(iso);
+  mix.noise  = iso === 'engine' ? 0 : 1;
+  mix.engine = iso === 'noise' ? 0 : 1;
+  applyMix();
 }));
 
 document.querySelectorAll('[data-p]').forEach((b) => b.addEventListener('click', async () => {
@@ -163,4 +179,5 @@ document.querySelectorAll('[data-p]').forEach((b) => b.addEventListener('click',
 }));
 
 show();
+applyMix();
 </script>
