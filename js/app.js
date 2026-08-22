@@ -1008,6 +1008,12 @@ window.TAS = {
   gpsBoost: (on) => geo.setBoost(on),
   gpsFixHz: () => geo.fixHz || 0,
   onboard: () => startOnboarding({ force: true }),
+  /**
+   * TAS.isolate('engine' | 'noise' | 'all') — hear the two things that repeat
+   * on their own. The wavetable comes round at rpm/120; the noise beds are
+   * 2-second buffers on loop and come round at 0.5 Hz whatever the revs do.
+   */
+  isolate: (what) => (audio && audio.isolate ? audio.isolate(what) : 'not a CRANK profile'),
 };
 
 if (document.readyState === 'loading') {

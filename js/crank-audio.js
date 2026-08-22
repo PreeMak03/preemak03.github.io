@@ -1627,6 +1627,39 @@ export class CrankAudio {
   setThrottle(v) { if (v != null) this._throttle = clamp(v, 0, 1); }
 
   /**
+   * Split the engine into its two repeating halves so they can be heard apart.
+   * Dev only, and it disconnects rather than zeroing a gain because the tick
+   * rewrites every gain 50 times a second and would undo it instantly.
+   *
+   *   'engine'  wavetable only — the part that repeats at rpm/120
+   *   'noise'   noise beds only — four 2-second buffers on loop, 0.5 Hz
+   *   'all'     put everything back
+   *
+   * If the pattern follows the revs it is the table; if it holds the same
+   * cadence whatever the engine is doing, it is the loops.
+   */
+  isolate(what = 'all') {
+    if (!this._voices) return 'engine not running';
+    const beds = ['combGain', 'turboGain', 'intakeGain', 'whistleGain', 'mechGain'];
+    for (const k of Object.keys(this._voices)) {
+      const v = this._voices[k];
+      const wire = (node, on) => {
+        try { node.disconnect(); } catch (_) { /* already out */ }
+        if (on) { try { node.connect(v.sum); } catch (_) { /* gone */ } }
+      };
+      // the shaped oscillator reaches `sum` through the panners, not directly
+      try { v.exhaustGain.disconnect(); } catch (_) { /* already out */ }
+      if (what !== 'noise') {
+        v.exhaustGain.connect(v.panL);
+        v.exhaustGain.connect(v.panR);
+      }
+      for (const b of beds) wire(v[b], what !== 'engine');
+    }
+    this._isolated = what;
+    return `isolate: ${what}`;
+  }
+
+  /**
    * Body-layer level, live. Starts the oscillator on first use, because an
    * unstarted OscillatorNode stays silent forever however high the gain goes —
    * which would make this setter look like it did nothing. Cards that never

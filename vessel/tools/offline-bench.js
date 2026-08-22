@@ -99,6 +99,14 @@ const SCRIPTS = {
     { from: 3.4, until: 16, phase: 'pull',   target: (t) => Math.min(150, (t - 3) * 16) },
     { from: 16.4, until: 19, phase: 'lift',   target: () => 40 },
   ],
+  // Stationary idle for the whole render. Two reasons: the pitch is dead steady
+  // there (wander is gated on speed > 2, so a parked engine has none at all),
+  // which is the only condition under which a fixed-lag autocorrelation means
+  // anything; and it runs long enough to cover several passes of the 2-second
+  // noise loops.
+  hold: [
+    { from: 1.5, until: 19, phase: 'idle', target: () => 0 },
+  ],
   // Everything the physics will give, for headroom questions only. A headroom
   // claim measured on a gentle drive is how "4-8 dB spare" got reported once
   // and was wrong: the loud case was never rendered.
@@ -118,7 +126,17 @@ function phaseAt(t, script) {
 
 /** Assert the render actually exercised the engine, rather than reporting on a
  *  car that never left idle. Every metric below is meaningless without this. */
-function assertDriven(log, spec) {
+function assertDriven(log, spec, scriptName) {
+  // `hold` parks the engine at idle on purpose — that IS the measurement.
+  // Everywhere else, an engine that never loaded means the inputs are wrong.
+  if (scriptName === 'hold') {
+    const rpms = log.map((x) => x.rpm).filter(Number.isFinite);
+    const top = Math.max(...rpms);
+    if (top > spec.idleRpm * 1.5) {
+      throw new Error(`hold was supposed to idle and reached ${Math.round(top)} rpm`);
+    }
+    return;
+  }
   const rpms = log.map((x) => x.rpm).filter(Number.isFinite);
   const top = Math.max(...rpms);
   const reached = top / spec.redlineRpm;
@@ -191,8 +209,60 @@ export async function render(profileId, tweak, scriptName = 'owner') {
   audio.running = false;                 // never stop(): the context is not ours
   assertDriven(log, audio._spec || {
     redlineRpm: (profile.engine && profile.engine.redlineRpm) || 7000,
-  });
+    idleRpm: (profile.engine && profile.engine.idleRpm) || 800,
+  }, scriptName);
   return { buf, log, audio, isCrank, script };
+}
+
+/**
+ * HOW MUCH OF THIS IS A LOOP.
+ *
+ * His report: CRANK sounds like a recording — a pattern you can feel at idle,
+ * at steady revs, on light throttle. He is not wrong in principle. There are two
+ * separate things in here that repeat exactly, and they repeat at different
+ * rates, so the ear can tell them apart even when a spectrum cannot:
+ *
+ *   table  a PeriodicWave is periodic by construction, and the 720-degree table
+ *          comes round at rpm/120 — 6.25 Hz at a 750 rpm idle. Every cycle is
+ *          identical to the last, where a real engine never repeats.
+ *   noise  every noise bed is a TWO SECOND buffer with loop = true. That is a
+ *          recording on loop in the most literal sense, and hearing is good at
+ *          spotting looped noise. It repeats at 0.5 Hz regardless of rpm.
+ *
+ * r is normalised autocorrelation at the relevant lag: 1.0 means the next cycle
+ * is bit-identical, 0 means it shares nothing. The table lag is refined by
+ * searching +/-3% around rpm/120, because a fixed lag was what made the first
+ * attempt at this return an impossible -0.52 — the period drifts and the phase
+ * slips out from under it.
+ *
+ * Measure this on the `hold` script. Anywhere else the engine is changing and
+ * the number means nothing.
+ */
+export function loopiness(buf, rpm, { from = 6, secs = 8 } = {}) {
+  const L = buf.getChannelData(0), R = buf.getChannelData(1);
+  const start = Math.floor(from * SR);
+  const n = Math.floor(secs * SR);
+  const x = new Float32Array(n);
+  for (let i = 0; i < n; i++) x[i] = (L[start + i] + R[start + i]) * 0.5;
+
+  const corrAt = (lag) => {
+    let num = 0, d1 = 0, d2 = 0;
+    for (let i = 0; i + lag < n; i++) { num += x[i] * x[i + lag]; d1 += x[i] * x[i]; d2 += x[i + lag] * x[i + lag]; }
+    const den = Math.sqrt(d1 * d2);
+    return den > 1e-12 ? num / den : 0;
+  };
+  // table: search around the nominal cycle for the true peak
+  const nominal = Math.round(SR / (rpm / 120));
+  let best = { lag: nominal, r: -2 };
+  for (let lag = Math.round(nominal * 0.97); lag <= Math.round(nominal * 1.03); lag++) {
+    const r = corrAt(lag);
+    if (r > best.r) best = { lag, r };
+  }
+  return {
+    table: { lagMs: +(best.lag / SR * 1000).toFixed(1), r: +best.r.toFixed(3) },
+    // the noise beds, at their fixed 2 s loop
+    noise2s: { r: +corrAt(SR * 2).toFixed(3) },
+  };
 }
 
 /**
