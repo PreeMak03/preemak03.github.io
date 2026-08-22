@@ -1,0 +1,166 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>CRANK loop lab</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: dark; --ink:#e8e8ea; --dim:#8b8b93; --line:#2a2a30; --hot:#f4a442; }
+  body { margin:0; padding:28px 20px 60px; background:#0d0d10; color:var(--ink);
+         font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .wrap { max-width:620px; margin:0 auto; }
+  h1 { font-size:19px; margin:0 0 4px; letter-spacing:.2px; }
+  p.sub { color:var(--dim); margin:0 0 26px; font-size:13.5px; }
+  .card { border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:16px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; }
+  button { flex:1 1 auto; min-width:120px; padding:13px 14px; border-radius:9px; cursor:pointer;
+           border:1px solid var(--line); background:#16161b; color:var(--ink); font-size:14px;
+           font-family:inherit; transition:border-color .12s, background .12s; }
+  button:hover { border-color:#3d3d46; }
+  button.on { border-color:var(--hot); background:#241a0d; color:var(--hot); }
+  button.big { padding:16px; font-size:15px; }
+  label { display:block; color:var(--dim); font-size:12.5px; margin:16px 0 7px;
+          text-transform:uppercase; letter-spacing:.7px; }
+  input[type=range] { width:100%; accent-color:var(--hot); }
+  .read { font-variant-numeric:tabular-nums; font-size:26px; margin-top:10px; }
+  .read small { font-size:13px; color:var(--dim); font-weight:normal; }
+  .note { color:var(--dim); font-size:13px; margin-top:14px; }
+  .note b { color:var(--ink); font-weight:600; }
+  #err { color:#ff8080; white-space:pre-wrap; font-size:13px; }
+  canvas { width:100%; height:70px; display:block; margin-top:14px; border-radius:7px; background:#000; }
+</style>
+<div class="wrap">
+  <h1>CRANK loop lab</h1>
+  <p class="sub">ค้างรอบไว้ แล้วสลับฟังทีละครึ่ง — หาว่าจังหวะที่กวนใจมาจากไหน</p>
+
+  <div class="card">
+    <div class="row"><button id="power" class="big">▶ สตาร์ทเครื่อง</button></div>
+    <label>รอบเครื่อง (ค้างไว้นิ่ง)</label>
+    <input id="rpm" type="range" min="700" max="5000" step="10" value="900">
+    <div class="read"><span id="rpmOut">900</span> <small>rpm</small>
+      &nbsp;·&nbsp; ตารางคลื่นวนซ้ำ <span id="hz">7.5</span> <small>ครั้ง/วินาที</small></div>
+    <canvas id="scope"></canvas>
+  </div>
+
+  <div class="card">
+    <label>ฟังเฉพาะส่วน</label>
+    <div class="row">
+      <button data-iso="all" class="on">ทุกอย่าง</button>
+      <button data-iso="engine">เฉพาะ wavetable</button>
+      <button data-iso="noise">เฉพาะเสียงรบกวน</button>
+    </div>
+    <p class="note">
+      <b>วิธีแยก:</b> เลื่อนรอบขึ้นลงขณะฟัง<br>
+      • จังหวะ <b>เร็วขึ้นตามรอบ</b> = ตารางคลื่น (วนที่ รอบ÷120)<br>
+      • จังหวะ <b>คงที่ ไม่สนรอบ</b> = ลูปเสียงรบกวน 2 วินาที (0.5 ครั้ง/วินาที)
+    </p>
+  </div>
+
+  <div class="card">
+    <label>โปรไฟล์</label>
+    <div class="row">
+      <button data-p="jz-crank" class="on">1JZ</button>
+      <button data-p="civic-crank">Civic</button>
+    </div>
+    <p class="note" id="err"></p>
+  </div>
+</div>
+
+<script>
+  // This page lives at /vessel/tools/, so the engine's asset paths would resolve
+  // against that and 404. The engine already has a hook for exactly this (the
+  // Lab serves from a subpath too) -- it just has to be set before the module
+  // import, which is why this is a separate plain script.
+  // Must be an ABSOLUTE base: new URL(rel, '/') throws, the engine catches it
+  // and quietly falls back to the page-relative path, which is the 404.
+  window.__TAS_ASSET_BASE__ = location.origin + '/';
+</script>
+<script type="module">
+import { CrankAudio } from '/js/crank-audio.js';
+import { getProfileById } from '/js/profiles.js';
+
+const $ = (s) => document.querySelector(s);
+const err = $('#err');
+let audio = null, iso = 'all', pid = 'jz-crank', raf = 0;
+
+// A handle, so the engine can be probed from the console while listening —
+// window.lab.audio.getAnalyser(), .rpm, ._drive, and so on.
+window.lab = { get audio() { return audio; }, get iso() { return iso; } };
+
+const show = () => {
+  const rpm = +$('#rpm').value;
+  $('#rpmOut').textContent = rpm;
+  $('#hz').textContent = (rpm / 120).toFixed(1);
+  if (audio) audio.setHoldRpm(rpm);
+};
+$('#rpm').addEventListener('input', show);
+
+async function start() {
+  audio = new CrankAudio();
+  audio.setProfile(getProfileById(pid));
+  await audio.start();
+  // Hold a rev and keep the car standing: the drive model must not fight the
+  // slider, and a parked engine has no wander, which is the steadiest thing to
+  // listen to a repeat in.
+  audio.setSpeed(0, { throttle: 0, brake: 0, accelKmhps: 0 });
+  audio.setHoldRpm(+$('#rpm').value);
+  audio.isolate(iso);
+  draw();
+}
+
+function draw() {
+  const an = audio && audio.getAnalyser();
+  if (!an) return;
+  const c = $('#scope'), g = c.getContext('2d');
+  const w = c.width = c.clientWidth * devicePixelRatio;
+  const h = c.height = 70 * devicePixelRatio;
+  const buf = new Float32Array(an.fftSize);
+  const tick = () => {
+    raf = requestAnimationFrame(tick);
+    an.getFloatTimeDomainData(buf);
+    g.clearRect(0, 0, w, h);
+    g.strokeStyle = '#f4a442'; g.lineWidth = 1 * devicePixelRatio;
+    g.beginPath();
+    for (let i = 0; i < buf.length; i++) {
+      const x = (i / buf.length) * w, y = h / 2 - buf[i] * h * 1.6;
+      i ? g.lineTo(x, y) : g.moveTo(x, y);
+    }
+    g.stroke();
+  };
+  tick();
+}
+
+$('#power').addEventListener('click', async () => {
+  err.textContent = '';
+  try {
+    if (audio) {
+      cancelAnimationFrame(raf); raf = 0;
+      audio.stop(); audio = null;
+      $('#power').textContent = '▶ สตาร์ทเครื่อง';
+      $('#power').classList.remove('on');
+      return;
+    }
+    await start();
+    $('#power').textContent = '■ ดับเครื่อง';
+    $('#power').classList.add('on');
+  } catch (e) { err.textContent = String(e && e.stack || e); }
+});
+
+document.querySelectorAll('[data-iso]').forEach((b) => b.addEventListener('click', () => {
+  iso = b.dataset.iso;
+  document.querySelectorAll('[data-iso]').forEach((o) => o.classList.toggle('on', o === b));
+  if (audio) audio.isolate(iso);
+}));
+
+document.querySelectorAll('[data-p]').forEach((b) => b.addEventListener('click', async () => {
+  pid = b.dataset.p;
+  document.querySelectorAll('[data-p]').forEach((o) => o.classList.toggle('on', o === b));
+  if (!audio) return;
+  err.textContent = '';
+  try {
+    cancelAnimationFrame(raf); raf = 0;
+    audio.stop(); audio = null;
+    await start();
+  } catch (e) { err.textContent = String(e && e.stack || e); }
+}));
+
+show();
+</script>
