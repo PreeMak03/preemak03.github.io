@@ -129,7 +129,11 @@ const DYN_BASE = {
 // revs climbing too fast. Raising the reference by roughly the same factor
 // puts the mid-range back where it was while leaving cruise, which is set by
 // cruiseLoad alone, exactly where he says it is right.
-const ACCEL_REF_KMHPS = 48;
+// 60, at his request after driving 48: the revs still climbed faster than he
+// wanted. 48 was his own number and the last one he tuned on a road, so this is
+// the first move off it and it is deliberately a small one -- 20%, where the
+// previous step was 42%.
+const ACCEL_REF_KMHPS = 60;
 
 /**
  * Shapes how light acceleration lands. accelLoad ** this, so a value below 1
@@ -299,7 +303,24 @@ function deriveMotion(spec, drive) {
     // does not. 46 puts both CRANK profiles on classic's number. The 1JZ barely
     // moves either way; its riseRpmPerSec binds first.
     maxRiseStPerSec: 46,
-    maxFallStPerSec: 57,
+    // 24, down from 57, and the reason is measured rather than felt.
+    //
+    // He described the lurch precisely: the moment acceleration ends and goes
+    // to zero or negative. Rendering the identical drive through both engines
+    // and reading the rev line through that transition:
+    //
+    //                       classic      jz-crank
+    //     fall, worst      -17.3 st/s   -51.5 st/s
+    //     jerk, worst        710         2419
+    //
+    // CRANK drops three times as fast on the same input and corners three times
+    // as hard, and -51.5 is this cap saturating -- it falls as fast as the rule
+    // allows while classic never comes near its own. A rate limit bounds pitch
+    // VELOCITY and says nothing about acceleration, so the instant the target
+    // collapses the rate steps from nothing to the cap, and a corner in pitch is
+    // heard as a snatch. Putting the ceiling on classic's number takes the
+    // corner with it.
+    maxFallStPerSec: 24,
   };
 }
 

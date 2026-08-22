@@ -1,6 +1,6 @@
 {
   "schema": "tas-live-set/1",
-  "updatedAt": "2026-08-22T06:18:32.459Z",
+  "updatedAt": "2026-08-22T07:21:11.752Z",
   "source": "manual-lineup",
   "status": "online",
   "message": "3 public · 10 live (dev sees all)",
@@ -12,7 +12,6 @@
     "flat6-911",
     "2jz",
     "jz-crank",
-    "jz-plus",
     "civic-crank",
     "turbine-jet",
     "turbine-ufo",

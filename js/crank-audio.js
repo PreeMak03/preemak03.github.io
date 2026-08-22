@@ -92,11 +92,11 @@ const DEFAULT_MIXER = { exhaust: 0.92, intake: 0.58, mechanical: 0.34, induction
 const DEFAULT_DRIVE = {
   revLo: 0.17, revHi: 0.55, revPull: 0.9, floorLo: 1300, floorHi: 1800,
   cruiseLoad: 0.5, wanderRpm: 52, wanderLope: 178,
-  limiterHz: 13, limiterDropTo: 0.93, blipFallMul: 2.4,
+  limiterHz: 13, limiterDropTo: 0.93, blipFallMul: 5.7,
 
   glideSec: 0.03, shiftGlideSec: 0.09, glideHoldSec: 0.2,
   riseRpmPerSec: 8000, fallRpmPerSec: 10000,
-  maxRiseStPerSec: 46, maxFallStPerSec: 57, accelRef: 48, accelCurve: 0.65,
+  maxRiseStPerSec: 46, maxFallStPerSec: 24, accelRef: 60, accelCurve: 0.65,
 };
 /**
  * Cabin staging. These are the classic engine's own numbers — the brief was to
