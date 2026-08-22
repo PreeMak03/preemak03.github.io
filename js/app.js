@@ -599,6 +599,10 @@ async function init() {
       if (vis.length && !vis.some((p) => p.id === state.profileId)) selectProfile(vis[0].id);
     }
     renderCarousel(); // dev-only cards appear / disappear immediately
+    // The on-screen throttle is dev-only too, and it used to be decided once
+    // when the harness mounted — so it did not appear until a reload, and did
+    // not go away until another one.
+    if (window.TAS.manual && window.TAS.manual.setPedal) window.TAS.manual.setPedal(on);
     // Start and stop for real. Leaving these running after dev is switched off
     // is a cost the user never asked for and cannot see.
     if (on) window.TAS.startDevTools();

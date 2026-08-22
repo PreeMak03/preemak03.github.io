@@ -86,6 +86,25 @@ function doShift(dir, source) {
   if (onChange) onChange(g, source);
 }
 
+/**
+ * Show or hide the on-screen throttle, live.
+ *
+ * Dev mode is a class on <body> that can be toggled at any moment, so anything
+ * gated on it has to be able to follow. Turning it off while the pedal is held
+ * must also let go of the pedal, or the sim keeps accelerating for a button
+ * that is no longer on the screen.
+ */
+export function setPedal(on) {
+  if (!ui || !ui.gas) return;
+  if (on) {
+    const dock = document.querySelector('.start-dock');
+    if (dock && ui.gas.parentNode !== dock) dock.prepend(ui.gas);
+  } else {
+    if (pedal) releasePedal();
+    if (ui.gas.parentNode) ui.gas.remove();
+  }
+}
+
 function flash(which, blocked) {
   if (!ui) return;
   const el = which === 'up' ? ui.up : ui.down;
@@ -307,14 +326,11 @@ function build(getGear, withPedal) {
   `;
   if (side) side.prepend(root); else document.body.appendChild(root);
 
-  const dock = withPedal ? document.querySelector('.start-dock') : null;
   const gas = document.createElement('button');
   gas.type = 'button';
   gas.className = 'ms-gas';
   gas.setAttribute('aria-label', 'คันเร่ง (กดค้าง)');
   gas.innerHTML = '<span class="ms-gas-eyebrow">Throttle</span><span class="ms-gas-main">GAS</span>';
-  if (dock) dock.prepend(gas);   // otherwise it is never in the document
-
   ui = {
     root,
     hud: root,
@@ -326,6 +342,12 @@ function build(getGear, withPedal) {
     src: root.querySelector('.ms-src'),
     toggle: root.querySelector('.ms-toggle'),
   };
+
+  // Docked here, not where the button is built, and only once `ui` exists —
+  // setPedal reads it. It used to be decided once at mount, so toggling dev mode
+  // did nothing until the page was reloaded: on in dev with no button, off with
+  // the button still sitting there.
+  setPedal(withPedal);
 
   // The on-screen pedal is the same pedal as the spacebar, so it goes through
   // the same press/release path rather than growing a second one.
@@ -526,6 +548,7 @@ export function startManualShift({ getGear, onGearChange, sim: simRefs, pedal: w
      * is not moving. The app applies this over the derived value.
      */
     throttleOverride: () => (pedal ? 1 : null),
+    setPedal,
     /** Tally of every input seen this session — rides along in the drive trace. */
     inputLog,
     destroy() {
