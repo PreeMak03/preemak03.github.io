@@ -382,6 +382,26 @@ export function startManualShift({ getGear, onGearChange, sim: simRefs, pedal: w
   // input that arrives is NAMED on screen — in the same slot that already
   // shows which source last moved a gear — whether or not it shifts anything.
   // Turn the wheel, read the line, and the question is answered.
+  /**
+   * Every input that arrives, kept as counts rather than a stream.
+   *
+   * The on-screen probe answers "what did that control send?" only if someone
+   * is looking at the screen, and the owner has said plainly that driving takes
+   * 80-85% of his attention — reading a line while turning a wheel is not a
+   * thing he can do. So the tally rides along in the drive trace instead: turn
+   * every control in the car once, tap send, and the answer arrives by mail
+   * whether or not anyone watched. `matched:false` entries are the valuable
+   * ones — that is a control the gearbox is ignoring.
+   */
+  const seen = new Map();
+  const record = (kind, name, matched) => {
+    const k = `${kind}:${name}`;
+    const e = seen.get(k);
+    if (e) { e.n++; e.matched = e.matched || matched; }
+    else seen.set(k, { kind, name, n: 1, matched });
+  };
+  const inputLog = () => [...seen.values()].sort((a, b) => b.n - a.n).slice(0, 40);
+
   const probe = (what) => {
     // Only when the text actually changes. A wheel can fire dozens of events a
     // second and repainting the same string for each of them is the waste that
@@ -396,6 +416,11 @@ export function startManualShift({ getGear, onGearChange, sim: simRefs, pedal: w
     const dx = e.deltaX || 0;
     const d = Math.abs(dy) >= Math.abs(dx) ? dy : dx;
     probe(`wheel ${d > 0 ? '+' : ''}${Math.round(d)}/${e.deltaMode}`);
+    // Recorded by axis and mode, not by magnitude: a hundred different pixel
+    // values are one fact, and which axis and mode the hardware uses is the
+    // fact worth carrying home.
+    record('wheel', `${Math.abs(dy) >= Math.abs(dx) ? 'Y' : 'X'}${d > 0 ? '+' : '-'}/mode${e.deltaMode}`, true);
+    if (isTyping(e.target)) return;
     if (!isManual()) return;
     // The carousel exclusion is gone. It was there so a wheel over the profile
     // strip would scroll it, but manual mode is engaged deliberately and a
@@ -417,20 +442,59 @@ export function startManualShift({ getGear, onGearChange, sim: simRefs, pedal: w
     }
   };
 
-  // Anything that could plausibly be a wheel detent on a car's own hardware.
-  // Named rather than filtered, so an unexpected code shows up on screen
-  // instead of vanishing.
-  const UP_KEYS = new Set(['ArrowUp', 'PageUp', '+', '=', ']', 'AudioVolumeUp', 'MediaTrackNext']);
-  const DOWN_KEYS = new Set(['ArrowDown', 'PageDown', '-', '_', '[', 'AudioVolumeDown', 'MediaTrackPrevious']);
+  // Anything that could plausibly be a shift gesture, on a keyboard or on a
+  // car's own hardware. Cast wide on purpose: nobody has yet published what a
+  // Tesla steering wheel emits, the plan guessed `wheel` and the car reported
+  // `key`, and every wrong guess costs a whole trip to find out. Both e.key and
+  // e.code are matched, because a control that is not a letter often reports
+  // one and not the other.
+  //
+  // Up is the RIGHT paddle on every car that has them, so right/next/forward
+  // sit with up, and left/previous/back with down.
+  const UP_KEYS = new Set([
+    'ArrowUp', 'ArrowRight', 'PageUp', 'Home',
+    '+', '=', ']', '}', '.', '>', ')',
+    'Equal', 'NumpadAdd', 'BracketRight', 'Period', 'NumpadDecimal',
+    'AudioVolumeUp', 'VolumeUp', 'MediaTrackNext', 'ChannelUp',
+    'BrowserForward', 'ScrollLock', 'ShiftRight',
+  ]);
+  const DOWN_KEYS = new Set([
+    'ArrowDown', 'ArrowLeft', 'PageDown', 'End',
+    '-', '_', '[', '{', ',', '<', '(',
+    'Minus', 'NumpadSubtract', 'BracketLeft', 'Comma',
+    'AudioVolumeDown', 'VolumeDown', 'MediaTrackPrevious', 'ChannelDown',
+    'BrowserBack', 'Pause', 'ShiftLeft',
+  ]);
+
+  /**
+   * Typing must not change gear. Without this, the wide net above turns the
+   * feedback box and the speed field into a gearbox.
+   */
+  const isTyping = (el) => !!el && (
+    el.isContentEditable ||
+    /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName || ''));
 
   const onKey = (e) => {
     // The pedal works whenever the harness is mounted — it is how the sim is
     // driven at a desk, manual or not.
-    if (e.code === 'Space' && !e.repeat) { pressPedal(); e.preventDefault(); return; }
-    probe(`key ${e.key === ' ' ? 'Space' : e.key}${e.key !== e.code ? '/' + e.code : ''}`);
+    if (e.code === 'Space' && !e.repeat && !isTyping(e.target)) {
+      pressPedal(); e.preventDefault(); return;
+    }
+    const name = `${e.key === ' ' ? 'Space' : e.key}${e.code && e.code !== e.key ? '/' + e.code : ''}`;
+    probe(`key ${name}`);
+    if (isTyping(e.target)) return;
+    // Ctrl/Alt/Meta combinations belong to the browser, not the gearbox.
+    if (e.ctrlKey || e.altKey || e.metaKey) { record('key', name, false); return; }
+
+    const up = UP_KEYS.has(e.key) || UP_KEYS.has(e.code);
+    const down = DOWN_KEYS.has(e.key) || DOWN_KEYS.has(e.code);
+    record('key', name, up || down);
     if (!isManual()) return;
-    if (UP_KEYS.has(e.key) || UP_KEYS.has(e.code)) { doShift(1, 'key'); e.preventDefault(); }
-    else if (DOWN_KEYS.has(e.key) || DOWN_KEYS.has(e.code)) { doShift(-1, 'key'); e.preventDefault(); }
+    // Held keys must not machine-gun the box; doShift also holds a repeat lock,
+    // this stops the events before they get there.
+    if (e.repeat) { if (up || down) e.preventDefault(); return; }
+    if (up) { doShift(1, 'key'); e.preventDefault(); }
+    else if (down) { doShift(-1, 'key'); e.preventDefault(); }
   };
 
   const onKeyUp = (e) => {
@@ -462,6 +526,8 @@ export function startManualShift({ getGear, onGearChange, sim: simRefs, pedal: w
      * is not moving. The app applies this over the derived value.
      */
     throttleOverride: () => (pedal ? 1 : null),
+    /** Tally of every input seen this session — rides along in the drive trace. */
+    inputLog,
     destroy() {
       window.removeEventListener('wheel', onWheel);
       window.removeEventListener('keydown', onKey);

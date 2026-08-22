@@ -300,6 +300,11 @@ export function startDevTrace(getAudio, state, physics) {
         profile: state.profileId,
         summary: JSON.stringify({ ...s, worst: s.worst.slice(0, 8) }),
         rig: JSON.stringify(rig),
+        // What every control in the car actually emits. matched:false is the
+        // interesting half — a control the gearbox is ignoring.
+        inputs: JSON.stringify(
+          (window.TAS && window.TAS.manual && window.TAS.manual.inputLog)
+            ? window.TAS.manual.inputLog() : []),
         // Always. He taps just after hearing it, so this is the evidence;
         // the ranked list is context.
         tail: JSON.stringify(api.tail(6)),

@@ -165,11 +165,23 @@ function swing(mono, from, to) {
 }
 
 /**
- * An even-firing four-stroke fires `cylinders` times per 720 degrees, so every
- * harmonic of the table that carries energy should be a multiple of the
- * cylinder count. Anything else is off-order, and at cruise the table repeats
- * at rpm/120 — so a first harmonic puts 15-30 Hz into the cabin, which reads as
- * flutter rather than tone.
+ * An even-firing four-stroke fires `cylinders` times per 720 degrees, so a
+ * table with perfectly identical pulses carries energy ONLY on multiples of the
+ * cylinder count. Anything else is off-order: at cruise the table repeats at
+ * rpm/120, so a first harmonic puts 15-30 Hz into the cabin.
+ *
+ * READ THIS BEFORE CALLING IT A BUG. Off-order energy is not automatically a
+ * defect — it is what makes a four sound like a four instead of a synth. Real
+ * cylinders are not identical, and build-crank models that: the I4 tables set
+ * cylinders 2 and 3 to 0.94 because the inner runners are longer on a 4-into-1
+ * header. That single line is the whole of civic's -15.5 dB; set the pulses
+ * equal and it drops to -240, i.e. exactly zero.
+ *
+ * So use this to spot the UNEXPLAINED. jz reads -66.7 because an I6 is modelled
+ * as balanced; civic reads -15.5 on purpose, and its measured cruise swing
+ * (1.1 dB) is better than jz's. A number here is a question, not a verdict —
+ * and this comment exists because the first reading of it produced two wrong
+ * diagnoses in one day.
  */
 export function offOrder(doc) {
   const cyl = doc.spec.cylinders;
