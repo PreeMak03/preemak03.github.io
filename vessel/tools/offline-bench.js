@@ -30,9 +30,10 @@
  *
  * USAGE, in the page console:
  *   const b = await import('/vessel/tools/offline-bench.js');
- *   await b.runAll();                 // every CRANK profile
- *   await b.run('jz-crank');          // one
- *   await b.compare('jz-crank', (v) => {   // measure a change against today
+ *   await b.runAll();                          // classic + both CRANK
+ *   await b.runAll(null, 'full');              // same, driven flat out
+ *   await b.run('jz-crank');                   // one
+ *   await b.compare('jz-crank', (v) => {       // measure a change against today
  *     v.oscL.detune.value = -5;
  *     v.oscR.detune.value = 5;
  *     v.preShape.gain.value = 1;
@@ -46,12 +47,13 @@
  *                be before the wall grabs it.
  *   clipPct      samples at full scale. Classic runs 0.
  *   offOrder     static wavetable check: energy on harmonics that are not
- *                multiples of the cylinder count. An even-firing four has no
- *                first harmonic; if it does, someone put burble on an engine
- *                that has none, and a flutter in the bass with it.
+ *                multiples of the cylinder count. A question, never a verdict —
+ *                some of it is deliberate and correct. Read the note on the
+ *                function before calling any of it a bug.
  */
 
 import { CrankAudio } from '/js/crank-audio.js';
+import { AudioEngine } from '/js/audio-engine.js';
 import { getProfileById } from '/js/profiles.js';
 import { VehiclePhysics } from '/js/vehicle-physics.js';
 
@@ -76,16 +78,29 @@ const dbOf = (x) => 20 * Math.log10(Math.max(1e-9, x));
  * 0.7 s is the starter motor cranking at 240 rpm, which is not idle and would
  * dominate the idle numbers.
  */
-const SCRIPT = [
-  { from: 1.2, until: 3,  phase: 'idle',   target: () => 0 },
-  { from: 3.4, until: 10, phase: 'pull',   target: (t) => Math.min(112, (t - 3) * 16) },
-  { from: 10.4, until: 15, phase: 'cruise', target: () => 112 },
-  { from: 15.4, until: 19, phase: 'lift',   target: () => 40 },
-];
+const SCRIPTS = {
+  // How he actually drives. Peaks here are the peaks he hears.
+  owner: [
+    { from: 1.2, until: 3,  phase: 'idle',   target: () => 0 },
+    { from: 3.4, until: 10, phase: 'pull',   target: (t) => Math.min(112, (t - 3) * 16) },
+    { from: 10.4, until: 15, phase: 'cruise', target: () => 112 },
+    { from: 15.4, until: 19, phase: 'lift',   target: () => 40 },
+  ],
+  // Everything the physics will give, for headroom questions only. A headroom
+  // claim measured on a gentle drive is how "4-8 dB spare" got reported once
+  // and was wrong: the loud case was never rendered.
+  full: [
+    { from: 1.2, until: 3,  phase: 'idle',   target: () => 0 },
+    { from: 3.2, until: 10, phase: 'pull',   target: () => 180 },
+    { from: 10.4, until: 15, phase: 'cruise', target: () => 180 },
+    { from: 15.4, until: 19, phase: 'lift',   target: () => 40 },
+  ],
+};
+const SCRIPT = SCRIPTS.owner;
 
-function phaseAt(t) {
-  for (const s of SCRIPT) if (t < s.until) return s;
-  return SCRIPT[SCRIPT.length - 1];
+function phaseAt(t, script) {
+  for (const s of script) if (t < s.until) return s;
+  return script[script.length - 1];
 }
 
 /** Assert the render actually exercised the engine, rather than reporting on a
@@ -110,12 +125,19 @@ function assertDriven(log, spec) {
  * after the graph is built, which is how a before/after gets measured without
  * editing source between the two runs.
  */
-export async function render(profileId, tweak) {
+export async function render(profileId, tweak, scriptName = 'owner') {
+  const script = SCRIPTS[scriptName] || SCRIPTS.owner;
+  const profile = getProfileById(profileId);
+  if (!profile) throw new Error(`no such profile: ${profileId}`);
   const oc = new OfflineAudioContext(2, SR * SECS, SR);
-  const audio = new CrankAudio();
-  audio.setProfile(getProfileById(profileId));
+  // CRANK ticks _tick(dt); classic ticks update(dt). Same seam, different name.
+  const isCrank = !!profile.crank;
+  const audio = isCrank ? new CrankAudio() : new AudioEngine();
+  audio.setProfile(profile);
   await audio.start({ ctx: oc, manualTick: true });
-  if (tweak) for (const k of Object.keys(audio._voices)) tweak(audio._voices[k], audio);
+  const tick = isCrank ? (dt) => audio._tick(dt) : (dt) => audio.update(dt);
+  if (tweak && audio._voices) for (const k of Object.keys(audio._voices)) tweak(audio._voices[k], audio);
+  else if (tweak) tweak(null, audio);
 
   const dt = STEP / SR;
   const physics = new VehiclePhysics();
@@ -123,7 +145,7 @@ export async function render(profileId, tweak) {
   for (let f = 0; f + STEP <= SR * SECS; f += STEP) {
     const t = f / SR;
     oc.suspend(t).then(() => {
-      const ph = phaseAt(t);
+      const ph = phaseAt(t, script);
       physics.setTarget(Math.max(0, ph.target(t)));
       const p = physics.update(dt);
       audio.setSpeed(p.speed, {
@@ -131,15 +153,17 @@ export async function render(profileId, tweak) {
         brake: p.brake,
         accelKmhps: p.accelKmhps,
       });
-      audio._tick(dt);
+      tick(dt);
       log.push({ t, phase: ph.phase, rpm: audio.rpm, speed: p.speed, accel: p.accelKmhps });
       oc.resume();
     });
   }
   const buf = await oc.startRendering();
   audio.running = false;                 // never stop(): the context is not ours
-  assertDriven(log, audio._spec);
-  return { buf, log, audio };
+  assertDriven(log, audio._spec || {
+    redlineRpm: (profile.engine && profile.engine.redlineRpm) || 7000,
+  });
+  return { buf, log, audio, isCrank, script };
 }
 
 /** Level-modulation depth over a 0.5 s window — the metric the car reports. */
@@ -206,8 +230,8 @@ export function offOrder(doc) {
   };
 }
 
-export async function run(profileId, tweak) {
-  const { buf, log } = await render(profileId, tweak);
+export async function run(profileId, tweak, scriptName = 'owner') {
+  const { buf, log, isCrank, script } = await render(profileId, tweak, scriptName);
   const L = buf.getChannelData(0), R = buf.getChannelData(1);
   const mono = new Float32Array(L.length);
   for (let i = 0; i < L.length; i++) mono[i] = (L[i] + R[i]) * 0.5;
@@ -222,14 +246,20 @@ export async function run(profileId, tweak) {
   const rms = Math.sqrt(sum / mono.length);
 
   const swingDb = {};
-  for (const s of SCRIPT) {
+  for (const s of script) {
     swingDb[s.phase] = swing(mono, Math.floor(s.from * SR), Math.floor(s.until * SR));
   }
   const drivenRpm = log.filter((x) => x.t > 1.2).map((x) => x.rpm).filter(Number.isFinite);
-  const doc = await (await fetch(`/assets/crank/${profileId.replace('-crank', '')}.crank.json`)).json();
+  // offOrder reads a compiled firing table, which only CRANK profiles have.
+  let oo = null;
+  if (isCrank) {
+    const doc = await (await fetch(`/assets/crank/${profileId.replace('-crank', '')}.crank.json`)).json();
+    oo = offOrder(doc);
+  }
 
   return {
     profile: profileId,
+    drive: scriptName,
     rpmRange: [Math.round(Math.min(...drivenRpm)), Math.round(Math.max(...drivenRpm))],
     topSpeed: Math.round(Math.max(...log.map((x) => x.speed))),
     swingDb,
@@ -237,7 +267,7 @@ export async function run(profileId, tweak) {
     crestDb: +dbOf(peak / rms).toFixed(1),
     peak: +peak.toFixed(3),
     clipPct: +((clipped / mono.length) * 100).toFixed(3),
-    offOrder: offOrder(doc),
+    offOrder: oo,
   };
 }
 
@@ -262,7 +292,7 @@ export async function compare(profileId, before, { repeats = 3 } = {}) {
   const A = await side(before);
   const B = await side(null);
 
-  const phases = SCRIPT.map((s) => s.phase);
+  const phases = SCRIPTS.owner.map((s) => s.phase);
   const swing = {};
   for (const p of phases) {
     const a = A.map((r) => r.swingDb[p].p50);
@@ -290,9 +320,18 @@ export async function compare(profileId, before, { repeats = 3 } = {}) {
   };
 }
 
-export async function runAll() {
+/**
+ * Every profile the bench can drive, CRANK and classic alike. classic is where
+ * most users actually live and had never been measured this way — the whole
+ * judder hunt compared CRANK against a reference nobody had put on a bench.
+ */
+export async function runAll(ids, scriptName = 'owner') {
+  const list = ids || ['classic-muscle', 'jz-crank', 'civic-crank'];
   const out = [];
-  for (const id of ['jz-crank', 'civic-crank']) out.push(await run(id));
+  for (const id of list) {
+    try { out.push(await run(id, null, scriptName)); }
+    catch (e) { out.push({ profile: id, error: String(e.message || e) }); }
+  }
   return out;
 }
 

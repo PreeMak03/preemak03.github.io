@@ -148,10 +148,21 @@ export class AudioEngine {
     return curve;
   }
 
-  async init() {
+  /**
+   * @param {BaseAudioContext} [borrowed]  build into this instead of opening a
+   *   live output. An OfflineAudioContext here renders the real graph faster
+   *   than real time — see vessel/tools/offline-bench.js. The graph is
+   *   identical either way; only who owns the context changes.
+   */
+  async init(borrowed) {
     if (this.ctx) return;
-    const AC = window.AudioContext || window.webkitAudioContext;
-    this.ctx = new AC({ latencyHint: 'interactive' });
+    if (borrowed) {
+      this.ctx = borrowed;
+      this._borrowedCtx = true;
+    } else {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new AC({ latencyHint: 'interactive' });
+    }
 
     this.master = this.ctx.createGain();
     this.master.gain.value = 0;
@@ -843,18 +854,25 @@ export class AudioEngine {
     this._pack = pack;
   }
 
-  async resume() {
-    if (!this.ctx) await this.init();
-    if (this.ctx.state === 'suspended') await this.ctx.resume();
+  async resume(borrowed) {
+    if (!this.ctx) await this.init(borrowed);
+    // An offline context is 'suspended' until startRendering; resuming it here
+    // would begin the render before the caller has scheduled anything.
+    if (!this._borrowedCtx && this.ctx.state === 'suspended') await this.ctx.resume();
   }
 
-  async start() {
-    await this.resume();
+  /**
+   * @param {object} [opts]
+   * @param {BaseAudioContext} [opts.ctx]        render into a borrowed context
+   * @param {boolean} [opts.manualTick]  caller drives update(dt) itself
+   */
+  async start(opts = {}) {
+    await this.resume(opts.ctx);
     if (this.running) return;
     if (!this._layers) this._rebuildLayers();
     this.running = true;
     this._lastUpdateWall = performance.now();
-    this._startUpdateLoop();
+    if (!opts.manualTick) this._startUpdateLoop();
     this._syncWaveguidePresence();
     const t = this.ctx.currentTime;
     this.master.gain.cancelScheduledValues(t);
@@ -946,10 +964,14 @@ export class AudioEngine {
     // null, and start() rebuilds layers when they are null, so the engine comes
     // back cleanly on the next start.
     const dying = this.ctx;
+    const mine = !this._borrowedCtx;
     this.ctx = null;
+    this._borrowedCtx = false;
     this._layers = null;
     this._sampleLayers = null;
-    setTimeout(() => { try { dying.close(); } catch (_) {} }, 450);
+    // A borrowed context belongs to whoever lent it — closing it here would
+    // kill a render still in flight.
+    if (mine) setTimeout(() => { try { dying.close(); } catch (_) {} }, 450);
   }
 
   /**
