@@ -112,20 +112,21 @@ const DEFAULT_DRIVE = {
   // smoothing was wired to a different wire — which is why rate-limiting
   // _effort changed the onset by 1 ms.
   loadAttackSec: 0.3,
-  // Multiplies the accel input filter. 0.12 takes lambda 18 to 2.2, a time
-  // constant of 56 ms to 463 ms. Swept against the two things that compete:
+  // Multiplies the accel input filter — 0.2 takes lambda 18 to 3.6, a time
+  // constant of 56 ms to 278 ms.
   //
-  //     tau      1 Hz scatter      level response   rpm response
-  //      56 ms      6.43 dB            128 ms          139 ms
-  //     278         4.93              130             139
-  //     463         4.34              130             139
-  //     694         4.48              122             139
+  //     tau       1 Hz scatter    pull swing (3 runs)   rpm response
+  //      56 ms       6.43 dB          5.0                 139 ms
+  //     168          5.70             5.0                 139
+  //     278          4.93             5.1                 139
+  //     463          4.34             5.3                 139
   //
-  // 2.1 dB of judder for nothing measurable. Response is flat because the
-  // throttle term of accelLoad does not pass through this filter at all — only
-  // the accel-derived half does — so slowing it cannot slow the arrival. Past
-  // 463 ms it stops improving.
-  accelSmoothMul: 0.12,
+  // 278 ms is where the gain is real and the cost is still nothing: 1.5 dB less
+  // judder, pull unchanged inside its own spread. 463 ms buys another 0.6 dB and
+  // starts charging 0.3 for it. Response never moves, because the throttle half
+  // of accelLoad does not pass through this filter — only the accel-derived half
+  // does — so slowing it cannot slow the arrival.
+  accelSmoothMul: 0.2,
 };
 /**
  * Cabin staging. These are the classic engine's own numbers — the brief was to
