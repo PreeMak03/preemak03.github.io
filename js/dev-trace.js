@@ -275,6 +275,22 @@ export function startDevTrace(getAudio, state, physics) {
           })),
         });
       }
+      // What machine produced these numbers. Without it every claim about the
+      // car's performance is a guess, and any attempt to reproduce it on a
+      // desktop is emulating an unmeasured target. Cheap, and it only ships in
+      // the trace payload.
+      const au = getAudio && getAudio();
+      const ac = au && au.ctx;
+      const rig = {
+        ua: navigator.userAgent,
+        cores: navigator.hardwareConcurrency || null,
+        memGb: navigator.deviceMemory || null,
+        screen: `${screen.width}x${screen.height}@${devicePixelRatio}`,
+        sampleRate: ac ? ac.sampleRate : null,
+        baseLatencyMs: ac && ac.baseLatency != null ? +(ac.baseLatency * 1000).toFixed(1) : null,
+        outputLatencyMs: ac && ac.outputLatency != null ? +(ac.outputLatency * 1000).toFixed(1) : null,
+        build: (document.querySelector('.build-stamp') || {}).textContent || null,
+      };
       const body = {
         access_key: 'b0c38acf-3953-4910-9fbb-290ad09af3a5',
         subject: 'TAS drive trace — ' + (state.profileId || '?'),
@@ -283,6 +299,7 @@ export function startDevTrace(getAudio, state, physics) {
         message: note || 'drive trace',
         profile: state.profileId,
         summary: JSON.stringify({ ...s, worst: s.worst.slice(0, 8) }),
+        rig: JSON.stringify(rig),
         // Always. He taps just after hearing it, so this is the evidence;
         // the ranked list is context.
         tail: JSON.stringify(api.tail(6)),

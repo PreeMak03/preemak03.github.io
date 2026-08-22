@@ -532,8 +532,30 @@ export class CrankAudio {
     const oscWhistle = ctx.createOscillator();
     oscMech.type = 'sawtooth';
     oscWhistle.type = 'sine';
-    oscL.detune.value = -5;   // the two banks beat slightly against each other
-    oscR.detune.value = 5;
+    // Both banks play the SAME table into the SAME mono shaper, so a detune here
+    // was never stereo width -- it was a tremolo. Ten cents apart makes the
+    // firing harmonics beat at 0.6-2.3 Hz, and that is the judder: an offline
+    // render of this exact table at 2000 rpm predicts 7.8 dB of level swing,
+    // against 7.7 dB measured in the car. It is worst at steady cruise, where
+    // the beat stays coherent, and hides while the pitch is sweeping -- which is
+    // why it read as "smooth sometimes" and never as an overload. Two identical
+    // waves cancel at SOME rate for any detune, so zero is the only stable
+    // answer. Real width needs decorrelated tables; waves.right is the hook.
+    oscL.detune.value = 0;
+    oscR.detune.value = 0;
+
+    // Coherent banks sum to 2.0 peak where the beating pair averaged 1.41 rms.
+    // Without this trim the shaper gets driven 3 dB harder and the engine comes
+    // back 3 dB louder than the level the owner tuned by driving. 0.707 puts
+    // the rms back on top of the old one on paper; an OfflineAudio render through
+    // the real rasp curve says 0.645, because the shaper was already clipping the
+    // loud half of the beat and the arithmetic cannot see that. It saturates hard
+    // enough that the last 0.8 dB of trim only bought 0.2 dB of output, so the
+    // patch lands +0.6 dB rather than dead level -- under the threshold anyone
+    // re-tunes for, and peak is unchanged, so no new clipping. Chasing the rest
+    // would mean backing off the shaper, which is the rasp itself.
+    const preShape = ctx.createGain();
+    preShape.gain.value = 0.645;
 
     const shape = ctx.createWaveShaper();
     shape.oversample = '2x';
@@ -576,8 +598,9 @@ export class CrankAudio {
     const voiceGain = ctx.createGain(); voiceGain.gain.value = 0;
     const sum = ctx.createGain();
 
-    oscL.connect(shape);
-    oscR.connect(shape);
+    oscL.connect(preShape);
+    oscR.connect(preShape);
+    preShape.connect(shape);
     shape.connect(dry);
     shape.connect(delay);
     delay.connect(delayGain);
@@ -595,7 +618,7 @@ export class CrankAudio {
 
     return {
       oscL, oscR, oscIntake, oscMech, oscWhistle,
-      shape, exhaustLp, peak1, peak2, delay, delayGain, dry, exhaustGain,
+      preShape, shape, exhaustLp, peak1, peak2, delay, delayGain, dry, exhaustGain,
       panL, panR, intakeBp, intakeGain, combBp, combGain,
       mechHp, mechGain, turboBp, turboGain, whistleGain, sum, voiceGain,
     };
