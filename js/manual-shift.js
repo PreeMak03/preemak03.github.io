@@ -439,9 +439,10 @@ export function startManualShift({ getGear, onGearChange, sim: simRefs, pedal: w
     // Recorded by axis and mode, not by magnitude: a hundred different pixel
     // values are one fact, and which axis and mode the hardware uses is the
     // fact worth carrying home.
-    record('wheel', `${Math.abs(dy) >= Math.abs(dx) ? 'Y' : 'X'}${d > 0 ? '+' : '-'}/mode${e.deltaMode}`, true);
-    if (isTyping(e.target)) return;
-    if (!isManual()) return;
+    const axis = `${Math.abs(dy) >= Math.abs(dx) ? 'Y' : 'X'}${d > 0 ? '+' : '-'}/mode${e.deltaMode}`;
+    if (isTyping(e.target)) { record('wheel', `${axis} [in a text field]`, false); return; }
+    if (!isManual()) { record('wheel', `${axis} [not in manual]`, false); return; }
+    record('wheel', axis, true);
     // The carousel exclusion is gone. It was there so a wheel over the profile
     // strip would scroll it, but manual mode is engaged deliberately and a
     // driver turning the wheel means gears, not browsing.
@@ -490,9 +491,20 @@ export function startManualShift({ getGear, onGearChange, sim: simRefs, pedal: w
    * Typing must not change gear. Without this, the wide net above turns the
    * feedback box and the speed field into a gearbox.
    */
-  const isTyping = (el) => !!el && (
-    el.isContentEditable ||
-    /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName || ''));
+  // TEXT ENTRY only. The first version matched any INPUT, and the sim speed
+  // control is <input type="range"> — so once that had focus or sat under the
+  // pointer, every shift input was dropped in silence while the on-screen
+  // paddles, which never reach this code, carried on working. Exactly the shape
+  // of "the wheel does nothing but the buttons do".
+  const TEXTY = /^(text|search|url|tel|email|password|number|date|time|month|week|datetime-local)$/;
+  const isTyping = (el) => {
+    if (!el) return false;
+    if (el.isContentEditable) return true;
+    const tag = el.tagName || '';
+    if (tag === 'TEXTAREA') return true;
+    if (tag === 'INPUT') return TEXTY.test((el.type || 'text').toLowerCase());
+    return false;   // range, checkbox, button, select — not typing
+  };
 
   const onKey = (e) => {
     // The pedal works whenever the harness is mounted — it is how the sim is
@@ -502,12 +514,13 @@ export function startManualShift({ getGear, onGearChange, sim: simRefs, pedal: w
     }
     const name = `${e.key === ' ' ? 'Space' : e.key}${e.code && e.code !== e.key ? '/' + e.code : ''}`;
     probe(`key ${name}`);
-    if (isTyping(e.target)) return;
-    // Ctrl/Alt/Meta combinations belong to the browser, not the gearbox.
-    if (e.ctrlKey || e.altKey || e.metaKey) { record('key', name, false); return; }
-
     const up = UP_KEYS.has(e.key) || UP_KEYS.has(e.code);
     const down = DOWN_KEYS.has(e.key) || DOWN_KEYS.has(e.code);
+    // Recorded BEFORE every guard, and with the reason it was dropped. The last
+    // trace could not tell "the wheel sent nothing" apart from "we threw it
+    // away", which is the difference between a car problem and a bug here.
+    if (isTyping(e.target)) { record('key', `${name} [in a text field]`, false); return; }
+    if (e.ctrlKey || e.altKey || e.metaKey) { record('key', `${name} [modifier]`, false); return; }
     record('key', name, up || down);
     if (!isManual()) return;
     // Held keys must not machine-gun the box; doShift also holds a repeat lock,

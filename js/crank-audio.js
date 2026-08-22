@@ -1311,9 +1311,25 @@ export class CrankAudio {
         // target can never cancel the drop the way it did before this was a
         // teleport.
         if (this._shiftLand != null) {
-          targetRpm = this._shiftUp
+          // EASE THE CONSTRAINT OUT — do not drop it.
+          //
+          // Pinning the target at the landing rpm and then releasing it in one
+          // tick puts a corner in the rev line, and five drives' worth of traces
+          // found exactly that: pooled over 6,671 samples, roughness peaks 0.2
+          // to 0.4 s after EVERY gear change (p50 7.1 against a 1.3 baseline at
+          // +0.8 s) and shiftLandSec is 0.3. Rendered, the revs fall to the
+          // landing value, sit flat on it, then turn up hard the tick it
+          // expires: 2651, 1994, 1990, 1993, 2001, 2123, 2218.
+          //
+          // Smoothstep has zero slope at both ends, so the constraint arrives
+          // and leaves without a kink and the rev line curves out of the shift
+          // instead of cornering out of it.
+          const w = clamp(this._shiftLandT / Math.max(0.01, d.shiftLandSec ?? 0.3), 0, 1);
+          const ease = smoothstep(0, 1, w);
+          const pinned = this._shiftUp
             ? Math.min(targetRpm, this._shiftLand)
             : Math.max(targetRpm, this._shiftLand);
+          targetRpm = targetRpm + (pinned - targetRpm) * ease;
         }
         // Angular inertia. damp() alone will happily jump thousands of rpm in one
         // tick when the demand steps; a real crank + flywheel cannot. Off boost a

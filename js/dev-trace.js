@@ -289,7 +289,11 @@ export function startDevTrace(getAudio, state, physics) {
         sampleRate: ac ? ac.sampleRate : null,
         baseLatencyMs: ac && ac.baseLatency != null ? +(ac.baseLatency * 1000).toFixed(1) : null,
         outputLatencyMs: ac && ac.outputLatency != null ? +(ac.outputLatency * 1000).toFixed(1) : null,
-        build: (document.querySelector('.build-stamp') || {}).textContent || null,
+        // #app-build, not '.build-stamp' — the first guess matched nothing, so
+        // five drives came back with build: null and no way to tell which code
+        // produced them. #app-ver is the release, #app-build the commit.
+        build: ((document.querySelector('#app-build') || {}).textContent || '').trim() || null,
+        ver: ((document.querySelector('#app-ver') || {}).textContent || '').trim() || null,
       };
       const body = {
         access_key: 'b0c38acf-3953-4910-9fbb-290ad09af3a5',
