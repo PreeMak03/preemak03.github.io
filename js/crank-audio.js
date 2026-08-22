@@ -1123,11 +1123,30 @@ export class CrankAudio {
           this._shiftTimer = up ? 0.12 : 0.09;
           // The rpm snap below is a step change. Let the pitch WALK to it.
           this._glideHold = d.glideHoldSec;
-          if (up) {
-            this._rpm = shiftLandingRpm(this._gear, idle, redline, d.revLo);
-          } else if (accelLoad > 0.25) {
-            const land = idle + span * Math.min(0.95, d.revHi * 0.9);
-            this._rpm = Math.min(redline * 0.95, Math.max(this._rpm, land));
+          // NOT IN MANUAL. These snaps belong to the automatic, whose revs come
+          // from load: after an upshift it lands just above revLo and that is a
+          // fair guess because nothing else decides. In manual the RATIO decides
+          // — rpmInGearManual already returns speed/vmax * redline, the true new
+          // rev for the gear just selected — so assigning a fixed number here
+          // does not help it, it fights it.
+          //
+          // shiftLandingRpm ignores gear and speed alike and returns
+          // idle + (redline - idle) * (revLo + 0.03), which on the 1JZ is 1975
+          // whatever is happening. Shift up at 7000 and the rev line teleports
+          // to 28% of where it was in a single tick, and the ratio model hauls
+          // it straight back. Measured through a scripted manual upshift, that
+          // came out at -1013 st/s, unchanged by every fall-rate cap because an
+          // assignment is not a rate. It is the snatch he heard at the change.
+          //
+          // The gain duck and the glide hold stay: torque really is interrupted
+          // in manual too. Only the teleport goes.
+          if (!isManual()) {
+            if (up) {
+              this._rpm = shiftLandingRpm(this._gear, idle, redline, d.revLo);
+            } else if (accelLoad > 0.25) {
+              const land = idle + span * Math.min(0.95, d.revHi * 0.9);
+              this._rpm = Math.min(redline * 0.95, Math.max(this._rpm, land));
+            }
           }
         }
         this._gearBias = gearToneBias(this._gear);

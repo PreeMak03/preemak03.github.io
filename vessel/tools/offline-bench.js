@@ -56,6 +56,7 @@ import { CrankAudio } from '/js/crank-audio.js';
 import { AudioEngine } from '/js/audio-engine.js';
 import { getProfileById } from '/js/profiles.js';
 import { VehiclePhysics } from '/js/vehicle-physics.js';
+import { engageManual, releaseManual, shiftManual } from '/js/gearbox.js';
 
 const SR = 48000;
 const QUANTUM = 128;
@@ -85,6 +86,15 @@ const SCRIPTS = {
     { from: 3.4, until: 10, phase: 'pull',   target: (t) => Math.min(112, (t - 3) * 16) },
     { from: 10.4, until: 15, phase: 'cruise', target: () => 112 },
     { from: 15.4, until: 19, phase: 'lift',   target: () => 40 },
+  ],
+  // Manual mode, which had never been benched at all despite being live for
+  // users. `shifts` are {t, dir}; `lift` is how long the throttle is off around
+  // each one, because whether the driver lifts to shift decides which fall rate
+  // applies and that is the whole question.
+  manual: [
+    { from: 1.2, until: 3,  phase: 'idle',   target: () => 0 },
+    { from: 3.4, until: 16, phase: 'pull',   target: (t) => Math.min(150, (t - 3) * 16) },
+    { from: 16.4, until: 19, phase: 'lift',   target: () => 40 },
   ],
   // Everything the physics will give, for headroom questions only. A headroom
   // claim measured on a gentle drive is how "4-8 dB spare" got reported once
@@ -125,8 +135,14 @@ function assertDriven(log, spec) {
  * after the graph is built, which is how a before/after gets measured without
  * editing source between the two runs.
  */
+const MANUAL_SHIFTS = [
+  { t: 5.5, dir: 1 }, { t: 8.0, dir: 1 }, { t: 10.5, dir: 1 }, { t: 13.0, dir: 1 },
+];
+const MANUAL_LIFT_S = 0.35;   // throttle off around each shift, as a driver does
+
 export async function render(profileId, tweak, scriptName = 'owner') {
   const script = SCRIPTS[scriptName] || SCRIPTS.owner;
+  const manual = scriptName === 'manual';
   const profile = getProfileById(profileId);
   if (!profile) throw new Error(`no such profile: ${profileId}`);
   const oc = new OfflineAudioContext(2, SR * SECS, SR);
@@ -142,23 +158,33 @@ export async function render(profileId, tweak, scriptName = 'owner') {
   const dt = STEP / SR;
   const physics = new VehiclePhysics();
   const log = [];
+  if (manual) engageManual(1);
+  const shifted = new Set();
   for (let f = 0; f + STEP <= SR * SECS; f += STEP) {
     const t = f / SR;
     oc.suspend(t).then(() => {
       const ph = phaseAt(t, script);
       physics.setTarget(Math.max(0, ph.target(t)));
       const p = physics.update(dt);
-      audio.setSpeed(p.speed, {
-        throttle: p.throttle,
-        brake: p.brake,
-        accelKmhps: p.accelKmhps,
-      });
+      let thr = p.throttle;
+      let acc = p.accelKmhps;
+      if (manual) {
+        for (const sh of MANUAL_SHIFTS) {
+          if (t >= sh.t && !shifted.has(sh.t)) { shiftManual(sh.dir); shifted.add(sh.t); }
+          // The driver lifts across the shift. accel has to go with the pedal,
+          // or the engine is told the car is still pulling while the throttle
+          // is shut and the blip path never arms.
+          if (Math.abs(t - sh.t) < MANUAL_LIFT_S) { thr = 0; acc = Math.min(acc, 0); }
+        }
+      }
+      audio.setSpeed(p.speed, { throttle: thr, brake: p.brake, accelKmhps: acc });
       tick(dt);
       log.push({ t, phase: ph.phase, rpm: audio.rpm, speed: p.speed, accel: p.accelKmhps });
       oc.resume();
     });
   }
   const buf = await oc.startRendering();
+  if (manual) releaseManual();
   audio.running = false;                 // never stop(): the context is not ours
   assertDriven(log, audio._spec || {
     redlineRpm: (profile.engine && profile.engine.redlineRpm) || 7000,
