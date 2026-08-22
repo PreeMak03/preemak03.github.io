@@ -5,6 +5,8 @@
  */
 export const CRANK_RIGS = {
   'jz-crank': 'assets/crank/jz.crank.json',
+  // Same compiled table as jz-crank; the two cards differ only by crankSub.
+  'jz-plus': 'assets/crank/jz.crank.json',
   'civic-crank': 'assets/crank/civic.crank.json',
 };
 

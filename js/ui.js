@@ -119,7 +119,9 @@ export function renderProfiles(scroller, activeId, onSelect) {
     // ear. Keyed off the profile's own kind, so a future CRANK profile gets
     // the badge without anyone remembering to add it — and drops it by
     // deleting one field when the type is finished.
-    const wip = (p.engine === 'crank' || p.kind === 'crank' ||
+    // p.crank is the flag the rest of the app dispatches on; matching the id
+    // text alone missed jz-plus, a CRANK card whose id does not say so.
+    const wip = (p.crank === true || p.engine === 'crank' || p.kind === 'crank' ||
                  String(p.id).includes('crank')) && p.wip !== false;
     card.innerHTML = `
       ${artSvg(p.id)}

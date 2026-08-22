@@ -942,6 +942,53 @@ export const SOUND_PROFILES = [
     },
     mix: { master: 100, bass: 50, edge: 50 },
   },
+  /* ---------------------------------------------------------------- CRANK+ --
+   * Same compiled table as jz-crank, same everything, plus the body layer.
+   *
+   * The owner's report was that CRANK arrives from the front console while
+   * classic fills the car. Measured, classic's loudest band is 60-120 Hz and
+   * CRANK is 34 dB down there — below roughly 120 Hz the ear stops placing a
+   * source, so that band is the whole-car half of the sound and CRANK does not
+   * generate it (see DEFAULT_SUB in crank-audio.js).
+   *
+   * It ships as its OWN CARD rather than a change to jz-crank, because he gets
+   * about two test drives in a day and a separate card turns a whole trip into
+   * one tap: same road, same minute, A against B. jz-crank stays untouched, so
+   * whatever he decides, nothing already tuned is at risk.
+   */
+  {
+    id: 'jz-plus',
+    name: '1JZ · CRANK+',
+    tag: 'Turbo I6 · full cabin',
+    car: 'Toyota JZA70 / JZX90 · 1JZ-GTE',
+    accent: 'rgba(244, 164, 66, 0.55)',
+    crank: true,
+    // 3.5 puts 60-120 Hz at -16.8 dB against classic's -12.6 and jz-crank's
+    // -26.6, measured on the offline bench: about ten of the fourteen dB, with
+    // peak 0.666 against classic's 0.952 and no clipping. Deliberately short of
+    // matching — too much bass in a car is far harder to live with than too
+    // little, and this is a voicing call only the owner can settle on a road.
+    crankSub: { mix: 3.5 },
+    engine: {
+      type: 'ice',
+      cylinders: 6,
+      idleRpm: 750,
+      redlineRpm: 7200,
+      gears: [3.5, 2.2, 1.5, 1.15, 0.9],
+      rpmCurve: 0.88,
+      revLo: 0.16,
+      revHi: 0.52,
+      revPull: 0.88,
+    },
+    tone: {
+      harmonics: [0, 1, 0.86, 0.6, 0.42, 0.3, 0.24, 0.2, 0.16, 0.13, 0.1, 0.08, 0.07],
+      body: 0.86, mid: 0.55, high: 0.28, sub: 0.7, noise: 0.14, metallic: 0.12, scream: 0.15,
+      turbo: 0.85, turboLag: 0.55, crackle: 0.08, lope: 0.06, boxer: 0, rotary: 0, electric: 0,
+      exhaustPulse: 0.6, drive: 0.3, filterIdle: 300, filterRedline: 3600, resonance: 0.5,
+      volume: 1, idlePresence: 0.72, characterMid: 0.6,
+    },
+    mix: { master: 100, bass: 50, edge: 50 },
+  },
   /* -------------------------------------------------------------- TURBINE --
    * A gas turbine, not a piston engine (js/turbine-audio.js). No firing order
    * and no gearbox — shaft speed follows road speed continuously. engine{} is
@@ -1025,6 +1072,7 @@ export const SHIP_ACTIVE_IDS = [
   'camaro-restomod',
   'turbine-jet',
   'jz-crank',
+  'jz-plus',
   'civic-crank',
   'camaro-vessel',
   'gentle-vessel',

@@ -107,6 +107,59 @@ const DEFAULT_SPACE = {
   frontGain: 0.9, reverbSec: 0.3, reverbDecay: 3.2, reverbWet: 0.22, frontSend: 0.45,
 };
 
+/**
+ * BODY LAYER — off by default, and jz-crank never turns it on.
+ *
+ * The owner's report: CRANK sounds like it comes from the front console while
+ * classic fills the whole car. Measured at cruise, both at the same setting:
+ *
+ *     band        classic   jz-crank
+ *     60-120 Hz    -10.5      -44.3     <- classic's loudest band, and CRANK's
+ *     120-250      -22.0      -16.8        emptiest. 34 dB apart.
+ *     500-1k       -39.2      -31.7
+ *
+ * Below ~120 Hz the ear cannot place a source, so that band is felt rather than
+ * located — it is the whole-car half of the sound. CRANK puts its energy an
+ * octave up, where localisation is sharp, and lands on the dashboard.
+ *
+ * It is NOT a stereo problem: measured side energy is -21.6 dB on CRANK against
+ * -28 dB on classic, so CRANK is already the wider of the two. And it is not
+ * the cabin staging, which is classic's own and sends everything under 420 Hz
+ * to the rear HRTF with 1.45x gain. The band simply is not generated. classic
+ * has a dedicated sub oscillator for exactly this (audio-engine.js: "let the
+ * CLEAN sub oscillator carry the body"); CRANK has one wavetable and no body.
+ *
+ * So this ports that one layer rather than running a second engine beside the
+ * first — one sine and one gain against a whole extra graph and tick on an MCU
+ * that is already the tightest constraint here. The laws below are classic's,
+ * copied not reinvented.
+ */
+const DEFAULT_SUB = {
+  mix: 0,          // 0 disables it entirely; the oscillator is never started
+  // WHICH partial to lay down, in 720-degree table harmonics (n * rpm/120).
+  //
+  // 0 means an octave below the firing order — n = cylinders/2 — and the route
+  // to that number is worth keeping, because two wrong answers came first.
+  //
+  // Porting classic's law verbatim put it at 43 Hz. Chasing classic's loud
+  // 60-120 Hz band instead put it on the firing order, and that measured as
+  // landing in 120-250: at 112 km/h jz turns fast enough that its fundamental
+  // is near 140 Hz. Which is the whole finding. At the same road speed CRANK's
+  // fundamental sits most of an octave above classic's, straddling the ~120 Hz
+  // line where the ear starts placing a source — so classic is felt and CRANK
+  // is pointed at. Reinforcing the fundamental only makes the pointing louder.
+  //
+  // An octave below lands near 70 Hz at that same cruise, under the line, and
+  // it is consonant with the fundamental rather than beating against it. That
+  // is also the relationship classic's own sub uses. Any other value names a
+  // partial directly.
+  order: 0,
+  floorHz: 18,     // added on top: an idling six would otherwise sit near 19 Hz
+  base: 0.06,      // classic's constant term
+  lowRpm: 0.06,    // more body low down, backing off as the revs climb
+  throttle: 0.04,  // and more when it is being asked for something
+};
+
 const DEFAULT_DYN = {
   dynDb: 16, dynCeiling: 0.5, shiftDuck: 0.9, overrunDuck: 0.9,
   idlePresence: 0.55, loadBoost: 0.22, floorBias: 0.7,
@@ -316,6 +369,8 @@ export class CrankAudio {
     this._outputTrim = 1;
     this._makeup = 1;
     this._space = { ...DEFAULT_SPACE };
+    this._sub = { ...DEFAULT_SUB };
+    this._subStarted = false;
     this._bass = 0.5;
     this._edge = 0.5;
 
@@ -377,6 +432,14 @@ export class CrankAudio {
     this._outputTrim = doc.outputTrim ?? 1;
     this._makeup = doc.makeup ?? 1;
     this._space = { ...DEFAULT_SPACE, ...(doc.space || {}) };
+    // Profile beats rig: two cards share one compiled table and differ only by
+    // how much body they ask for.
+    this._subStarted = false;
+    this._sub = {
+      ...DEFAULT_SUB,
+      ...(doc.sub || {}),
+      ...((this._profile && this._profile.crankSub) || {}),
+    };
     // Every forced-induction CRANK profile gets a boost curve, compiled or not.
     if (doc.boost) {
       this._boostSpec = doc.boost;
@@ -703,6 +766,30 @@ export class CrankAudio {
     compressor.connect(zoneFront);
     zoneFront.connect(frontGain).connect(stage);
 
+    /* --- body layer -------------------------------------------------------
+     * Connected to `master`, which is AFTER the limiter — see the chain below.
+     *
+     * The first attempt fed zoneRear, to collect the rear HRTF and the reverb
+     * send. It measured as doing nothing: mix 8 and mix 20 both landed 60-120 Hz
+     * at -26.5 dB, identical, with the peak barely moving. Everything from stage
+     * onward still runs through `density` and then `limiter`, so the layer was
+     * being compressed away — and had it been pushed harder it would have
+     * started ducking the engine above it, which is the pumping this project has
+     * spent months chasing. `compressor` is the VOICE compressor; bypassing it
+     * bypassed one dynamics stage out of three. Cut below the branch, not above.
+     *
+     * Losing the HRTF costs nothing real: under about 120 Hz the ear cannot
+     * place a source at all, which is the whole reason this band reads as the
+     * whole car rather than a point. Spatialising it was never doing anything.
+     *
+     * `safety` still follows, so nothing here can leave above full scale.
+     * Never started when mix is 0, so jz-crank renders no extra node at all. */
+    const oscSub = ctx.createOscillator();
+    oscSub.type = 'sine';
+    oscSub.frequency.value = Math.max(25, this._sub.floorHz || 40);
+    const subGain = ctx.createGain();
+    subGain.gain.value = 0;
+
     const reverb = ctx.createConvolver();
     reverb.buffer = cabinIR(ctx, sp.reverbSec, sp.reverbDecay);
     const reverbWet = ctx.createGain(); reverbWet.gain.value = sp.reverbWet;
@@ -791,6 +878,7 @@ export class CrankAudio {
     stage.connect(low).connect(high).connect(dynGain)
       .connect(makeup).connect(density).connect(densityMakeup)
       .connect(limiter).connect(master);
+    oscSub.connect(subGain).connect(master);   // body layer, post-limiter
     master.connect(safety);
     safety.connect(analyser);
     analyser.connect(ctx.destination);
@@ -866,10 +954,15 @@ export class CrankAudio {
       v.oscL.start(t0); v.oscR.start(t0); v.oscIntake.start(t0);
       v.oscMech.start(t0); v.oscWhistle.start(t0);
     }
+    // An oscillator that is never started renders nothing, so a card with no
+    // body layer costs exactly what it did before. Uses the local binding:
+    // this._nodes is not assigned until after this block.
+    // Body layer is started by the first tick that wants it — see _tick.
 
     this._voices = voices;
     this._active = 'a';
     this._nodes = {
+      oscSub, subGain,
       compressor, stage, zoneRear, zoneFront, rearDelay, rearPanner, rearGain,
       density, densityMakeup,
       frontGain, reverb, reverbWet, frontSend,
@@ -1211,6 +1304,32 @@ export class CrankAudio {
     const load = this._load;
     const rpmNorm = clamp((rpm - s.idleRpm) / Math.max(1, s.redlineRpm - s.idleRpm), 0, 1);
 
+    // --- body layer ------------------------------------------------------
+    // classic's law, unchanged: roughly first engine order (halved under eight
+    // cylinders) over a floor, so it sits where the ear stops localising. Body
+    // is loudest low down and backs off as the revs climb, which is why it
+    // fills the car at a cruise and never muds up a pull.
+    if (this._sub.mix > 0 && this._nodes) {
+      const sub = this._sub;
+      // Started here, not in _buildGraph. Switching cards while the engine runs
+      // swaps the profile without rebuilding the graph, so a card that arrives
+      // wanting body found an oscillator that had never been started: gain rode
+      // up to 0.42 and not one sample came out. The tick is the only place that
+      // sees every route in.
+      if (!this._subStarted) {
+        try { this._nodes.oscSub.start(t + 0.02); } catch (_) { /* already going */ }
+        this._subStarted = true;
+      }
+      // n harmonics of a 720-degree table = n * rpm/120.
+      const order = sub.order > 0 ? sub.order : s.cylinders / 2;
+      const hz = Math.max(25, (rpm / 120) * order + sub.floorHz);
+      this._setParam(this._nodes.oscSub.frequency, hz, t, 0.08, hz * 0.004);
+      const g = sub.mix
+        * (sub.base + (1 - rpmNorm) * sub.lowRpm + this._throttle * sub.throttle)
+        * (0.5 + this._bass);
+      at(this._nodes.subGain.gain, g, t, 0.08);
+    }
+
     // --- induction state -------------------------------------------------
     // Boost = what the rpm makes available, gated by how hard the engine is
     // being asked to work, then chased with the turbo's own lag. Cruising at
@@ -1450,6 +1569,17 @@ export class CrankAudio {
   }
 
   setThrottle(v) { if (v != null) this._throttle = clamp(v, 0, 1); }
+
+  /**
+   * Body-layer level, live. Starts the oscillator on first use, because an
+   * unstarted OscillatorNode stays silent forever however high the gain goes —
+   * which would make this setter look like it did nothing. Cards that never
+   * call it still pay for no extra node.
+   */
+  setSubMix(v) {
+    if (v == null || !this._sub) return;
+    this._sub.mix = Math.max(0, v);   // the next tick starts the oscillator
+  }
   setAccel(k) { this._accel = k; }
   setHoldRpm(rpm) { this._holdRpm = rpm == null ? null : Math.max(0, rpm); }
 
