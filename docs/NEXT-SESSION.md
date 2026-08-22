@@ -45,23 +45,37 @@ From the deduplicated traces, self-restarts excluded:
 
 ## The open one: low-speed crawl, 32%
 
-0-10 km/h reads p50 3.2 against 1.2 at 45-70 km/h.
+0-10 km/h reads p50 3.2 against 1.2 at 45-70 km/h. Cause still unknown.
 
-`wanderRpm` is an ABSOLUTE count and pitch is logarithmic, so the same 56 rpm is
-0.86 of a semitone at 1140 and 0.48 at 1907. It was sized against classic at
-60 km/h and never checked anywhere else.
+### DEAD END, properly measured — do not retry rev wander
 
-**A fix was written and REVERTED, deliberately.** Scaling the wander by
-rpm/1900 gave 8 km/h p90 2.83 → 2.48, but 18 km/h went 1.35 → 1.77 and 60 km/h
-1.27 → 1.42. Every one of those is inside the render's own noise floor
-(0.5–1.3 dB) on a single run. **Three runs per point minimum before believing
-any of it** — and note the measurement that motivated it (wander off → p90 0.74)
-was also a single run and should not be trusted either.
+`wanderRpm` is an ABSOLUTE count while pitch is logarithmic, so the same 56 rpm
+is 0.86 of a semitone at 1140 and 0.48 at 1907. It was sized against classic at
+60 km/h and never checked elsewhere, so scaling it by rpm/1900 looked like an
+obvious correction.
 
-The sim only reaches p50 1.73 where the car reads 3.2, so wander is not all of
-it. At 8 km/h half a km/h of GPS noise is 6% of the reading against 0.8% at
-60 km/h, so the derived acceleration is noisiest exactly where the roughness is
-worst.
+**It measures WORSE.** Three renders per point, spreads in brackets:
+
+| km/h | before p90 | after p90 |
+|---|---|---|
+| 8 | 2.15 (0.06) | **2.65 (0.13)** |
+| 18 | 1.73 (0.45) | 1.64 (0.47) |
+| 60 | 1.50 (0.48) | 1.55 (0.23) |
+
+At 8 km/h that is half a dB worse against a spread of 0.13 — well clear of the
+noise, not a coin toss. 18 and 60 are both inside their spreads.
+
+The reason is the owner's own observation: *"ถ้าปล่อย rpm breath มันก็จะไม่
+pattern"*. **Wander is what smears the wavetable's periodicity.** Steadying the
+pitch makes the repeating waveform MORE coherent, so the measured roughness
+rises. It is doing useful work down there, and the single-run measurement that
+started this ("wander off → p90 0.74") was noise.
+
+So the low-speed roughness is NOT the wander. Look elsewhere: at 8 km/h half a
+km/h of GPS noise is 6% of the reading against 0.8% at 60, so the derived
+acceleration is noisiest exactly where the roughness is worst — but
+`accelSmoothMul: 0.2` was already live for the traced drive and did not settle
+it, so that is not the whole answer either.
 
 ## Tools
 
