@@ -109,7 +109,12 @@
             <div class="speed-value" id="speed-value">0</div>
             <div class="speed-unit">km/h</div>
             <div class="speed-rpm" id="speed-rpm">0 RPM · G1</div>
-            <div class="state-chip" id="drive-state" data-state="idle">Idle</div>
+            <!-- Dev only. It was a suspect for the judder: every state change writes
+                 textContent AND data-state, and a data-attribute change restyles.
+                 Measured innocent on the audio side (the cruise/pull flag reaches
+                 nothing but the label), but it is diagnostic furniture and the drive
+                 screen is better without it. -->
+            <div class="state-chip dev-only" id="drive-state" data-state="idle">Idle</div>
             <!-- Dev-only GPS telemetry. Lives on the drive screen ON PURPOSE: the tune sheet is
                  locked out while moving, and this is exactly what needs reading while moving. -->
             <div class="gps-diag dev-only" id="gps-diag">—</div>
