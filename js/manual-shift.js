@@ -52,13 +52,17 @@ let pedal = false;
 // straight back to 0. It takes ownership on press, keeps it while coasting,
 // and hands it back the moment it reaches a stop or the slider is touched.
 let owns = false;
-// How long the throttle revs the engine WITHOUT moving the car from a stop.
-// A blip is a stab at the pedal with the clutch out; a launch is the same
-// stab held until the clutch bites. One timer covers both, so a tap revs and
-// nothing else, and holding flares first and then pulls away — which is what
-// a standing start actually feels like.
-const CLUTCH_BITE_S = 0.7;
-let pressedAt = 0;
+// The car used to be held still for 0.7 s after the pedal went down, so a stab
+// revved and nothing else. He asked for that when there was no other way to get
+// a flare out of a standing start, and asked for it back out once there was:
+// having to hold the throttle for a second before the speed left zero is not
+// what a car does.
+//
+// Nothing is lost by removing it. The clutch model in rpmInGearManual already
+// gives the flare — at a standstill the blend is 100% throttle, so the revs
+// rise on the pedal while the road speed is still nothing, and they fall into
+// step as the car gains speed. That is the same event, produced by the ratio
+// rather than by freezing the car.
 let pedalRaf = 0;
 let pedalLast = 0;
 let sim = null;          // { state, physics, getRpm, getRedline }
@@ -145,13 +149,8 @@ function pedalTick(now) {
     // Full pull to 82% of the gear, then it bleeds to almost nothing, so the
     // last stretch takes far longer than the first and shifting up is
     // something you WANT rather than something a rule makes you do.
-    // Clutch still out: rev, do not roll.
-    const ph = sim.physics;
-    const stopped = ph ? ph.vehicleSpeed < 3 : v < 3;
-    if (isManual() && stopped && (performance.now() - pressedAt) / 1000 < CLUTCH_BITE_S) {
-      if (ui) ui.root.classList.add('ms-blip');
-      return;
-    }
+    // The car moves the moment the pedal does. See the note on the removed
+    // clutch-bite timer above.
     if (ui) ui.root.classList.remove('ms-blip');
 
     const through = cap > 0 ? v / cap : 0;
@@ -192,7 +191,6 @@ function pressPedal() {
   pedal = true;
   owns = true;
   if (!pedalRaf) { pedalLast = 0; pedalRaf = requestAnimationFrame(pedalTick); }
-  pressedAt = performance.now();
   pedalLast = 0;
   if (ui) { ui.hud.classList.add('ms-pedal'); ui.gas.classList.add('ms-gas-on'); }
 }
