@@ -163,10 +163,22 @@ export function computeDynamicVolume(p) {
  * throttle shut — a state the automatic cannot produce at all, and one the old
  * model reads as "working hard" and holds at full voice. Deafening, and wrong.
  *
- * So here LOAD leads and the revs only colour it. That is also what an engine
- * does: a closed throttle at 4300 rpm is engine braking and it is quiet, while
- * an open one at the same speed is loud. Same revs, different sound, because
- * what you hear is combustion and there is barely any.
+ * FIRST PRINCIPLE, and it is the whole design: this app receives ONE thing —
+ * speed over time. Everything else is derived from it. There is no throttle
+ * sensor; `throttle` is literally clamp(rate / maxDelta, 0.15, 1) in
+ * vehicle-physics.js, which is acceleration wearing another name. So a model
+ * here may only ever key on ACCELERATION, whatever the variable is called.
+ *
+ * Which turns out to make the problem simple rather than hard. At 24 km/h there
+ * are exactly two states a car can be in, and acceleration alone separates
+ * them: it climbed here (accelerating, so loud) or it settled here (not
+ * accelerating, so quiet). Nothing else can produce 24 km/h. There is no third
+ * case to handle and no hidden state to infer.
+ *
+ * That is also what the engine does, which is why keying on it is not a
+ * compromise: pulling means combustion and combustion is what you hear, while
+ * holding a speed means barely any of it however fast the crank is turning.
+ * Same revs, different sound.
  *
  * Merged into computeDynamicVolume this would have meant a branch inside every
  * term, and the automatic's numbers are ones the owner tuned on a road. Left
@@ -184,10 +196,13 @@ export function computeManualVolume(p) {
   const shiftDuck = p.shiftDuck != null ? +p.shiftDuck : 0.9;
   const overrunDuck = p.overrunDuck != null ? +p.overrunDuck : 0.9;
 
-  // The throttle decides. Shutting it drops the voice however fast the engine
-  // is turning, which is the entire point of this function.
+  // Acceleration decides. `effort` is the smoothed accel signal — not a pedal,
+  // there is no pedal — so ceasing to accelerate drops the voice however fast
+  // the engine happens to be turning. That is the entire point of this function.
   const loadEnergy = clamp(0.16 + effort * 0.72 - decelLoad * 0.14, 0, 1);
-  // Revs colour it: at the SAME load, turning faster is somewhat louder.
+  // Revs colour it: at the same acceleration, turning faster is somewhat
+  // louder. Colour only — never the lead, or first gear at a steady 24 km/h
+  // reads as effort again and we are back where we started.
   const revColour = 0.85 + Math.min(1, rpmNorm) * 0.28;
   const driveEnergy = clamp(loadEnergy * revColour, 0, 1);
 
