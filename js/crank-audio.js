@@ -102,6 +102,16 @@ const DEFAULT_DRIVE = {
   // upshift sheds roughly 2500 rpm in a quarter second, which around 4000 rpm
   // is about 48 st/s; 60 keeps the drop crisp without becoming a step again.
   shiftFallStPerSec: 60, shiftLandSec: 0.3,
+  // How long the voice takes to come UP when load appears — his words, the
+  // difference between pressing play with the music already at full volume and
+  // letting it arrive over a moment. A rate limit on the way up only; the way
+  // down is untouched, because a lift has to drop when the driver lifts.
+  //
+  // load used to step: 0.238 to 0.777 in a single tick, measured. The engine
+  // already had a gradual envelope in _effort, but load never read it, so the
+  // smoothing was wired to a different wire — which is why rate-limiting
+  // _effort changed the onset by 1 ms.
+  loadAttackSec: 0.3,
 };
 /**
  * Cabin staging. These are the classic engine's own numbers — the brief was to
@@ -1353,7 +1363,15 @@ export class CrankAudio {
 
     this._limiter = this._rpm >= redline;
     if (this._rpm > redline) this._rpm = redline;
-    this._load = clamp(Math.max(load, this._effort * 0.9), 0, 1);
+    // The attack. Rise is capped at full-scale-per-loadAttackSec; fall passes
+    // straight through. Applied HERE because this one value is what every gain
+    // downstream reads — exhaust, combustion, intake and the dyn curve alike —
+    // so the onset is shaped once rather than in five places that could drift.
+    const wanted = clamp(Math.max(load, this._effort * 0.9), 0, 1);
+    const attack = Math.max(0.01, d.loadAttackSec ?? 0.3);
+    this._load = wanted > this._load
+      ? Math.min(wanted, this._load + dt / attack)
+      : wanted;
     return { accelLoad, decelLoad, accelVoice, decelVoice, speed, idle, redline, span };
   }
 
