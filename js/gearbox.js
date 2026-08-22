@@ -100,6 +100,10 @@ export function takeManualEvent() {
  * So progress through the gear's speed band is NOT clamped here the way
  * gearProgress() clamps it — running past the top of the band is the point.
  */
+/** Road speed by which the clutch is fully home. Pulling away is a walking-pace
+ *  event, so this is absolute and deliberately not a share of the gear. */
+const SLIP_KMH = 12;
+
 export function rpmInGearManual({
   gear, speedKmh, idle, redline,
   accelLoad = 0, decelLoad = 0,
@@ -127,12 +131,30 @@ export function rpmInGearManual({
   // rpm.
   const vmax = Math.max(1, bands.vmax[g - 1]);
   const rolling = Math.max(0, speedKmh);
-  if (rolling < 3) {
-    const blipTop = idle + (redline * 0.88 - idle) * clamp(accelLoad, 0, 1);
-    return clamp(blipTop, idle * 0.92, redline * 1.04);
-  }
+
+  // THE CLUTCH SLIPS, it does not switch.
+  //
+  // This used to hand over at a hard 3 km/h: below it the throttle owned the
+  // revs, above it the ratio did, and nothing joined the two. On the 1JZ in
+  // first that is a target of 6336 rpm at 2.9 km/h and 927 at 3.0 — a factor of
+  // 6.8, or 33 semitones, across one reading. The rate limiter then spent about
+  // a second and a half dragging the revs back down while the car crawled away,
+  // which is the free revving left in a standing start: the engine screaming
+  // and then sagging, attached to nothing the car was doing.
+  //
+  // A real clutch is out at rest and progressively locks as the car gains
+  // speed, so blend instead: all throttle at a standstill, all ratio by
+  // SLIP_KMH, and the engine falls into step with the road on the way through.
+  const blipTop = idle + (redline * 0.88 - idle) * clamp(accelLoad, 0, 1);
   let rpm = redline * (rolling / vmax);
   rpm += (redline - idle) * (accelLoad * 0.06 - decelLoad * 0.05);
+
+  // Absolute speed, NOT a share of the gear. Pulling away happens at walking
+  // pace whatever gear is selected, and scaling this by vmax would leave fifth
+  // at 20 km/h half-slipped and revving instead of lugging — and lugging in a
+  // tall gear is the whole point of being allowed to hold one.
+  const slip = clamp((SLIP_KMH - rolling) / SLIP_KMH, 0, 1);
+  if (slip > 0) rpm = rpm * (1 - slip) + blipTop * slip;
   // Below idle the clutch is slipping or the driver is about to stall it;
   // above the redline the limiter has it. Both ends are the point of manual.
   return clamp(rpm, idle * 0.92, redline * 1.04);
