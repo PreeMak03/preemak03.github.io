@@ -1,0 +1,290 @@
+/**
+ * TAS offline bench — dev harness, not shipped.
+ *
+ * WHY IT EXISTS
+ *   The judder hunt cost several in-car drives and a run of wrong theories, and
+ *   the cause was two oscillators ten cents apart beating against each other.
+ *   It was never load. It would have happened on any machine. Every instrument
+ *   we had needed a car, a driver and a live clock to see it, and each one lied
+ *   in its own way:
+ *
+ *     crank-bench   drives the app on rAF, which Chrome freezes in a hidden
+ *                   tab — it refuses to run rather than measure a parked car
+ *     live A/B      the drive model pulls rpm to idle under a constant speed,
+ *                   so the two halves get compared at different rpm
+ *     the car        one number per drive, days apart, nothing held still
+ *
+ *   OfflineAudioContext has none of those problems. It renders the REAL node
+ *   graph faster than real time, ignores tab visibility and has no timer
+ *   jitter. Run it before shipping anything on an audio path and the
+ *   before/after arrives without leaving the desk.
+ *
+ * IT IS NOT DETERMINISTIC, AND THAT MATTERS
+ *   The engine breathes on Math.random() — rev wander, idle hunt, exhaust pops.
+ *   Four renders of identical code spread 1.3 dB at idle, 0.8 through a pull,
+ *   0.7 at cruise. So a single pair of numbers cannot tell a fix from a coin
+ *   toss, and the first thing this bench reported was a 0.7 dB "regression"
+ *   that was noise. compare() therefore renders each side `repeats` times and
+ *   refuses to call anything real unless it clears that profile's own measured
+ *   spread. Read the verdict, not the delta.
+ *
+ * USAGE, in the page console:
+ *   const b = await import('/vessel/tools/offline-bench.js');
+ *   await b.runAll();                 // every CRANK profile
+ *   await b.run('jz-crank');          // one
+ *   await b.compare('jz-crank', (v) => {   // measure a change against today
+ *     v.oscL.detune.value = -5;
+ *     v.oscR.detune.value = 5;
+ *     v.preShape.gain.value = 1;
+ *   });
+ *
+ * WHAT IT MEASURES
+ *   swingDb      dB of level modulation over 0.5 s, per drive phase. The one
+ *                that catches beating, pumping and dropouts. Steady phases
+ *                belong near zero.
+ *   crestDb      peak over rms — the ceiling on how loud this engine can ever
+ *                be before the wall grabs it.
+ *   clipPct      samples at full scale. Classic runs 0.
+ *   offOrder     static wavetable check: energy on harmonics that are not
+ *                multiples of the cylinder count. An even-firing four has no
+ *                first harmonic; if it does, someone put burble on an engine
+ *                that has none, and a flutter in the bass with it.
+ */
+
+import { CrankAudio } from '/js/crank-audio.js';
+import { getProfileById } from '/js/profiles.js';
+import { VehiclePhysics } from '/js/vehicle-physics.js';
+
+const SR = 48000;
+const QUANTUM = 128;
+const STEP = QUANTUM * 8;              // 1024 frames = 21.3 ms; the engine ticks 20
+const SECS = 19;
+const dbOf = (x) => 20 * Math.log10(Math.max(1e-9, x));
+
+/**
+ * One drive, shared by every profile so the numbers compare. The script sets a
+ * TARGET and lets the real VehiclePhysics produce speed, accel, throttle and
+ * brake — the same four values app.js hands the engine. A first cut fed bare
+ * setSpeed(kmh) and the revs never passed 1992 against ~4200 in the app, which
+ * is the whole failure mode this bench exists to avoid: an instrument that
+ * drives the engine differently from the product reports on a car nobody owns.
+ *
+ * The target ramps at 16 km/h/s — the Model 3 Standard figure the owner tunes
+ * against, and the pace he actually drives.
+ *
+ * `from` is where measurement starts, not where the phase starts: the first
+ * 0.7 s is the starter motor cranking at 240 rpm, which is not idle and would
+ * dominate the idle numbers.
+ */
+const SCRIPT = [
+  { from: 1.2, until: 3,  phase: 'idle',   target: () => 0 },
+  { from: 3.4, until: 10, phase: 'pull',   target: (t) => Math.min(112, (t - 3) * 16) },
+  { from: 10.4, until: 15, phase: 'cruise', target: () => 112 },
+  { from: 15.4, until: 19, phase: 'lift',   target: () => 40 },
+];
+
+function phaseAt(t) {
+  for (const s of SCRIPT) if (t < s.until) return s;
+  return SCRIPT[SCRIPT.length - 1];
+}
+
+/** Assert the render actually exercised the engine, rather than reporting on a
+ *  car that never left idle. Every metric below is meaningless without this. */
+function assertDriven(log, spec) {
+  const rpms = log.map((x) => x.rpm).filter(Number.isFinite);
+  const top = Math.max(...rpms);
+  const reached = top / spec.redlineRpm;
+  if (reached < 0.35) {
+    throw new Error(
+      `render never loaded the engine: peak ${Math.round(top)} rpm is ${(reached * 100).toFixed(0)}% ` +
+      `of a ${spec.redlineRpm} redline. The drive inputs are wrong, not the audio.`);
+  }
+  const pull = log.filter((x) => x.phase === 'pull');
+  if (pull.length && Math.max(...pull.map((x) => x.speed)) < 60) {
+    throw new Error('render never got the car moving; check VehiclePhysics limits');
+  }
+}
+
+/**
+ * Render one profile through SCRIPT. `tweak` runs once on every live voice just
+ * after the graph is built, which is how a before/after gets measured without
+ * editing source between the two runs.
+ */
+export async function render(profileId, tweak) {
+  const oc = new OfflineAudioContext(2, SR * SECS, SR);
+  const audio = new CrankAudio();
+  audio.setProfile(getProfileById(profileId));
+  await audio.start({ ctx: oc, manualTick: true });
+  if (tweak) for (const k of Object.keys(audio._voices)) tweak(audio._voices[k], audio);
+
+  const dt = STEP / SR;
+  const physics = new VehiclePhysics();
+  const log = [];
+  for (let f = 0; f + STEP <= SR * SECS; f += STEP) {
+    const t = f / SR;
+    oc.suspend(t).then(() => {
+      const ph = phaseAt(t);
+      physics.setTarget(Math.max(0, ph.target(t)));
+      const p = physics.update(dt);
+      audio.setSpeed(p.speed, {
+        throttle: p.throttle,
+        brake: p.brake,
+        accelKmhps: p.accelKmhps,
+      });
+      audio._tick(dt);
+      log.push({ t, phase: ph.phase, rpm: audio.rpm, speed: p.speed, accel: p.accelKmhps });
+      oc.resume();
+    });
+  }
+  const buf = await oc.startRendering();
+  audio.running = false;                 // never stop(): the context is not ours
+  assertDriven(log, audio._spec);
+  return { buf, log, audio };
+}
+
+/** Level-modulation depth over a 0.5 s window — the metric the car reports. */
+function swing(mono, from, to) {
+  const N = 2048, hop = SR / 50, win = [];
+  for (let i = from; i + N <= to; i += hop) {
+    let s = 0;
+    for (let k = i; k < i + N; k++) s += mono[k] * mono[k];
+    win.push(Math.sqrt(s / N));
+  }
+  const out = [];
+  for (let i = 25; i < win.length; i++) {
+    const w = win.slice(i - 25, i + 1);
+    const hi = Math.max(...w), lo = Math.min(...w);
+    if (lo > 1e-7) out.push(dbOf(hi / lo));
+  }
+  if (!out.length) return { p50: 0, p95: 0 };
+  out.sort((a, b) => a - b);
+  return {
+    p50: +out[out.length >> 1].toFixed(1),
+    p95: +out[Math.floor(out.length * 0.95)].toFixed(1),
+  };
+}
+
+/**
+ * An even-firing four-stroke fires `cylinders` times per 720 degrees, so every
+ * harmonic of the table that carries energy should be a multiple of the
+ * cylinder count. Anything else is off-order, and at cruise the table repeats
+ * at rpm/120 — so a first harmonic puts 15-30 Hz into the cabin, which reads as
+ * flutter rather than tone.
+ */
+export function offOrder(doc) {
+  const cyl = doc.spec.cylinders;
+  const W = doc.waves.base.left;
+  const mag = (h) => Math.hypot(W.real[h] || 0, W.imag[h] || 0);
+  let on = 0, off = 0, peak = 0, worst = { h: 0, db: -99 };
+  for (let h = 1; h < W.real.length; h++) {
+    const m = mag(h);
+    if (m > peak) peak = m;
+    if (h % cyl === 0) on += m * m; else off += m * m;
+  }
+  for (let h = 1; h < W.real.length; h++) {
+    if (h % cyl === 0) continue;
+    const db = dbOf(mag(h) / Math.max(1e-12, peak));
+    if (db > worst.db) worst = { h, db: +db.toFixed(0) };
+  }
+  return {
+    cyl,
+    ratioDb: +dbOf(Math.sqrt(off / Math.max(1e-12, on))).toFixed(1),
+    worstHarmonic: worst.h,
+    worstDb: worst.db,
+  };
+}
+
+export async function run(profileId, tweak) {
+  const { buf, log } = await render(profileId, tweak);
+  const L = buf.getChannelData(0), R = buf.getChannelData(1);
+  const mono = new Float32Array(L.length);
+  for (let i = 0; i < L.length; i++) mono[i] = (L[i] + R[i]) * 0.5;
+
+  let sum = 0, peak = 0, clipped = 0;
+  for (let i = 0; i < mono.length; i++) {
+    sum += mono[i] * mono[i];
+    const a = Math.abs(mono[i]);
+    if (a > peak) peak = a;
+    if (a >= 0.999) clipped++;
+  }
+  const rms = Math.sqrt(sum / mono.length);
+
+  const swingDb = {};
+  for (const s of SCRIPT) {
+    swingDb[s.phase] = swing(mono, Math.floor(s.from * SR), Math.floor(s.until * SR));
+  }
+  const drivenRpm = log.filter((x) => x.t > 1.2).map((x) => x.rpm).filter(Number.isFinite);
+  const doc = await (await fetch(`/assets/crank/${profileId.replace('-crank', '')}.crank.json`)).json();
+
+  return {
+    profile: profileId,
+    rpmRange: [Math.round(Math.min(...drivenRpm)), Math.round(Math.max(...drivenRpm))],
+    topSpeed: Math.round(Math.max(...log.map((x) => x.speed))),
+    swingDb,
+    rmsDb: +dbOf(rms).toFixed(2),
+    crestDb: +dbOf(peak / rms).toFixed(1),
+    peak: +peak.toFixed(3),
+    clipPct: +((clipped / mono.length) * 100).toFixed(3),
+    offOrder: offOrder(doc),
+  };
+}
+
+const median = (a) => [...a].sort((x, y) => x - y)[a.length >> 1];
+const range = (a) => Math.max(...a) - Math.min(...a);
+
+/**
+ * Before/after — same build, same session, nothing rebuilt between them.
+ * `before` is a function applied to each voice to restore the OLD behaviour, so
+ * the two sides differ only by the thing under test.
+ *
+ * Each side renders `repeats` times. The spread within a side is that phase's
+ * noise floor; a delta smaller than the larger of the two spreads is reported
+ * as noise, because that is what it is.
+ */
+export async function compare(profileId, before, { repeats = 3 } = {}) {
+  const side = async (tweak) => {
+    const runs = [];
+    for (let i = 0; i < repeats; i++) runs.push(await run(profileId, tweak));
+    return runs;
+  };
+  const A = await side(before);
+  const B = await side(null);
+
+  const phases = SCRIPT.map((s) => s.phase);
+  const swing = {};
+  for (const p of phases) {
+    const a = A.map((r) => r.swingDb[p].p50);
+    const b = B.map((r) => r.swingDb[p].p50);
+    const delta = median(b) - median(a);
+    const noise = Math.max(range(a), range(b));
+    swing[p] = {
+      before: +median(a).toFixed(1),
+      after: +median(b).toFixed(1),
+      deltaDb: +delta.toFixed(1),
+      noiseDb: +noise.toFixed(1),
+      verdict: Math.abs(delta) <= noise ? 'noise'
+        : (delta < 0 ? 'BETTER' : 'WORSE'),
+    };
+  }
+  const ra = A.map((r) => r.rmsDb), rb = B.map((r) => r.rmsDb);
+  return {
+    profile: profileId,
+    repeats,
+    swing,
+    dLevelDb: +(median(rb) - median(ra)).toFixed(2),
+    levelNoiseDb: +Math.max(range(ra), range(rb)).toFixed(2),
+    clip: { before: median(A.map((r) => r.clipPct)), after: median(B.map((r) => r.clipPct)) },
+    crest: { before: median(A.map((r) => r.crestDb)), after: median(B.map((r) => r.crestDb)) },
+  };
+}
+
+export async function runAll() {
+  const out = [];
+  for (const id of ['jz-crank', 'civic-crank']) out.push(await run(id));
+  return out;
+}
+
+if (typeof window !== 'undefined') {
+  window.offlineBench = { run, runAll, compare, render, offOrder };
+}
+export default { run, runAll, compare, render, offOrder };

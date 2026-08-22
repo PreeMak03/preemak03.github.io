@@ -447,7 +447,18 @@ export class CrankAudio {
 
   /* --------------------------------------------------------- lifecycle -- */
 
-  async start() {
+  /**
+   * @param {object} [opts]
+   * @param {BaseAudioContext} [opts.ctx]  render into this instead of opening a
+   *   live output. An OfflineAudioContext here renders the REAL graph faster
+   *   than real time, with no rAF, no tab-visibility freeze and no timer
+   *   jitter -- which is how vessel/tools/offline-bench.js measures an audio
+   *   change before it can ever reach the car. Nothing about the graph changes.
+   * @param {boolean} [opts.manualTick]  do not start the interval; the caller
+   *   drives _tick(dt) itself. Required with an offline ctx, where wall-clock
+   *   time and render time are unrelated.
+   */
+  async start(opts = {}) {
     if (this.running) return;
     let perf = 'auto';
     try {
@@ -457,10 +468,15 @@ export class CrankAudio {
     this._lite = this._resolveLite(perf);
 
     const doc = await this._loadDoc(this._rigUrl);
-    const AC = window.AudioContext || window.webkitAudioContext;
-    try { this.ctx = new AC({ latencyHint: this._lite ? 'playback' : 'interactive' }); }
-    catch (_) { this.ctx = new AC(); }
-    if (this.ctx.state === 'suspended') { try { await this.ctx.resume(); } catch (_) {} }
+    if (opts.ctx) {
+      this.ctx = opts.ctx;
+      this._borrowedCtx = true;
+    } else {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      try { this.ctx = new AC({ latencyHint: this._lite ? 'playback' : 'interactive' }); }
+      catch (_) { this.ctx = new AC(); }
+      if (this.ctx.state === 'suspended') { try { await this.ctx.resume(); } catch (_) {} }
+    }
 
     this._applyDoc(doc);
     this._waves = this._makeWaveSet(doc.waves.base);
@@ -476,6 +492,8 @@ export class CrankAudio {
 
     this.running = true;
     const tickMs = this._lite ? 33 : 20;
+    this.tickMs = tickMs;
+    if (opts.manualTick) return;
     // Measured wall-clock dt, like the classic engine. A fixed nominal dt makes
     // every damp() integrate the wrong amount whenever the timer slips, which on
     // a busy MCU is often — the filters then run faster or slower than tuned.
@@ -503,7 +521,11 @@ export class CrankAudio {
   stop() {
     this.running = false;
     if (this._timer) { clearInterval(this._timer); this._timer = null; }
-    if (this.ctx) { try { this.ctx.close(); } catch (_) {} this.ctx = null; }
+    // A borrowed context belongs to whoever lent it; closing it here would kill
+    // a render still in flight.
+    if (this.ctx && !this._borrowedCtx) { try { this.ctx.close(); } catch (_) {} }
+    this.ctx = null;
+    this._borrowedCtx = false;
     this._nodes = null;
     this._voices = null;
   }
