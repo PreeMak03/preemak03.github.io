@@ -582,6 +582,13 @@ export class CrankAudio {
     this._gear = 1;
     this._driveState = 'idle';
     // Short starter crank, then the engine catches — the prototype's ignition.
+    // Count the starts. A trace showed the crank sequence running MID-DRIVE at
+    // 30 km/h — revs collapsing to 206 and winding back over 1.3 s, the loudest
+    // artefact in any recording so far — with the owner certain he never touched
+    // the engine button. Whatever restarts it, this makes it countable instead
+    // of arguable.
+    CrankAudio.startCount = (CrankAudio.startCount || 0) + 1;
+    CrankAudio.lastStartAt = Date.now();
     this._crankUntil = this.ctx.currentTime + 0.7;
     at(this._nodes.starterGain.gain, 0.42, this.ctx.currentTime, 0.04);
 

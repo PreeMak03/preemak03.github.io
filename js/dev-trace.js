@@ -294,6 +294,13 @@ export function startDevTrace(getAudio, state, physics) {
         // produced them. #app-ver is the release, #app-build the commit.
         build: ((document.querySelector('#app-build') || {}).textContent || '').trim() || null,
         ver: ((document.querySelector('#app-ver') || {}).textContent || '').trim() || null,
+        // How many times the engine ran its START sequence. One is normal. More
+        // than one during a drive is the mid-drive restart, which nobody asked
+        // for and which is the loudest thing in the traces.
+        engineStarts: (au && au.constructor && au.constructor.startCount) || null,
+        lastStartAgoS: (au && au.constructor && au.constructor.lastStartAt)
+          ? Math.round((Date.now() - au.constructor.lastStartAt) / 1000) : null,
+        ctxState: ac ? ac.state : null,
       };
       const body = {
         access_key: 'b0c38acf-3953-4910-9fbb-290ad09af3a5',
