@@ -112,6 +112,20 @@ const DEFAULT_DRIVE = {
   // smoothing was wired to a different wire — which is why rate-limiting
   // _effort changed the onset by 1 ms.
   loadAttackSec: 0.3,
+  // Multiplies the accel input filter. 0.12 takes lambda 18 to 2.2, a time
+  // constant of 56 ms to 463 ms. Swept against the two things that compete:
+  //
+  //     tau      1 Hz scatter      level response   rpm response
+  //      56 ms      6.43 dB            128 ms          139 ms
+  //     278         4.93              130             139
+  //     463         4.34              130             139
+  //     694         4.48              122             139
+  //
+  // 2.1 dB of judder for nothing measurable. Response is flat because the
+  // throttle term of accelLoad does not pass through this filter at all — only
+  // the accel-derived half does — so slowing it cannot slow the arrival. Past
+  // 463 ms it stops improving.
+  accelSmoothMul: 0.12,
 };
 /**
  * Cabin staging. These are the classic engine's own numbers — the brief was to
@@ -1029,7 +1043,16 @@ export class CrankAudio {
 
     const smoothL = this.smoothFilter ? 6 : 16;
     this._speedSmooth = damp(this._speedSmooth, this._speed, smoothL, dt);
-    this._accelSmooth = damp(this._accelSmooth, this._accel, this.smoothFilter ? 10 : 18, dt);
+    // THE LOW-PASS ON THE INPUT, and the only place the scatter can be stopped.
+    //
+    // A swinging accel signal is faithfully reproduced by everything downstream:
+    // rpm follows it, drive and torque follow rpm, and a 1.36 dB wobble in load
+    // comes out as 4.72 dB at the exhaust gain. That chain is not wrong — if a
+    // car really did surge like that you would hear it. The input is what lies,
+    // so the input is where it has to be caught. Classic runs 12 here; CRANK ran
+    // 18, which tracks a 1 Hz fix rate almost perfectly.
+    const aLam = (this.smoothFilter ? 10 : 18) * (this._drive.accelSmoothMul ?? 1);
+    this._accelSmooth = damp(this._accelSmooth, this._accel, Math.max(1, aLam), dt);
     const speed = this.speedReactive ? this._speedSmooth : Math.max(this._speedSmooth, 40);
 
     // Classic parity: below this the reading is GPS scatter, not the road.
